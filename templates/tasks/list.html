@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/tasks">
+      <div class="filter-row">
+        <label>Вид
+          <select name="kind">
+            <option value="all" {% if not kind %}selected{% endif %}>Все</option>
+            {% for key, label in TASK_KIND.items %}
+            <option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="slim">Найти</button>
+      </div>
+    </form>
+    <form id="tasks-bulk" class="doc-filter" method="post" action="/tasks" onsubmit="return confirm('Удалить выбранные задания?')">{% csrf_token %}
+      <input type="hidden" name="kind" value="{{ kind|default:'all' }}">
+      <div class="filter-row">
+        <span class="bulk-count" data-bulk-count="tasks-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="delete">Удалить</option>
+          </select>
+        </label>
+        <button class="slim">Выполнить</button>
+      </div>
+    </form>
+  </div>
+</div>
+<table class="sheet" data-bulk="tasks-bulk">
+  <tr>
+    <th>Номер</th><th>Вид</th><th>Заказ</th>
+    {% if kind == "receive" %}<th>Поставщик</th>{% endif %}
+    <th>Статус</th>
+  </tr>
+  {% for task in tasks %}
+  <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
+    <td><a href="/tasks/{{ task.id }}">{{ task.number }}</a></td>
+    <td>{{ TASK_KIND|label:task.kind }}</td>
+    <td>
+      {% if task.purchase_order %}<a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>
+      {% elif task.order %}<a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>{% endif %}
+    </td>
+    {% if kind == "receive" %}
+    <td>{% if task.supplier %}{{ task.supplier.name }}{% elif task.purchase_order %}{{ task.purchase_order.supplier.name }}{% endif %}</td>
+    {% endif %}
+    <td>{{ TASK_STATUS|label:task.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="{% if kind == 'receive' %}5{% else %}4{% endif %}">Заданий нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+    <form class="doc-filter" data-zone-filter onsubmit="return false">
+      <div class="filter-row">
+        <label>Найти
+          <input type="search" placeholder="Код, название или адрес">
+        </label>
+      </div>
+    </form>
+  </div>
+</div>
+<p class="hint">Выберите зону из списка или введите новую. Пустое поле снимает зону. Кнопка сохраняет только эту строку.</p>
+<form hidden>{% csrf_token %}</form>
+{{ zones|json_script:"zone-names" }}
+<table class="sheet" data-zone-map>
+    <tr>
+      <th>Код</th>
+      <th>Грузополучатель</th>
+      <th>Адрес</th>
+      <th>Зона доставки</th>
+      <th></th>
+    </tr>
+    {% for item in consignees %}
+    <tr data-zone-row data-search="{{ item.code }} {{ item.name }} {{ item.address }}">
+      <td>{{ item.code }}</td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.address }}</td>
+      <td>
+        <input class="zone-input" data-zone value="{% if item.zone_id %}{{ item.zone.name }}{% endif %}" autocomplete="off">
+      </td>
+      <td class="fit">
+        <button type="button" class="slim" data-save-zone="/masters/consignee-zones/{{ item.id }}">Сохранить</button>
+        <span class="zone-status" data-status></span>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Пока пусто</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const table = document.querySelector("[data-zone-map]");
+  if (!table) return;
+  const namesNode = document.getElementById("zone-names");
+  const names = namesNode ? JSON.parse(namesNode.textContent || "[]") : [];
+  const tokenNode = document.querySelector("[name=csrfmiddlewaretoken]");
+  const token = tokenNode ? tokenNode.value : "";
+  const menu = document.createElement("div");
+  menu.className = "combo-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+  let current = null;
+
+  function closeMenu() {
+    menu.hidden = true;
+    current = null;
+  }
+
+  function placeMenu(input) {
+    const box = input.getBoundingClientRect();
+    menu.style.left = box.left + "px";
+    menu.style.top = (box.bottom + 2) + "px";
+    menu.style.minWidth = box.width + "px";
+  }
+
+  function openMenu(input, filter) {
+    current = input;
+    const query = filter ? input.value.trim().toLowerCase() : "";
+    const matches = names.filter((name) => !query || name.toLowerCase().includes(query));
+    menu.innerHTML = "";
+    if (!matches.length) {
+      closeMenu();
+      return;
+    }
+    matches.forEach((name) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = name;
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        input.value = name;
+        closeMenu();
+      });
+      menu.appendChild(button);
+    });
+    placeMenu(input);
+    menu.hidden = false;
+  }
+
+  function remember(name) {
+    if (!name || names.some((item) => item.toLowerCase() === name.toLowerCase())) return;
+    names.push(name);
+    names.sort((left, right) => left.localeCompare(right, "ru"));
+  }
+
+  function mark(row, text, failed) {
+    const status = row.querySelector("[data-status]");
+    status.textContent = text;
+    status.classList.toggle("bad", !!failed);
+  }
+
+  async function save(row) {
+    const button = row.querySelector("[data-save-zone]");
+    const input = row.querySelector("[data-zone]");
+    button.disabled = true;
+    mark(row, "", false);
+    try {
+      const body = new FormData();
+      body.append("zone", input.value);
+      const response = await fetch(button.dataset.saveZone, {
+        method: "POST",
+        headers: { "X-CSRFToken": token },
+        body: body,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        mark(row, data.error || "Не сохранилось", true);
+        return;
+      }
+      input.value = data.zone || "";
+      remember(data.zone || "");
+      mark(row, "Сохранено", false);
+    } catch (error) {
+      mark(row, "Не сохранилось", true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  table.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-save-zone]");
+    if (!button) return;
+    save(button.closest("tr"));
+  });
+  table.addEventListener("focusin", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (input) openMenu(input, false);
+  });
+  table.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (!input) return;
+    mark(input.closest("tr"), "", false);
+    openMenu(input, true);
+  });
+  table.addEventListener("keydown", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (!input || event.key !== "Enter") return;
+    event.preventDefault();
+    closeMenu();
+    save(input.closest("tr"));
+  });
+  document.addEventListener("mousedown", (event) => {
+    if (event.target.closest(".combo-menu") || event.target.closest("[data-zone]")) return;
+    closeMenu();
+  });
+  window.addEventListener("scroll", (event) => {
+    if (event.target === menu || !current) return;
+    placeMenu(current);
+  }, true);
+
+  const filter = document.querySelector("[data-zone-filter] input");
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const query = filter.value.trim().toLowerCase();
+      table.querySelectorAll("[data-zone-row]").forEach((row) => {
+        row.hidden = query !== "" && !row.dataset.search.toLowerCase().includes(query);
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

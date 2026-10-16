@@ -1,0 +1,40 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Под заказ</h1>
+<form method="get" action="/tsd/allocate">{% csrf_token %}
+  <label>Штрихкод места или паллеты <input name="barcode" value="{{ barcode }}" autofocus autocomplete="off"></label>
+  <button>Найти</button>
+</form>
+{% if barcode and not obj %}<p>Ничего не найдено.</p>{% endif %}
+{% if kind == "unit" %}
+<p>{{ obj.barcode }} · {{ obj.lot.product.name }} {{ obj.lot.caliber.name }} · {{ obj.net_kg|kg }} кг · {{ obj.grade.name }}</p>
+{% for line, reason in matches %}
+<form method="post" action="/tsd/allocate/unit" class="card">{% csrf_token %}
+  <input type="hidden" name="unit_id" value="{{ obj.id }}">
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <input type="hidden" name="barcode" value="{{ barcode }}">
+  <p>{{ line.order.number }} · {{ line.order.client.name }}</p>
+  <p>{{ line|describe }}</p>
+  <p>Осталось {{ line|remaining|kg }} кг</p>
+  {% if reason %}<p>{{ reason }}</p>{% else %}<button>Назначить</button>{% endif %}
+</form>
+{% empty %}
+<p>Открытых строк под это место нет.</p>
+{% endfor %}
+{% elif kind == "pallet" %}
+<p>{{ obj.number }}</p>
+{% for line in pallet_lines %}
+<form method="post" action="/tsd/allocate/pallet" class="card">{% csrf_token %}
+  <input type="hidden" name="pallet_id" value="{{ obj.id }}">
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <input type="hidden" name="barcode" value="{{ barcode }}">
+  <p>{{ line.order.number }} · {{ line.order.client.name }}</p>
+  <p>{{ line|describe }}</p>
+  <button>Назначить паллету</button>
+</form>
+{% empty %}
+<p>Нет строки, под которую подходит вся паллета.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

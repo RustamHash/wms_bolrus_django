@@ -1,0 +1,17 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block header %}
+<header class="top tsd-top">
+  <span class="brand">ТСД</span>
+</header>
+{% endblock %}
+{% block content %}
+<h1>Вход</h1>
+<p class="hint">Введите свой PIN или отсканируйте свой QR-код. Сканер вводит код в поле и подтверждает вход.</p>
+<form method="post" action="/tsd/login" class="card">{% csrf_token %}
+  <label>PIN или бейдж
+    <input name="code" data-code autocomplete="off" autofocus>
+  </label>
+  <button class="btn">Войти</button>
+</form>
+{% endblock %}

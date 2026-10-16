@@ -1,0 +1,6 @@
+{% load wms %}
+<nav class="catalog-nav">
+  {% for key, label in nav %}
+  <a class="{% if key == kind %}on{% endif %}" href="{% if key == 'users' %}/users{% else %}/masters/{{ key }}{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>

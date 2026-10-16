@@ -1,0 +1,22 @@
+{% load wms %}
+{% for item in nodes %}
+{% if item.title %}
+<tr class="group" data-level="{{ item.level }}" data-open="1">
+  {% for col in columns %}
+  <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and item.short_kg > 0 %} short{% endif %}"{% if col.total_label %} style="padding-left: {{ item.pad }}px"{% endif %}>{% if col.total_label %}<span class="fold">−</span> {{ item.title }}{% elif col.key == "ordered" %}{{ item.ordered_kg|kg }}{% elif col.key == "picked" %}{{ item.picked_kg|kg }}{% elif col.key == "stock" %}{{ item.stock_kg|kg }}{% elif col.key == "incoming" %}{{ item.incoming_kg|kg }}{% elif col.key == "short" %}{{ item.short_kg|kg }}{% endif %}</td>
+  {% empty %}
+  <td style="padding-left: {{ item.pad }}px"><span class="fold">−</span> {{ item.title }}</td>
+  {% endfor %}
+</tr>
+{% endif %}
+{% if item.children %}{% include "partials/demand_nodes.html" with nodes=item.children %}{% endif %}
+{% for row in item.rows %}
+<tr data-href="/orders/{{ row.order_id }}" data-level="{{ item.level }}">
+  {% for col in columns %}
+  <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and row.short_kg > 0 %} short{% endif %}">{% if col.key == "order" %}<a href="/orders/{{ row.order_id }}">{{ row.order_number }}</a>{% elif col.key == "ship_date" %}{{ row.ship_date|date:"d.m.Y" }}{% elif col.key == "consignee" %}{{ row.consignee }}{% elif col.key == "category" %}{{ row.category }}{% elif col.key == "product" %}{{ row.product }}{% elif col.key == "grade" %}{{ row.grade }}{% elif col.key == "spec" %}{{ row.spec }}{% elif col.key == "ordered" %}{{ row.ordered_kg|kg }}{% elif col.key == "picked" %}{{ row.picked_kg|kg }}{% elif col.key == "stock" %}{{ row.stock_kg|kg }}{% elif col.key == "incoming" %}{{ row.incoming_kg|kg }}{% elif col.key == "short" %}{{ row.short_kg|kg }}{% endif %}</td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% empty %}
+<tr><td colspan="{% if columns %}{{ columns|length }}{% else %}1{% endif %}">{% if filtered %}Ничего не найдено.{% elif has_orders %}Нехватки нет.{% else %}Открытых заказов нет.{% endif %}</td></tr>
+{% endfor %}

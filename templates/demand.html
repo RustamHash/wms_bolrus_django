@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Потребность{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Потребность</h1>
+  </div>
+  <div class="page-tools">
+    <form id="demand-filter" class="doc-filter" method="get" action="/demand">
+      <div class="filter-row">
+        <label>Период
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ date_from }}">
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}">
+          </span>
+        </label>
+        <label>Товар
+          <input name="product" value="{{ product }}" placeholder="Название">
+        </label>
+        <label>Грузополучатель
+          <input name="party" value="{{ party }}" placeholder="Название">
+        </label>
+      </div>
+      <div class="filter-row">
+        <input type="hidden" name="all" value="0">
+        <label class="check">
+          <input type="checkbox" name="all" value="1" {% if show_all %}checked{% endif %}>
+          Показывать все
+        </label>
+        <button class="slim" type="button" id="open-setup">Показать настройки</button>
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+      <div id="setup-fields"></div>
+    </form>
+    {{ grouping|json_script:"group-state" }}
+    {{ column_rows|json_script:"column-state" }}
+    {{ picks|json_script:"pick-state" }}
+    {{ sorts|json_script:"sort-state" }}
+    {{ categories|json_script:"category-state" }}
+    {{ group_fields|json_script:"group-fields" }}
+    {{ column_fields|json_script:"column-fields" }}
+    {{ pick_fields|json_script:"pick-fields" }}
+    {{ pick_ops|json_script:"pick-ops" }}
+    <div class="tool-box stack">
+      <button class="icon-btn" type="submit" form="demand-filter" name="run" value="1" data-tip="Обновить" aria-label="Обновить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="demand-body">
+<div class="demand-main">
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<h2 class="sheet-title">Под заказы</h2>
+<table class="sheet" id="demand-orders">
+  <tr>
+    {% for col in columns %}<th class="{% if col.num %}num{% endif %}">{{ col.label }}</th>{% empty %}<th>Поля</th>{% endfor %}
+  </tr>
+  {% include "partials/demand_nodes.html" with nodes=groups %}
+  {% if groups %}
+  <tr class="subtotal">
+    {% for col in columns %}
+    <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and short_total > 0 %} short{% endif %}">{% if col.total_label %}Итого{% elif col.key == "ordered" %}{{ ordered_total|kg }}{% elif col.key == "picked" %}{{ picked_total|kg }}{% elif col.key == "stock" %}{{ stock_total|kg }}{% elif col.key == "incoming" %}{{ incoming_total|kg }}{% elif col.key == "short" %}{{ short_total|kg }}{% endif %}</td>
+    {% empty %}<td>Итого</td>{% endfor %}
+  </tr>
+  {% endif %}
+</table>
+
+<h2 class="sheet-title">К приёмке</h2>
+<table class="sheet">
+  <tr>
+    <th>Заказ</th><th>Поставщик</th><th>Поступление</th>
+    <th>Товар</th><th>Калибр</th><th>Сортность</th>
+    <th class="num">Заказано</th><th class="num">Принято</th><th class="num">Осталось</th>
+  </tr>
+  {% for row in inbound %}
+  <tr data-href="/orders/suppliers/{{ row.order_id }}">
+    <td><a href="/orders/suppliers/{{ row.order_id }}">{{ row.order_number }}</a></td>
+    <td>{{ row.supplier }}</td>
+    <td>{% if row.receipt_date %}{{ row.receipt_date|date:"d.m.Y" }}{% endif %}</td>
+    <td>{{ row.product }}</td>
+    <td>{{ row.caliber }}</td>
+    <td>{{ row.grade }}</td>
+    <td class="num">{{ row.ordered_kg|kg }}</td>
+    <td class="num">{{ row.received_kg|kg }}</td>
+    <td class="num">{{ row.left_kg|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">{% if date_from or date_to or product %}Ничего не найдено.{% else %}Нет заказов, которые ещё нужно принять.{% endif %}</td></tr>
+  {% endfor %}
+  {% if inbound %}
+  <tr>
+    <td colspan="8">Итого к приёмке</td>
+    <td class="num">{{ inbound_total|kg }}</td>
+  </tr>
+  {% endif %}
+</table>
+{% endif %}
+</div>
+<aside class="report-settings" id="report-setup" hidden>
+  <div class="settings-head">
+    <strong>Настройки</strong>
+    <button type="button" class="slim alt" id="hide-setup">Скрыть</button>
+  </div>
+  <div class="settings-tabs">
+    <button type="button" class="settings-tab on" data-tab="grouping">Группировка</button>
+    <button type="button" class="settings-tab" data-tab="filter">Отбор</button>
+    <button type="button" class="settings-tab" data-tab="fields">Поля</button>
+    <button type="button" class="settings-tab" data-tab="sorting">Сортировка</button>
+    <button type="button" class="settings-tab" data-tab="groups">Группы</button>
+  </div>
+  <div class="settings-pane on" data-pane="grouping">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="grouping">Добавить</button>
+      <button type="button" class="slim alt" data-remove="grouping">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="grouping">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="grouping">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th></tr></thead>
+      <tbody id="grouping-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="filter">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="filter">Добавить</button>
+      <button type="button" class="slim alt" data-remove="filter">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="filter">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="filter">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th><th>Вид сравнения</th><th>Значение</th></tr></thead>
+      <tbody id="filter-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="fields">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="fields">Добавить</button>
+      <button type="button" class="slim alt" data-remove="fields">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="fields">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="fields">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th></tr></thead>
+      <tbody id="fields-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="sorting">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="sorting">Добавить</button>
+      <button type="button" class="slim alt" data-remove="sorting">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="sorting">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="sorting">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th><th>Направление</th></tr></thead>
+      <tbody id="sorting-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="groups">
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Группа</th></tr></thead>
+      <tbody id="groups-body"></tbody>
+    </table>
+  </div>
+</aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function readList(id) {
+    const node = document.getElementById(id);
+    return node ? JSON.parse(node.textContent || "[]") : [];
+  }
+  function escapeHtml(text) {
+    return String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+  }
+  const lists = {
+    grouping: readList("group-state"),
+    fields: readList("column-state"),
+    filter: readList("pick-state"),
+    sorting: readList("sort-state"),
+    groups: readList("category-state"),
+  };
+  const catalogs = {
+    grouping: readList("group-fields"),
+    fields: readList("column-fields"),
+    filter: readList("pick-fields"),
+    sorting: readList("column-fields"),
+  };
+  const ops = readList("pick-ops");
+  const bodies = {
+    grouping: "grouping-body",
+    fields: "fields-body",
+    filter: "filter-body",
+    sorting: "sorting-body",
+    groups: "groups-body",
+  };
+  const emptyText = {
+    grouping: ["3", "Нет полей группировки"],
+    fields: ["3", "Нет полей"],
+    filter: ["5", "Нет условий отбора"],
+    sorting: ["4", "Нет полей сортировки"],
+    groups: ["3", "Нет групп"],
+  };
+  let dragKind = null;
+  let dragIndex = null;
+  let suppressClick = false;
+
+  function options(items, selected, valueKey) {
+    return items.map((item) => {
+      const value = item[valueKey || "key"];
+      return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(item.label)}</option>`;
+    }).join("");
+  }
+  function paint(kind) {
+    const body = document.getElementById(bodies[kind]);
+    const rows = lists[kind];
+    if (!rows.length) {
+      const [span, text] = emptyText[kind];
+      body.innerHTML = `<tr class="setup-empty"><td colspan="${span}">${text}</td></tr>`;
+      return;
+    }
+    body.innerHTML = "";
+    rows.forEach((item, index) => {
+      const row = document.createElement("tr");
+      row.dataset.index = String(index);
+      const box = `<td class="grip" draggable="true" title="Перетащить">↕</td><td class="mark"><input type="checkbox" data-index="${index}"${item.on ? " checked" : ""}></td>`;
+      if (kind === "filter") {
+        const needsValue = item.op !== "is_empty" && item.op !== "is_not_empty";
+        const inList = item.op === "in_list" || item.op === "not_in_list";
+        const value = !needsValue
+          ? "<span class=\"muted\">—</span>"
+          : inList
+            ? `<textarea data-value rows="3" placeholder="Значение (каждое с новой строки)">${escapeHtml(item.value || "")}</textarea>`
+            : `<input type="text" data-value value="${escapeHtml(item.value || "")}" placeholder="Значение">`;
+        row.innerHTML = `${box}<td><select data-field>${options(catalogs.filter, item.field)}</select></td><td><select data-op>${options(ops, item.op)}</select></td><td>${value}</td>`;
+      } else if (kind === "sorting") {
+        row.innerHTML = `${box}<td>${escapeHtml(item.label)}</td><td><select data-dir><option value="asc"${item.dir !== "desc" ? " selected" : ""}>По возрастанию</option><option value="desc"${item.dir === "desc" ? " selected" : ""}>По убыванию</option></select></td>`;
+      } else if (kind === "groups") {
+        row.innerHTML = `${box}<td>${escapeHtml(item.name)}</td>`;
+      } else {
+        row.innerHTML = `${box}<td>${escapeHtml(item.label)}</td>`;
+      }
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener("click", (event) => event.stopPropagation());
+      checkbox.addEventListener("change", () => { lists[kind][index].on = checkbox.checked; });
+      const field = row.querySelector("[data-field]");
+      if (field) field.addEventListener("change", () => { lists[kind][index].field = field.value; });
+      const op = row.querySelector("[data-op]");
+      if (op) op.addEventListener("change", () => { lists[kind][index].op = op.value; paint(kind); });
+      const value = row.querySelector("[data-value]");
+      if (value) value.addEventListener("input", () => { lists[kind][index].value = value.value; });
+      const dir = row.querySelector("[data-dir]");
+      if (dir) dir.addEventListener("change", () => { lists[kind][index].dir = dir.value; });
+      row.addEventListener("click", (event) => {
+        if (suppressClick || event.target.closest("input, select, textarea, button, .grip")) return;
+        checkbox.checked = !checkbox.checked;
+        lists[kind][index].on = checkbox.checked;
+      });
+      const grip = row.querySelector(".grip");
+      grip.addEventListener("dragstart", (event) => {
+        dragKind = kind;
+        dragIndex = index;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", kind + ":" + index);
+        row.classList.add("dragging");
+      });
+      grip.addEventListener("dragend", () => {
+        suppressClick = true;
+        setTimeout(() => { suppressClick = false; }, 0);
+        dragKind = null;
+        dragIndex = null;
+        body.querySelectorAll("tr").forEach((item) => item.classList.remove("dragging", "drop-before", "drop-after"));
+      });
+      row.addEventListener("dragover", (event) => {
+        if (dragKind !== kind) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const box = row.getBoundingClientRect();
+        const after = event.clientY > box.top + box.height / 2;
+        row.classList.toggle("drop-after", after);
+        row.classList.toggle("drop-before", !after);
+      });
+      row.addEventListener("drop", (event) => {
+        if (dragKind !== kind || dragIndex === null) return;
+        event.preventDefault();
+        const after = row.classList.contains("drop-after");
+        let to = index + (after ? 1 : 0);
+        const from = dragIndex;
+        if (from < to) to -= 1;
+        dragKind = null;
+        dragIndex = null;
+        if (from === to) return;
+        const [moved] = lists[kind].splice(from, 1);
+        lists[kind].splice(to, 0, moved);
+        paint(kind);
+      });
+      body.appendChild(row);
+    });
+  }
+  ["grouping", "fields", "filter", "sorting", "groups"].forEach(paint);
+
+  function chooseField(title, catalog, taken, onPick) {
+    const modal = document.createElement("div");
+    modal.className = "setup-modal";
+    modal.innerHTML = `<div class="card"><h3>${escapeHtml(title)}</h3><div class="setup-pick"><table class="grouping-table" data-setup><thead><tr><th>Поле</th></tr></thead><tbody>${catalog.map((field, index) => `<tr data-index="${index}"><td>${escapeHtml(field.label)}</td></tr>`).join("")}</tbody></table></div><div class="actions"><button type="button" class="slim alt" data-close>Отмена</button></div></div>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll("tbody tr").forEach((row) => {
+      row.addEventListener("mouseenter", () => { row.style.background = "#e7f0ea"; });
+      row.addEventListener("mouseleave", () => { row.style.background = ""; });
+      row.addEventListener("click", () => {
+        const field = catalog[Number(row.dataset.index)];
+        if (!taken || !taken.has(field.key)) onPick(field);
+        modal.remove();
+      });
+    });
+    modal.querySelector("[data-close]").addEventListener("click", () => modal.remove());
+    modal.addEventListener("click", (event) => { if (event.target === modal) modal.remove(); });
+  }
+  const addTitle = { grouping: "Выберите поле для группировки", filter: "Выберите поле для отбора", fields: "Выберите поле", sorting: "Выберите поле для сортировки" };
+  document.querySelectorAll("[data-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.add;
+      const catalog = catalogs[kind];
+      const taken = kind === "filter" ? null : new Set(lists[kind].map((item) => item.key || item.field));
+      chooseField(addTitle[kind], catalog, taken, (field) => {
+        if (kind === "filter") lists.filter.push({ field: field.key, op: "equals", value: "", on: true });
+        else if (kind === "sorting") lists.sorting.push({ field: field.key, label: field.label, dir: "asc", on: true });
+        else lists[kind].push({ key: field.key, label: field.label, on: true });
+        paint(kind);
+      });
+    });
+  });
+  function marked(kind) {
+    return [...document.querySelectorAll("#" + bodies[kind] + ' input[type="checkbox"]:checked')].map((box) => Number(box.dataset.index));
+  }
+  document.querySelectorAll("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.remove;
+      const indexes = marked(kind).sort((a, b) => b - a);
+      if (!indexes.length) {
+        alert("Выберите строки для удаления (отметьте чекбоксы)");
+        return;
+      }
+      indexes.forEach((index) => lists[kind].splice(index, 1));
+      paint(kind);
+    });
+  });
+  document.querySelectorAll("[data-move]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.list;
+      const rows = lists[kind];
+      const down = button.dataset.move === "down";
+      const indexes = marked(kind).sort((a, b) => down ? b - a : a - b);
+      if (!indexes.length) {
+        alert("Выберите строки для перемещения (отметьте чекбоксы)");
+        return;
+      }
+      indexes.forEach((index) => {
+        const next = down ? index + 1 : index - 1;
+        if (next < 0 || next >= rows.length || indexes.includes(next)) return;
+        [rows[index], rows[next]] = [rows[next], rows[index]];
+      });
+      paint(kind);
+    });
+  });
+
+  const setup = document.getElementById("report-setup");
+  const openSetup = document.getElementById("open-setup");
+  function showSetup(open) {
+    setup.hidden = !open;
+    if (openSetup) openSetup.textContent = open ? "Скрыть настройки" : "Показать настройки";
+  }
+  if (openSetup) openSetup.addEventListener("click", () => showSetup(setup.hidden));
+  document.getElementById("hide-setup").addEventListener("click", () => showSetup(false));
+  document.querySelectorAll(".settings-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".settings-tab").forEach((item) => item.classList.toggle("on", item === tab));
+      document.querySelectorAll(".settings-pane").forEach((pane) => pane.classList.toggle("on", pane.dataset.pane === tab.dataset.tab));
+    });
+  });
+  document.getElementById("demand-filter").addEventListener("submit", () => {
+    const box = document.getElementById("setup-fields");
+    box.replaceChildren();
+    const add = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      box.appendChild(input);
+    };
+    add("group_set", "1");
+    lists.grouping.forEach((item) => { add("group_on", item.on ? "1" : "0"); add("group_by", item.key); });
+    add("col_set", "1");
+    lists.fields.forEach((item) => { add("col_on", item.on ? "1" : "0"); add("col", item.key); });
+    add("pick_set", "1");
+    lists.filter.forEach((item) => {
+      add("pick_on", item.on ? "1" : "0");
+      add("pick_field", item.field);
+      add("pick_op", item.op);
+      add("pick_value", item.value || "");
+    });
+    add("sort_set", "1");
+    lists.sorting.forEach((item) => {
+      add("sort_on", item.on ? "1" : "0");
+      add("sort_by", item.field);
+      add("sort_dir", item.dir || "asc");
+    });
+    add("category_set", "1");
+    lists.groups.filter((item) => item.on).forEach((item) => add("category", String(item.id)));
+  });
+
+  const demandTable = document.getElementById("demand-orders");
+  if (demandTable) {
+    function paintDemand() {
+      const closed = [];
+      [...demandTable.rows].forEach((row) => {
+        if (!row.dataset.level) return;
+        const level = Number(row.dataset.level);
+        while (closed.length && closed[closed.length - 1] >= level) closed.pop();
+        row.classList.toggle("folded", closed.length > 0);
+        if (row.classList.contains("group") && row.dataset.open === "0") closed.push(level);
+      });
+    }
+    demandTable.querySelectorAll("tr.group").forEach((row) => {
+      row.addEventListener("click", () => {
+        row.dataset.open = row.dataset.open === "0" ? "1" : "0";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = row.dataset.open === "0" ? "+" : "−";
+        paintDemand();
+      });
+    });
+  }
+</script>
+{% endblock %}

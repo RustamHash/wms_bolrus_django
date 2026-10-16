@@ -1,0 +1,48 @@
+{% load wms %}
+<form method="post" action="/receipts/{{ receipt.id }}/units" class="card grid">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <label>Товар
+    <select name="product_id" data-product required>
+      {% for item in products %}
+      <option value="{{ item.id }}" {% if defaults.product_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      {% for item in calibers %}
+      <option value="{{ item.id }}" {% if defaults.caliber_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сортность
+    <select name="grade_id" required>
+      {% for item in grades %}
+      <option value="{{ item.id }}" {% if defaults.grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Тара
+    <select name="packaging_id" required>
+      {% for item in packagings %}
+      <option value="{{ item.id }}" {% if defaults.packaging_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Вес, кг <input name="net_kg" inputmode="decimal" autofocus required></label>
+  <label>Входная паллета
+    <select name="pallet_id">
+      <option value="">Не класть на паллету</option>
+      <option value="new">Новая однородная паллета</option>
+      {% for pallet in open_pallets %}
+      <option value="{{ pallet.id }}" {% if defaults.pallet_id == pallet.id %}selected{% endif %}>{{ pallet.number }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button name="action" value="save">Принять</button>
+    <button name="action" value="tsc">Принять и TSC</button>
+    <button name="action" value="network">Принять и сетевой</button>
+    <button name="action" value="both">Оба принтера</button>
+  </div>
+</form>

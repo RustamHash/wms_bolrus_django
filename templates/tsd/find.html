@@ -1,0 +1,22 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Поиск</h1>
+<form method="get" action="/tsd/find">{% csrf_token %}
+  <input name="barcode" value="{{ barcode }}" autofocus placeholder="HU или PL">
+  <button class="btn menu">Найти</button>
+</form>
+{% if kind == "pallet" %}
+<p>Паллета <a href="/pallets/{{ obj.id }}">{{ obj.number }}</a></p>
+{% elif kind == "unit" %}
+<p>Место <a href="/units/{{ obj.id }}">{{ obj.barcode }}</a> {{ obj.net_kg|kg }} кг</p>
+{% elif barcode %}
+<p>Ничего не найдено.</p>
+{% endif %}
+{% if movement %}
+<p>Приход по <a href="/tsd/tasks/{{ movement.task_id }}">заданию</a>, {{ movement.qty_kg|kg }} кг</p>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}

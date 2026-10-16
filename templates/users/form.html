@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Пользователь{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новый пользователь{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/users/{{ item.id }}{% else %}/users{% endif %}" class="card grid">{% csrf_token %}
+  <label>Имя <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+  <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% else %}{% endif %}" required></label>
+  <label>Пароль <input name="password" type="password" placeholder="{% if item %}оставьте пустым, чтобы не менять{% else %}{% endif %}"></label>
+  <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
+  <label>Роль
+    <select name="role">
+      {% for key, label in roles.items %}
+      <option value="{{ key }}" {% if item and item.role == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if can_grant %}
+  <label>Доступ в админку
+    <input type="checkbox" name="admin_access" value="1" {% if admin_access %}checked{% endif %}>
+  </label>
+  <p class="hint">Личный допуск этого пользователя. Допуск целой роли задаётся в админке, раздел «Доступ ролей».</p>
+  {% endif %}
+  <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<div class="card">
+  <h2>Бейдж ТСД</h2>
+  <p>Личный QR-код для входа на терминале. PIN задаётся выше и тоже только у этого пользователя.</p>
+  <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="220" height="220"></p>
+  <p><a class="btn" href="/users/{{ item.id }}/badge" target="_blank">Печать бейджа</a></p>
+  <form method="post" action="/users/{{ item.id }}/badge" onsubmit="return confirm('Старый QR перестанет открывать вход. Выпустить новый?')">{% csrf_token %}
+    <button>Выпустить новый QR</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

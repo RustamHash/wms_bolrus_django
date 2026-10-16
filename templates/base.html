@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+{% load wms %}
+{% block header %}
+<header class="top">
+  <a class="brand" href="/">WMS</a>
+  <nav>
+    <div class="menu-group">
+      <a href="/orders" class="{% if request.path|startswith:'/orders' %}active{% endif %}">Заказы</a>
+      <div>
+        <a href="/orders/suppliers">Поставщикам</a>
+        <a href="/orders/customers">Покупателям</a>
+      </div>
+    </div>
+    <div class="menu-group">
+      <a href="/tasks" class="{% if request.path|startswith:'/tasks' %}active{% endif %}">Задания</a>
+      <div>
+        <a href="/tasks?kind=all">Все</a>
+        <a href="/tasks?kind=receive">Приёмка</a>
+        <a href="/tasks?kind=pick">Отбор</a>
+        <a href="/tasks?kind=ship">На отгрузку</a>
+      </div>
+    </div>
+    <div class="menu-group">
+      <a href="/reports" class="{% if request.path|startswith:'/reports' or request.path|startswith:'/stock' or request.path|startswith:'/demand' or request.path|startswith:'/pallets' or request.path|startswith:'/units' %}active{% endif %}">Отчеты</a>
+      <div>
+        <a href="/stock">Остатки</a>
+        <a href="/demand">Потребность</a>
+        <a href="/orders/customers/revisions">Расхождения заказов</a>
+        <a href="/pallets">Паллеты</a>
+      </div>
+    </div>
+    <a href="/shipments" class="{% if request.path|startswith:'/shipments' %}active{% endif %}">Накладные</a>
+    {% if user.is_authenticated and user.is_office %}
+    <a href="/masters" class="{% if request.path|startswith:'/masters' or request.path|startswith:'/users' or request.path|startswith:'/office' %}active{% endif %}">Справочники</a>
+    {% endif %}
+    {% if user.is_authenticated and user.opens_admin %}
+    <div class="menu-group">
+      <a href="/service" class="{% if request.path|startswith:'/service' or request.path|startswith:'/admin' %}active{% endif %}">Сервис</a>
+      <div>
+        <a href="/tsd">ТСД</a>
+        <a href="/admin/">Админка</a>
+      </div>
+    </div>
+    {% endif %}
+  </nav>
+  {% if user.is_authenticated %}
+  <div class="account">
+  <div class="menu-group notices">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <button type="button" class="notice-btn" aria-haspopup="true" aria-label="Уведомления">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 22a2.2 2.2 0 0 0 2.1-1.5H9.9A2.2 2.2 0 0 0 12 22zm7-6V11a7 7 0 0 0-5-6.7V3.5a2 2 0 1 0-4 0v.8A7 7 0 0 0 5 11v5l-1.7 1.7A1 1 0 0 0 4 19.4h16a1 1 0 0 0 .7-1.7z"/></svg>
+      {% if notice_unread %}<span class="notice-badge">{{ notice_unread }}</span>{% endif %}
+    </button>
+    <div class="notice-menu">
+      {% for item in notices %}
+      <p{% if item.unread %} class="unread"{% endif %}>{{ item.text }}</p>
+      {% empty %}
+      <p class="muted">Нет уведомлений</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="menu-group profile">
+    <button type="button" class="profile-btn" aria-haspopup="true" aria-label="Профиль">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>
+      <span class="profile-label">{{ user.name }}</span>
+    </button>
+    <div class="profile-menu">
+      <p class="who">{{ user.name }}</p>
+      <p class="profile-role">{{ ROLE_LABELS|label:user.role }}</p>
+      <form method="post" action="/logout">{% csrf_token %}<button class="link" type="submit">Выход</button></form>
+    </div>
+  </div>
+  </div>
+  {% endif %}
+</header>
+{% endblock %}

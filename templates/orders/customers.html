@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Заказы покупателей{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Заказы покупателей</h1>
+    {% if user.is_office %}<a class="btn slim" href="/orders/new">Создать</a>{% endif %}
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/orders/customers">{% csrf_token %}
+      <div class="filter-row">
+        <label>Период
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ date_from }}">
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}">
+          </span>
+        </label>
+        <label>Грузополучатель
+          <input name="party" value="{{ party }}" placeholder="Название">
+        </label>
+      </div>
+      <div class="filter-row">
+        <label>Номер заказа
+          <input name="number" value="{{ number }}">
+        </label>
+        <label>Номер документа
+          <input name="document" value="{{ document }}">
+        </label>
+        <label>Статус
+          <select name="status">
+            <option value=""></option>
+            {% for key, label in DOC_STATUS.items %}
+            <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="slim">Найти</button>
+      </div>
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+    </form>
+    <div class="tool-box stack">
+      {% if user.is_office %}
+      <form method="post" action="/orders/customers/import" enctype="multipart/form-data">{% csrf_token %}
+        <input type="file" name="file" accept=".xlsx" hidden data-import-file>
+        <label class="icon-btn" data-tip="Обновить существующие">
+          <input type="checkbox" name="update" value="1" aria-label="Обновить существующие">
+        </label>
+        <button type="button" class="icon-btn" data-tip="Импорт" data-import aria-label="Импорт">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+        </button>
+      </form>
+      {% endif %}
+      <a class="icon-btn" href="/orders/customers/revisions" data-tip="Расхождения" aria-label="Расхождения">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
+      </a>
+    </div>
+    {% if user.is_office %}
+    <form id="customers-bulk" class="doc-filter" method="post" action="/orders/customers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
+      <div class="filter-row">
+        <span class="bulk-count" data-bulk-count="customers-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="task">Создать задание</option>
+            {% if user.role == "admin" %}<option value="delete">Удалить</option>{% endif %}
+          </select>
+        </label>
+        <label>Вид
+          <select name="kind">
+            <option value="pick">Отбор</option>
+            <option value="ship">Отгрузка</option>
+          </select>
+        </label>
+        <button class="slim">Выполнить</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+<table class="sheet" {% if user.is_office %}data-bulk="customers-bulk"{% endif %}>
+  <tr>
+    <th>Номер</th>
+    <th>Номер 1С</th>
+    <th>Версия</th>
+    <th>Дата отгрузки</th>
+    <th>Грузополучатель</th>
+    <th>Продавец</th>
+    <th class="num">Кг</th>
+    <th>Статус</th>
+  </tr>
+  {% for row in rows %}
+  <tr data-href="/orders/{{ row.order.id }}" data-id="{{ row.order.id }}">
+    <td><a href="/orders/{{ row.order.id }}">{{ row.order.number }}</a></td>
+    <td>{{ row.order.external_number|default:"" }}</td>
+    <td>{% if row.order.revision > 1 %}<a href="/orders/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
+    <td>{{ row.order.ship_date|date:"d.m.Y" }}</td>
+    <td>{% if row.order.consignee_id %}{{ row.order.consignee.name }}{% else %}{{ row.order.client.name }}{% endif %}</td>
+    <td>{{ row.order.seller.name }}</td>
+    <td class="num">{{ row.kg|kg }}</td>
+    <td>{{ DOC_STATUS|label:row.order.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="8">Заказов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% load wms %}
+{% block body_class %}tsd{% endblock %}
+{% block title %}ТСД{% endblock %}
+{% block header %}
+<header class="top tsd-top">
+  <a class="brand" href="/tsd">ТСД</a>
+  <nav>
+    <a href="/tsd/find" class="{% if request.path|startswith:'/tsd/find' %}active{% endif %}">Поиск</a>
+  </nav>
+  <form method="post" action="/logout">{% csrf_token %}<input type="hidden" name="next" value="/tsd/login"><button class="link">Выход</button></form>
+</header>
+{% endblock %}

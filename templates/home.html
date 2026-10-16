@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Главная{% endblock %}
+{% block content %}
+<h1>Склад</h1>
+<div class="cards">
+  <div class="stat"><span>Открытые заказы</span><b>{{ orders }}</b></div>
+  <div class="stat"><span>Приёмка</span><b>{{ receive }}</b></div>
+  <div class="stat"><span>Отбор</span><b>{{ pick }}</b></div>
+  <div class="stat"><span>На отгрузку</span><b>{{ ship }}</b></div>
+  <div class="stat"><span>Килограммы на остатке</span><b>{{ stock_kg|kg }}</b></div>
+</div>
+{% endblock %}

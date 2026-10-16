@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Бейдж {{ item.name }}{% endblock %}
+{% block content %}
+<h1>{{ item.name }}</h1>
+<p>{{ ROLE_LABELS|label:item.role }}</p>
+<p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="280" height="280"></p>
+<p class="hint">Личный бейдж для входа в ТСД. QR-код сканируют на экране входа.</p>
+<p><button type="button" onclick="window.print()">Печать</button> <a href="/users/{{ item.id }}">К карточке</a></p>
+{% endblock %}

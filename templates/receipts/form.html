@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Новый приход{% endblock %}
+{% block content %}
+<h1>Новый приход</h1>
+<form method="post" action="/receipts" class="card grid">{% csrf_token %}
+  <label>Поставщик
+    <select name="supplier_id" required>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" required></label>
+  <label>ТТН <input name="ttn_number"></label>
+  <button>Открыть</button>
+</form>
+{% if not suppliers %}<p>Сначала добавьте поставщика в справочнике.</p>{% endif %}
+{% endblock %}

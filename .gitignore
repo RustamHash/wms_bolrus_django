@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+staticfiles/
+pgdata/
+_create_db.py
+_probe_db.py
+_local_pg.py
+_pin_port.py
+_tz.py

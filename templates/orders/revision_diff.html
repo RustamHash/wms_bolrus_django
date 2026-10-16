@@ -1,0 +1,48 @@
+{% load wms %}
+{% if changes.header %}
+<table class="sheet">
+  <tr><th>Поле</th><th>Было</th><th>Стало</th></tr>
+  {% for item in changes.header %}
+  <tr><td>{{ item.field }}</td><td>{{ item.before }}</td><td>{{ item.after }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.changed %}
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Было, кг</th><th class="num">Стало, кг</th></tr>
+  {% for item in changes.changed %}
+  <tr>
+    <td>{{ item.code }}</td>
+    <td>{% if item.before_name != item.name %}{{ item.before_name }} → {{ item.name }}{% else %}{{ item.name }}{% endif %}</td>
+    <td class="num">{{ item.before|kg }}</td>
+    <td class="num">{{ item.after|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.added %}
+<p>Добавлено</p>
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Кг</th></tr>
+  {% for item in changes.added %}
+  <tr><td>{{ item.code }}</td><td>{{ item.name }}</td><td class="num">{{ item.qty|kg }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.removed %}
+<p>Снято</p>
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Кг</th></tr>
+  {% for item in changes.removed %}
+  <tr><td>{{ item.code }}</td><td>{{ item.name }}</td><td class="num">{{ item.qty|kg }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.blocked %}
+<p>Не применено</p>
+<ul>
+  {% for item in changes.blocked %}
+  <li>{{ item.code }} {{ item.name }}: {{ item.text }}</li>
+  {% endfor %}
+</ul>
+{% endif %}

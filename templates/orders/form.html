@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Новый заказ{% endblock %}
+{% block content %}
+<h1>Новый заказ</h1>
+<p class="hint">Продавец попадёт только на стикер отгрузки и не делит складской остаток.</p>
+<form method="post" action="/orders" class="card grid">{% csrf_token %}
+  <label>Клиент
+    <select name="client_id" data-client required>
+      {% for client in clients %}
+      <option value="{{ client.id }}">{{ client.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Продавец
+    <select name="seller_id" required>
+      {% for seller in sellers %}<option value="{{ seller.id }}">{{ seller.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Дата отгрузки <input type="date" name="ship_date" required></label>
+  <label>Условия отгрузки <textarea name="shipping_terms" data-terms></textarea></label>
+  <button>Создать</button>
+</form>
+{% endblock %}

@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{% if order %}{{ order.number }}{% else %}Заказ покупателя{% endif %}{% endblock %}
+{% block content %}
+<h1>Заказ покупателя{% if order %} {{ order.number }} от {{ order.ship_date|date:"d.m.Y" }}{% endif %}</h1>
+{% if order and order.revision > 1 %}
+<p class="hint">Версия {{ order.revision }}. <a href="/orders/{{ order.id }}/revisions">Расхождения</a></p>
+{% endif %}
+<div class="doc-bar">
+  {% if can_status %}<button form="customer-order">Записать</button>{% endif %}
+  {% if order and can_status and order.status != 'closed' and tasks %}
+  <form class="inline" method="post" action="/tasks/{{ tasks.0.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
+  {% endif %}
+  {% if order and can_status and order.status != 'closed' %}
+  <form class="inline" method="post" action="/orders/{{ order.id }}/tasks">{% csrf_token %}
+    <select name="kind">
+      <option value="pick">Отбор</option>
+      <option value="ship">Отгрузка</option>
+    </select>
+    <button>Создать задание</button>
+  </form>
+  {% endif %}
+  {% if order and tasks %}
+  <span class="hint">Задание
+    {% for task in tasks %}<a href="/tasks/{{ task.id }}">{{ task.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+  </span>
+  {% endif %}
+</div>
+{% if party_grades %}
+<p class="hint">Грузополучателю можно только: {{ party_grades }}.</p>
+{% endif %}
+{% if reserves %}
+<p class="hint">В резерве на складе: {% for item in reserves %}{{ item.title }} — {{ item.kg|kg }} кг{% if not forloop.last %}; {% endif %}{% endfor %}.</p>
+{% endif %}
+{% if unmapped %}
+<p class="hint">Нет соответствия: {% for line in unmapped %}{{ line.external_title }}{% if not forloop.last %}, {% endif %}{% endfor %}. Сначала сопоставьте номенклатуру 1С с номенклатурой в <a href="/masters/aliases">соответствиях</a>. Пока этого нет, задание по заказу не создаётся.</p>
+{% endif %}
+<form id="customer-order" method="post" action="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}">{% csrf_token %}
+  <div class="doc-head">
+    <label>Покупатель
+      <select name="client_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        {% for item in clients %}
+        <option value="{{ item.id }}" {% if order and order.client_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Грузополучатель
+      <select name="consignee_id" {% if not editable %}disabled{% endif %}>
+        <option value="">Как покупатель</option>
+        {% for item in consignees %}
+        <option value="{{ item.id }}" {% if order and order.consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Продавец
+      <select name="seller_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        {% for item in sellers %}
+        <option value="{{ item.id }}" {% if order and order.seller_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Дата отгрузки
+      <input type="date" name="ship_date" value="{% if order %}{{ order.ship_date|date:"Y-m-d" }}{% else %}{{ today }}{% endif %}" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+    </label>
+    <label>Статус
+      <select name="status" {% if not can_status %}disabled{% endif %}>
+        {% for key, label in DOC_STATUS.items %}
+        <option value="{{ key }}" {% if order and order.status == key or not order and key == 'open' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="wide">Условия отгрузки
+      <input name="shipping_terms" value="{% if order %}{{ order.shipping_terms }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
+    </label>
+  </div>
+  <div class="doc-bar">
+    {% if editable %}<button type="button" class="slim" id="add-line">+</button>{% endif %}
+  </div>
+  {% if editable and order %}
+  <p class="hint">Калибр и сортность можно поменять, пока по строке нет прихода и отбора. Открытое задание получит те же значения.</p>
+  {% endif %}
+  <table class="sheet" id="lines">
+    <tr>
+      <th>№</th><th>Номенклатура 1С</th><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">Количество</th><th>Ед.</th>
+      {% if editable %}<th></th>{% endif %}
+    </tr>
+    {% if editable %}
+    {% for line in order.lines.all %}
+    <tr>
+      <td class="n"></td>
+      <td>{% if line.external_title %}{{ line.external_title }}{% else %}—{% endif %}</td>
+      {% if line.id in posted_ids or not line.for_task %}
+      <td>{% if not line.for_task %}Не в задание{% elif line.warehouse_product %}{{ line.warehouse_product.name }}{% elif line.external_product_id %}<a href="/masters/aliases">Нет соответствия</a>{% elif line.product %}{{ line.product.name }}{% endif %}<input type="hidden" name="line_id" value="{{ line.id }}"><input type="hidden" name="keep" value="1"><input type="hidden" name="product" value=""><input type="hidden" name="caliber" value=""><input type="hidden" name="grade" value=""></td>
+      <td>{% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}{{ line.caliber_from.name }}–{{ line.caliber_to.name }}{% elif line.caliber %}{{ line.caliber.name }}{% endif %}</td>
+      <td>{{ line.grades|join_attr:'name' }}</td>
+      {% else %}
+      <td>
+        <input type="hidden" name="line_id" value="{{ line.id }}">
+        <input type="hidden" name="keep" value="0">
+        {% if line.external_product_id %}
+          {% if line.warehouse_product %}{{ line.warehouse_product.name }}{% else %}<a href="/masters/aliases">Нет соответствия</a>{% endif %}
+          <input type="hidden" name="product" value="">
+        {% elif line.task_lines.all %}
+        {{ line.product.name }}
+        <input type="hidden" name="product" value="{{ line.product_id }}">
+        {% else %}
+        <select name="product" data-line-product required>
+          {% for item in products %}<option value="{{ item.id }}" {% if item.id == line.product_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+      </td>
+      <td>
+        <select name="caliber" {% if line.task_lines.all %}required{% endif %}>
+          {% if not line.task_lines.all %}<option value=""></option>{% endif %}
+          {% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}
+          <option value="range" selected>{{ line.caliber_from.name }}–{{ line.caliber_to.name }}</option>
+          {% endif %}
+          {% for item in calibers %}<option value="{{ item.id }}" {% if line.caliber_mode == 'exact' and line.caliber_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade" required>
+          {% if line.grades|length != 1 %}
+          <option value="keep" selected>{{ line.grades|join_attr:'name' }}</option>
+          {% endif %}
+          {% for item in grades %}<option value="{{ item.id }}" {% if line.grades|length == 1 and line.grades.all.0.id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      {% endif %}
+      <td class="num"><input name="qty" value="{{ line.qty_kg|kg }}" required></td>
+      <td>{% if line.for_task %}кг{% else %}{{ line.unit }}{% endif %}</td>
+      <td>{% if line.for_task and not line.task_lines.all %}<button type="button" class="slim ghost" data-remove>✕</button>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td class="n"></td>
+      <td>—</td>
+      <td>
+        <input type="hidden" name="line_id" value="">
+        <input type="hidden" name="keep" value="0">
+        <select name="product" data-line-product>
+          {% for item in products %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+      </td>
+      <td>
+        <select name="grade">{% for item in grades %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+      </td>
+      <td class="num"><input name="qty"></td>
+      <td>кг</td>
+      <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    {% for line in order.lines %}
+    <tr>
+      <td class="n"></td>
+      <td>{% if line.external_title %}{{ line.external_title }}{% else %}—{% endif %}</td>
+      <td>{% if not line.for_task %}Не в задание{% elif line.warehouse_product %}{{ line.warehouse_product.name }}{% elif line.external_product_id %}Нет соответствия{% elif line.product %}{{ line.product.name }}{% endif %}</td>
+      <td>{% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}{{ line.caliber_from.name }}–{{ line.caliber_to.name }}{% elif line.caliber %}{{ line.caliber.name }}{% endif %}</td>
+      <td>{{ line.grades|join_attr:'name' }}</td>
+      <td class="num">{{ line.qty_kg|kg }}</td>
+      <td>{% if line.for_task %}кг{% else %}{{ line.unit }}{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">Строк нет</td></tr>
+    {% endfor %}
+    {% endif %}
+  </table>
+  <p class="doc-total">Итого <b>{% if order %}{{ order.lines.all|goods_kg|kg }}{% else %}0,000{% endif %}</b> кг</p>
+  {% if can_status %}<button>Записать</button>{% endif %}
+</form>
+<template id="customer-line">
+  <tr>
+    <td class="n"></td>
+    <td>—</td>
+    <td>
+      <input type="hidden" name="line_id" value="">
+      <input type="hidden" name="keep" value="0">
+      <select name="product" data-line-product>
+        {% for item in products %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+      </select>
+    </td>
+    <td>
+      <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+    </td>
+    <td>
+      <select name="grade">{% for item in grades %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+    </td>
+    <td class="num"><input name="qty"></td>
+    <td>кг</td>
+    <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+  </tr>
+</template>
+{% endblock %}
+{% block scripts %}
+<script>
+  const table = document.getElementById("lines");
+
+  function renumber() {
+    let index = 1;
+    table.querySelectorAll("tr").forEach((row) => {
+      const cell = row.querySelector(".n");
+      if (!cell) return;
+      cell.textContent = index;
+      index += 1;
+    });
+  }
+
+  function bindRow(row) {
+    const remove = row.querySelector("[data-remove]");
+    if (remove) {
+      remove.addEventListener("click", () => {
+        const rows = table.querySelectorAll("tr .n");
+        if (rows.length <= 1) {
+          row.querySelectorAll("input").forEach((input) => {
+            if (input.name !== "keep") input.value = "";
+          });
+          return;
+        }
+        row.remove();
+        renumber();
+      });
+    }
+  }
+
+  document.querySelectorAll("#lines tr").forEach(bindRow);
+  renumber();
+  const add = document.getElementById("add-line");
+  if (add) {
+    add.addEventListener("click", () => {
+      const row = document.getElementById("customer-line").content.firstElementChild.cloneNode(true);
+      table.appendChild(row);
+      bindRow(row);
+      renumber();
+    });
+  }
+</script>
+{% endblock %}

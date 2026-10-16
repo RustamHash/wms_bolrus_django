@@ -1,0 +1,22 @@
+{% load wms %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}WMS{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v=43">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block header %}{% endblock %}
+  <main>
+    <button type="button" class="back" id="go-back" hidden>Назад</button>
+    {% for flash in flashes %}
+    <p class="flash {{ flash.l }}">{{ flash.m }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/app.js?v=13"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,37 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Входная паллета</h1>
+{% if pallet %}
+<p>{{ pallet.number }}, {{ pallet.barcode }}{% if pallet.location %}, {{ pallet.location }}{% endif %}</p>
+<p class="hint">Только одна спецификация. Другой калибр или сортность — новая паллета.</p>
+<div class="actions">
+  <a class="btn" href="/print/pallets/{{ pallet.id }}.pdf">Паспорт PDF</a>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Паспорт на сетевой</button></form>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>Паспорт на TSC</button></form>
+  <form method="post" action="/tsd/pallet/close">{% csrf_token %}<button>Закрыть</button></form>
+</div>
+<table>
+  {% for unit in pallet.units %}
+  <tr>
+    <td>{{ unit.barcode }}</td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>Открытой паллеты нет.</p>
+{% endif %}
+<form method="post" action="/tsd/pallet" class="card">{% csrf_token %}
+  <label>Ячейка новой паллеты <input name="location"></label>
+  <button>Новая паллета</button>
+</form>
+{% if open_pallets %}
+<ul>
+  {% for item in open_pallets %}
+  <li><a href="/tsd/pallet?pallet_id={{ item.id }}">{{ item.number }}</a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

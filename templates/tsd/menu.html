@@ -1,0 +1,12 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Меню</h1>
+<p class="hint">Нажмите цифру на клавиатуре или кнопку на экране.</p>
+<nav class="digit-menu">
+  <a class="btn menu" data-digit="1" href="/tsd/receive"><span class="digit">1</span>Приёмка</a>
+  <a class="btn menu" data-digit="2" href="/tsd/pick"><span class="digit">2</span>Отбор</a>
+  <a class="btn menu" data-digit="3" href="/tsd/ship"><span class="digit">3</span>На отгрузку</a>
+  <a class="btn menu" data-digit="4" href="/tsd/find"><span class="digit">4</span>Поиск по штрихкоду</a>
+</nav>
+{% endblock %}

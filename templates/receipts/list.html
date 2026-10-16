@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Приходы{% endblock %}
+{% block content %}
+<h1>Приходы</h1>
+<p><a class="btn" href="/receipts/new">Новый приход</a></p>
+<table>
+  <tr><th>Номер</th><th>Дата</th><th>Поставщик</th><th>ТТН</th><th>Статус</th></tr>
+  {% for receipt in receipts %}
+  <tr>
+    <td><a href="/receipts/{{ receipt.id }}">{{ receipt.number }}</a></td>
+    <td>{{ receipt.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ receipt.supplier.name }}</td>
+    <td>{{ receipt.ttn_number }}</td>
+    <td>{{ DOC_STATUS|label:receipt.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Приходов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

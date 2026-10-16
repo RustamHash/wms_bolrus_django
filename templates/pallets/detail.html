@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ pallet.number }}{% endblock %}
+{% block content %}
+<h1>{{ pallet.number }}</h1>
+<p>{{ PALLET_KIND|label:pallet.kind }}, {{ PALLET_STATUS|label:pallet.status }}, штрихкод {{ pallet.barcode }}</p>
+{% if pallet.order %}<p>{% if pallet.kind == "inbound" %}Резерв{% else %}Заказ{% endif %} <a href="/orders/{{ pallet.order.id }}">{{ pallet.order.number }}</a>, {{ pallet.order.client.name }}</p>{% elif pallet.reserved_client %}<p>Резерв под клиента {{ pallet.reserved_client.name }}. Ждёт его заказ.</p>{% endif %}
+{% if pallet.kind == "inbound" %}<p class="hint">На входе паллета однородная: один товар, калибр и сортность.</p>{% else %}<p class="hint">На выходе можно смешивать места этого заказа.</p>{% endif %}
+<form method="post" action="/pallets/{{ pallet.id }}/location" class="row">{% csrf_token %}
+  <label>Ячейка <input name="location" value="{{ pallet.location }}"></label>
+  <button>Сохранить</button>
+</form>
+<div class="actions">
+  <a class="btn" href="/print/pallets/{{ pallet.id }}.pdf" target="_blank">Паспорт PDF</a>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Паспорт на сетевой</button></form>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>Паспорт на TSC</button></form>
+  {% if pallet.status == "open" %}
+  <form method="post" action="/pallets/{{ pallet.id }}/close">{% csrf_token %}<button>Закрыть паллету</button></form>
+  {% endif %}
+</div>
+{% if groups %}
+<h2>Сводка</h2>
+<table>
+  <tr><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Мест</th><th>Кг</th></tr>
+  {% for group in groups %}
+  <tr>
+    <td>{{ group.product }}</td><td>{{ group.caliber }}</td><td>{{ group.grade }}</td><td>{{ group.count }}</td><td>{{ group.kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if pallet.status == "open" %}
+<form method="post" action="/pallets/{{ pallet.id }}/units" class="card row">{% csrf_token %}
+  <label>Штрихкод места <input name="barcode" autofocus autocomplete="off"></label>
+  <button>Положить</button>
+</form>
+{% endif %}
+<table>
+  <tr><th>Место</th><th>Спецификация</th><th>Нетто, кг</th><th>Статус</th></tr>
+  {% for unit in units %}
+  <tr>
+    <td><a href="/units/{{ unit.id }}">{{ unit.barcode }}</a></td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }} / {{ unit.grade.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+    <td>{{ UNIT_STATUS|label:unit.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">Пусто</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ task.number }}{% endblock %}
+{% block content %}
+<h1>{{ task.number }} · {{ TASK_KIND|label:task.kind }}</h1>
+<p>
+  {% if task.purchase_order %}
+  Заказ <a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>,
+  {% if task.supplier %}{{ task.supplier.name }}{% else %}{{ task.purchase_order.supplier.name }}{% endif %}.
+  {% elif task.order %}
+  Заказ <a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>,
+  {{ task.order.client.name }}, продавец {{ task.order.seller.name }}.
+  {% endif %}
+</p>
+{% if can_status %}
+<form method="post" action="/tasks/{{ task.id }}/status" class="row">{% csrf_token %}
+  <label>Статус
+    <select name="status">
+      {% for key, label in status_choices %}
+      <option value="{{ key }}" {% if task.status == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="slim">Записать</button>
+</form>
+{% else %}
+<p>{{ TASK_STATUS|label:task.status }}</p>
+{% endif %}
+{% if task.kind == "receive" %}
+<p>{% if task.ttn_number %}ТТН {{ task.ttn_number }}{% endif %}{% if task.doc_date %} {{ task.doc_date|date:"d.m.Y" }}{% endif %}</p>
+{% endif %}
+{% if task.kind == "receive" %}
+<nav class="sheet-tabs">
+  <a href="/tasks/{{ task.id }}" {% if tab != "manual" %}class="on"{% endif %}>Принятые строки / паллеты</a>
+  <a href="/tasks/{{ task.id }}?tab=manual" {% if tab == "manual" %}class="on"{% endif %}>Ручная приёмка</a>
+</nav>
+{% endif %}
+
+{% if task.kind != "receive" or tab != "manual" %}
+<h2>Строки задания</h2>
+<table>
+  <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">План, кг</th><th class="num">Принято, кг</th></tr>
+  {% for line in task.lines.all %}
+  <tr>
+    <td>{{ line.product.name }}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td class="num">{{ received|get_item:line.id|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Паллеты</h2>
+<div class="stack">
+{% for movement in movements %}
+<div class="stack-row">
+  <span>
+    {% if movement.pallet.kind == "loose" %}
+    Без паллета · {{ movement.lot.product.name }} {{ movement.lot.caliber.name }} {{ movement.lot.grade.name }} · {{ movement.qty_kg|kg }} кг
+    {% else %}
+    <a href="/pallets/{{ movement.pallet.id }}">{{ movement.pallet.number }}</a>
+    · {{ movement.pallet.units.all|length }} мест
+    {% if movement.pallet.units.all %}· {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %}
+    · {% pallet_label movement.pallet.pallet_type %}
+    · грязный {{ movement.pallet.units|sum_attr:'gross_kg'|kg }} · чистый {{ movement.qty_kg|kg }} кг
+    · {{ movement.lot.product.name }} {{ movement.lot.caliber.name }} {{ movement.lot.grade.name }}
+    {% if movement.pallet.order %}· резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_client %}· резерв {{ movement.pallet.reserved_client.name }}{% endif %}
+    {% endif %}
+  </span>
+  {% if movement.kind == "in" and movement.id in editable and user.role == "receiver" or movement.kind == "in" and movement.id in editable and user.is_office %}
+  <form method="post" action="/movements/{{ movement.id }}/delete">{% csrf_token %}
+    <input type="hidden" name="next" value="/tasks/{{ task.id }}">
+    <button class="slim ghost" title="Удалить паллету">✕</button>
+  </form>
+  {% endif %}
+</div>
+{% empty %}
+<p>Паллет ещё нет.</p>
+{% endfor %}
+</div>
+{% elif can_receive %}
+{% include "partials/accept_loose.html" %}
+{% include "partials/accept_pallet.html" %}
+{% else %}
+<p class="hint">{% if task.status == "closed" %}Задание закрыто, приёмка недоступна.{% else %}Приёмка доступна в статусе «К приемке».{% endif %}</p>
+{% endif %}
+
+{% if task.kind == "pick" and task.is_working and user.role == "warehouse" or task.kind == "pick" and task.is_working and user.is_office %}
+<h2>Паллеты к отбору</h2>
+{% for item in waiting %}
+<form method="post" action="/tasks/{{ task.id }}/pick" class="row">{% csrf_token %}
+  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
+  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <span>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.line.product.name }} {{ item.line.caliber.name }}{% if item.movement.pallet.order %} · резерв {{ item.movement.pallet.order.number }}{% elif item.movement.pallet.reserved_client %} · резерв {{ item.movement.pallet.reserved_client.name }}{% else %} · свободный остаток{% endif %}</span>
+  <button>Отобрать паллету</button>
+</form>
+{% empty %}
+<p>Свободных принятых паллет под это задание нет.</p>
+{% endfor %}
+{% endif %}
+
+{% if task.kind == "ship" and task.is_working and user.role == "warehouse" or task.kind == "ship" and task.is_working and user.is_office %}
+<h2>Паллеты в накладную</h2>
+{% for item in waiting %}
+<form method="post" action="/tasks/{{ task.id }}/ship" class="card">{% csrf_token %}
+  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
+  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.line.product.name }} {{ item.line.caliber.name }}</p>
+  <label><input type="checkbox" name="confirm" value="1"> Условия отгрузки проверены: {% if task.order %}{{ task.order.shipping_terms }}{% else %}не указаны{% endif %}</label>
+  <button>Провести в накладную</button>
+</form>
+{% empty %}
+<p>Отобранных паллет под это задание нет.</p>
+{% endfor %}
+{% endif %}
+
+{% if user.is_office and task.is_working %}
+<form method="post" action="/tasks/{{ task.id }}/close">{% csrf_token %}<button>Закрыть задание</button></form>
+{% elif user.is_office and task.status == "closed" %}
+  {% if task.purchase_order and task.purchase_order.status != "closed" or task.order and task.order.status != "closed" %}
+  <form method="post" action="/tasks/{{ task.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
+  {% endif %}
+{% endif %}
+{% endblock %}

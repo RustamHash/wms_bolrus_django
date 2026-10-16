@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="hub">
+  {% for item in items %}
+  <a class="hub-card" href="{{ item.href }}">{{ item.title }}</a>
+  {% endfor %}
+</div>
+{% endblock %}

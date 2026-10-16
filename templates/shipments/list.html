@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Накладные{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Накладные</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/shipments">
+      <div class="filter-row">
+        <label>Период
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ date_from }}">
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}">
+          </span>
+        </label>
+        <label>Клиент / продавец
+          <input name="party" value="{{ party }}" placeholder="Имя">
+        </label>
+        <label>Номер
+          <input name="number" value="{{ number }}">
+        </label>
+        <button class="slim">Найти</button>
+      </div>
+    </form>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Заказ</th><th>Клиент</th><th>Продавец</th><th>Когда</th></tr>
+  {% for shipment in shipments %}
+  <tr data-href="/shipments/{{ shipment.id }}">
+    <td><a href="/shipments/{{ shipment.id }}">{{ shipment.number }}</a></td>
+    <td>{{ shipment.order.number }}</td>
+    <td>{{ shipment.client_name }}</td>
+    <td>{{ shipment.seller_name }}</td>
+    <td>{{ shipment.created_at|date:"d.m.Y H:i" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Отгрузок нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

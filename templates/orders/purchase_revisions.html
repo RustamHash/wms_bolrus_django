@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Расхождения приходов{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Расхождения приходов</h1>
+    <a class="btn slim" href="/orders/suppliers">К заказам</a>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/orders/suppliers/revisions">
+      <div class="filter-row">
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<table class="sheet">
+  <tr><th>Когда</th><th>Заказ</th><th>Номер 1С</th><th>Поставщик</th><th>Версия</th><th>Что изменилось</th></tr>
+  {% for row in rows %}
+  <tr data-href="/orders/suppliers/{{ row.revision.order_id }}/revisions">
+    <td>{{ row.revision.created_at|date:"d.m.Y H:i" }}</td>
+    <td><a href="/orders/suppliers/{{ row.revision.order_id }}/revisions">{{ row.revision.order.number }}</a></td>
+    <td>{{ row.revision.order.external_number|default:"" }}</td>
+    <td>{{ row.revision.supplier_name }}</td>
+    <td>{{ row.revision.revision }}</td>
+    <td>{{ row.summary }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Расхождений нет</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/masters/{{ kind }}/{{ item.id }}{% else %}/masters/{{ kind }}{% endif %}" class="card grid">{% csrf_token %}
+  {% if kind == 'products' or kind == 'externals' %}
+  <label>Группа
+    <select name="group_id">
+      <option value=""></option>
+      {% for group in groups %}
+      <option value="{{ group.id }}" {% if item and item.group_id == group.id %}selected{% endif %}>{{ group.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  {% if kind == 'products' %}
+  <label>Код <input name="code" value="{% if item %}{{ item.code }}{% else %}{% endif %}" required></label>
+  <label>Штрихкод <input name="barcode" value="{% if item and item.barcode %}{{ item.barcode }}{% else %}{% endif %}" required></label>
+  {% endif %}
+  {% if kind == 'externals' %}
+  <label>Код <input name="code" value="{% if item %}{{ item.code }}{% else %}{% endif %}" required></label>
+  {% endif %}
+  {% if kind == 'aliases' %}
+  <label>Номенклатура 1С
+    <select name="external_product_id" required>
+      {% for row in externals %}
+      <option value="{{ row.id }}" {% if item and item.external_product_id == row.id %}selected{% endif %}>{{ row.code }} · {{ row.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Номенклатура
+    <select name="product_id" required>
+      {% for row in products %}
+      <option value="{{ row.id }}" {% if item and item.product_id == row.id %}selected{% endif %}>{{ row.code }} · {{ row.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  {% if kind != 'printers' and kind != 'aliases' %}
+  <label>{% if kind == 'zones' %}Зона доставки{% else %}Название{% endif %} <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+  {% endif %}
+  {% if kind == 'calibers' or kind == 'grades' %}
+  <label>Порядок для диапазонов <input name="sort_order" type="number" value="{% if item %}{{ item.sort_order }}{% else %}{{ 0 }}{% endif %}"></label>
+  {% endif %}
+  {% if kind == 'clients' or kind == 'consignees' or kind == 'suppliers' %}
+  <label>Код <input name="code" value="{% if item and item.code %}{{ item.code }}{% else %}{% endif %}"></label>
+  {% endif %}
+  {% if kind == 'consignees' %}
+  <label class="wide">Адрес <textarea name="address">{% if item %}{{ item.address }}{% endif %}</textarea></label>
+  <label class="wide">Условия отгрузки <textarea name="shipping_terms">{% if item %}{{ item.shipping_terms }}{% endif %}</textarea></label>
+  <label>Зона доставки
+    <select name="zone_id">
+      <option value=""></option>
+      {% for zone in zones %}
+      <option value="{{ zone.id }}" {% if item and item.zone_id == zone.id %}selected{% endif %}>{{ zone.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <fieldset class="grades">
+    <legend>Сортность</legend>
+    <div class="grade-picks">
+      {% for grade in grades %}
+      <label><input type="checkbox" name="allowed_grade" value="{{ grade.id }}" {% if item and grade in item.allowed_grades.all %}checked{% endif %}> {{ grade.name }}</label>
+      {% endfor %}
+    </div>
+    <p class="hint">Если ничего не отмечено, грузополучателю можно любой сорт. Если отмечены сорта, отгружаем только их.</p>
+  </fieldset>
+  {% endif %}
+  {% if kind == 'packagings' %}
+  <label>Вес тары одного места, кг <input name="tare_kg" value="{% if item %}{{ item.tare_kg|kg }}{% else %}0,000{% endif %}" required></label>
+  <p class="hint">При приёмке вводят брутто. Нетто = брутто минус вес деревяшки и минус этот вес, умноженный на число упаковок. В остаток попадает нетто. Ноль значит, что тара упаковки не вычитается.</p>
+  {% endif %}
+  {% if kind == 'sellers' %}
+  <label>Код <input name="code" value="{% if item %}{{ item.code }}{% else %}{% endif %}" required></label>
+  <label>Реквизиты для стикера <textarea name="requisites">{% if item %}{{ item.requisites }}{% else %}{% endif %}</textarea></label>
+  {% endif %}
+  {% if kind == 'printers' %}
+  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+  <label>Тип
+    <select name="printer_type">
+      <option value="tsc" {% if not item or item.printer_type == 'tsc' %}selected{% endif %}>Термопринтер TSC</option>
+      <option value="network" {% if item and item.printer_type == 'network' %}selected{% endif %}>Сетевой принтер PDF</option>
+    </select>
+  </label>
+  <label>Адрес <input name="host" value="{% if item %}{{ item.host }}{% else %}{% endif %}" placeholder="192.168.1.50"></label>
+  <label>Порт <input name="port" value="{% if item %}{{ item.port }}{% else %}{{ 9100 }}{% endif %}"></label>
+  <label>Очередь Windows <input name="queue_name" value="{% if item %}{{ item.queue_name }}{% else %}{% endif %}" placeholder="Для PDF с ТСД"></label>
+  <label>Ширина, мм <input name="label_width_mm" value="{% if item %}{{ item.label_width_mm }}{% else %}{{ 58 }}{% endif %}"></label>
+  <label>Высота, мм <input name="label_height_mm" value="{% if item %}{{ item.label_height_mm }}{% else %}{{ 40 }}{% endif %}"></label>
+  <label>Зазор, мм <input name="gap_mm" value="{% if item %}{{ item.gap_mm }}{% else %}{{ 2 }}{% endif %}"></label>
+  <label>Плотность, dpi <input name="dpi" value="{% if item %}{{ item.dpi }}{% else %}{{ 203 }}{% endif %}"></label>
+  <label>Яркость TSC <input name="density" value="{% if item %}{{ item.density }}{% else %}{{ 8 }}{% endif %}"></label>
+  <label>По умолчанию <input type="checkbox" name="is_default" value="1" {% if item and item.is_default %}checked{% endif %}></label>
+  <p class="hint">TSC печатает TSPL2 на порт 9100. Кириллица уходит картинкой, штрихкод — командой Code 128. Паспорт по умолчанию — PDF.</p>
+  {% endif %}
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<form method="post" action="/masters/{{ kind }}/{{ item.id }}/delete" onsubmit="return confirm('Удалить?')">{% csrf_token %}
+  <button>Удалить</button>
+</form>
+{% if kind == 'printers' %}
+<form method="post" action="/print/printers/{{ item.id }}/test">{% csrf_token %}<button>Проверка печати</button></form>
+{% endif %}
+{% endif %}
+{% endblock %}

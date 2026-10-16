@@ -1,0 +1,32 @@
+{% load wms %}
+<form method="post" action="/tasks/{{ task.id }}/receive" class="card">{% csrf_token %}
+  <input type="hidden" name="next" value="/tasks/{{ task.id }}">
+  <h2>Весь приход без паллета</h2>
+  <p class="hint">Количество подставлено по плану. Паллета, тара и грязный вес не нужны. Пустую строку приёмка пропустит.</p>
+  <table class="sheet">
+    <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">Кг</th></tr>
+    {% for item in loose_lines %}
+    <tr>
+      <td>{{ item.line.product.name }}<input type="hidden" name="line" value="{{ item.line.id }}"></td>
+      <td>
+        <select name="caliber-{{ item.line.id }}">
+          <option value=""></option>
+          {% for caliber in calibers %}
+          <option value="{{ caliber.id }}" {% if item.line.caliber_id == caliber.id %}selected{% endif %}>{{ caliber.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade-{{ item.line.id }}">
+          <option value=""></option>
+          {% for grade in grades %}
+          <option value="{{ grade.id }}" {% if item.line.grade_id == grade.id %}selected{% endif %}>{{ grade.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="num"><input name="qty-{{ item.line.id }}" value="{% if item.left > 0 %}{{ item.left|kg }}{% endif %}" inputmode="decimal"></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button name="action" value="loose">Принять без паллета</button>
+</form>

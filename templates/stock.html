@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Остатки{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Остатки, кг</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/stock">
+      <div class="filter-row">
+        <label>Товар
+          <input name="product" value="{{ product }}" placeholder="Название">
+        </label>
+        <label>Поставщик
+          <input name="supplier" value="{{ supplier }}" placeholder="Имя">
+        </label>
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<table class="sheet">
+  <tr><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Поставщик</th><th>Приход</th><th class="num">Свободно</th><th class="num">В резерве</th><th class="num">Отобрано</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.product }}</td><td>{{ row.caliber }}</td><td>{{ row.grade }}</td>
+    <td>{{ row.supplier }}</td><td>{{ row.receipt }}</td>
+    <td class="num">{{ row.free_kg|kg }}</td><td class="num">{{ row.reserved_kg|kg }}</td><td class="num">{{ row.picked_kg|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="8">{% if product or supplier %}Ничего не найдено.{% else %}Остатков нет{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

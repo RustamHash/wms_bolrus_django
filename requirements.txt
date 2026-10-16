@@ -1,0 +1,8 @@
+Django>=5.2,<5.3
+django-debug-toolbar>=6.0,<7
+psycopg[binary]>=3.2
+pillow>=11
+qrcode>=8
+reportlab>=4.2
+docxtpl>=0.20
+python-dotenv>=1.0

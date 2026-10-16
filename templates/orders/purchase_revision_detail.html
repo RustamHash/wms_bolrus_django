@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Версии {{ order.number }}{% endblock %}
+{% block content %}
+<h1>Версии {{ order.number }}{% if order.external_number %} · {{ order.external_number }}{% endif %}</h1>
+<p>
+  <a class="btn slim" href="/orders/suppliers/{{ order.id }}">К заказу</a>
+  <a class="btn slim" href="/orders/suppliers/revisions">Все расхождения</a>
+</p>
+{% for row in revisions %}
+<h2>Версия {{ row.revision.revision }} · {{ row.summary }}</h2>
+<p class="hint">{{ row.revision.created_at|date:"d.m.Y H:i" }}{% if row.revision.created_by %} · {{ row.revision.created_by.name }}{% endif %}. Поставщик {{ row.revision.supplier_name }}, поступление {% if row.revision.receipt_date %}{{ row.revision.receipt_date|date:"d.m.Y" }}{% else %}—{% endif %}.</p>
+{% if row.revision.changes.header or row.revision.changes.added or row.revision.changes.removed or row.revision.changes.changed or row.revision.changes.blocked %}
+{% include "orders/revision_diff.html" with changes=row.revision.changes %}
+{% else %}
+<table class="sheet">
+  <tr><th>Номенклатура</th><th class="num">Кг</th></tr>
+  {% for line in row.revision.lines %}
+  <tr><td>{{ line.name }}</td><td class="num">{{ line.qty|kg }}</td></tr>
+  {% empty %}
+  <tr><td colspan="2">Строк нет</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% empty %}
+<p>Версий ещё нет. Они появятся при импорте с обновлением, если заказ в файле отличается от записанного.</p>
+{% endfor %}
+{% endblock %}

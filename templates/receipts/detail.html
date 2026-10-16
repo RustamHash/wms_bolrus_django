@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ receipt.number }}{% endblock %}
+{% block content %}
+<h1>{{ receipt.number }}</h1>
+<p>{{ receipt.supplier.name }}, {{ receipt.doc_date|date:"d.m.Y" }}{% if receipt.ttn_number %}, ТТН {{ receipt.ttn_number }}{% endif %}. {{ DOC_STATUS|label:receipt.status }}</p>
+{% if receipt.status == "open" %}
+{% if products and calibers and grades and packagings %}
+{% include "partials/receive_form.html" %}
+
+{% else %}
+<p>Заполните справочники: товар, калибр, сортность и тара.</p>
+{% endif %}
+<form method="post" action="/receipts/{{ receipt.id }}/close">{% csrf_token %}<button>Закрыть приход</button></form>
+{% endif %}
+<table>
+  <tr><th>Штрихкод</th><th>Товар</th><th>Кг</th><th>Статус</th><th></th></tr>
+  {% for unit in units %}
+  <tr>
+    <td><a href="/units/{{ unit.id }}">{{ unit.barcode }}</a></td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }} / {{ unit.grade.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+    <td>{{ UNIT_STATUS|label:unit.status }}</td>
+    <td>
+      <a href="/print/units/{{ unit.id }}.pdf" target="_blank">PDF</a>
+      <form class="inline" method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>TSC</button></form>
+      <form class="inline" method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Сеть</button></form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Мест нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
