@@ -1,0 +1,15 @@
+[Unit]
+Description=WMS BolRus
+After=network.target
+
+[Service]
+User=wms
+Group=wms
+WorkingDirectory=/opt/wms
+EnvironmentFile=/opt/wms/.env
+ExecStart=/opt/wms/.venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8050 --workers 2 --timeout 60
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

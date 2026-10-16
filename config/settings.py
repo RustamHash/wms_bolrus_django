@@ -24,6 +24,11 @@ def database_from_url(url: str) -> dict:
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-wms-bolrus")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = [
+    item.strip()
+    for item in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if item.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -50,6 +55,7 @@ if DEBUG:
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -89,6 +95,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
