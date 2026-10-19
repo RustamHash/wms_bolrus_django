@@ -7,12 +7,14 @@ from apps.receiving.services import accept_loose, accept_pallet, delete_inbound,
 
 
 def _accept_fields(form):
+    manual = form.get("net_manual") == "1"
     return dict(
         packaging_id=require_int(form, "packaging_id", "Упаковка"),
         places=require_int(form, "places", "Количество упаковок"),
         pallet_type=text(form, "pallet_type"),
         gross_kg=parse_kg(form.get("gross"), "Грязный вес"),
-        net_kg=parse_kg(form.get("net"), "Чистый вес"),
+        net_kg=parse_kg(form.get("net"), "Чистый вес") if manual else None,
+        net_manual=manual,
         caliber_id=require_int(form, "caliber_id", "Калибр"),
         grade_id=require_int(form, "grade_id", "Сортность"),
         reserve=form.get("reserve") == "1",

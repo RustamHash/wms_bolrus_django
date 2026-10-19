@@ -73,6 +73,6 @@ def task_status_choices(kind: str, current: str = "") -> list[tuple[str, str]]:
     return rows
 
 PALLET_TARE = {
-    "EUR": "25.000",
-    "USA": "30.000",
+    "EUR": "15.000",
+    "USA": "20.000",
 }

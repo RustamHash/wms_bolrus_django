@@ -49,6 +49,7 @@
   <label>Упаковок <input name="places" inputmode="numeric" required></label>
   <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
   <label>Чистый вес, кг <input name="net" inputmode="decimal" required></label>
+  <input type="hidden" name="net_manual" value="0">
   <p class="hint">Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок. Поле можно поправить.</p>
   {% if clients %}
   <label data-client-box>Клиент
@@ -75,9 +76,14 @@
     document.querySelectorAll("form[data-accept]").forEach((form) => {
       const line = form.querySelector("[data-task-line]");
       const net = form.querySelector("[name=net]");
+      const manual = form.querySelector("[name=net_manual]");
       if (!net) return;
       let netTouched = false;
-      net.addEventListener("input", () => { netTouched = true; });
+      const setManual = (touched) => {
+        netTouched = touched;
+        if (manual) manual.value = touched ? "1" : "0";
+      };
+      net.addEventListener("input", () => { setManual(true); });
       const readTare = (name) => {
         const option = form.querySelector(`[name=${name}] option:checked`);
         const raw = option && option.dataset.tare ? option.dataset.tare : "0";
@@ -197,7 +203,7 @@
             reserveProgress.textContent = caption ? `Уже в резерве ${format(held)} из ${format(plan)} кг. Сверх плана паллета остаётся свободной, если галочку снять.` : "";
           }
         }
-        netTouched = false;
+        setManual(false);
         recalc();
       };
       const packaging = form.querySelector("[name=packaging_id]");
@@ -205,10 +211,10 @@
       const places = form.querySelector("[name=places]");
       const gross = form.querySelector("[name=gross]");
       if (line) line.addEventListener("change", applyLine);
-      if (palletType) palletType.addEventListener("change", () => { netTouched = false; recalc(); });
-      packaging.addEventListener("change", () => { netTouched = false; recalc(); });
-      places.addEventListener("input", () => { netTouched = false; recalc(); });
-      gross.addEventListener("input", () => { netTouched = false; recalc(); });
+      if (palletType) palletType.addEventListener("change", () => { setManual(false); recalc(); });
+      packaging.addEventListener("change", () => { setManual(false); recalc(); });
+      places.addEventListener("input", () => { setManual(false); recalc(); });
+      gross.addEventListener("input", () => { setManual(false); recalc(); });
       if (line) applyLine();
     });
   });

@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.catalog.models import Caliber, Grade, Packaging
+from apps.common.constants import PALLET_TARE
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import get_row
 from apps.common.kg import as_kg
@@ -95,15 +96,21 @@ def _fact(caliber_id: int, grade_id: int):
     return get_row(Caliber, caliber_id, "калибр"), get_row(Grade, grade_id, "сортность")
 
 
-def _check_weight(places: int, pallet_type: str, gross_kg, net_kg):
+def expected_net(gross: Decimal, places: int, pallet_type: str, package_tare) -> Decimal:
+    pallet = as_kg(PALLET_TARE[pallet_type])
+    packages = as_kg(package_tare) * places
+    return as_kg(gross - pallet - packages)
+
+
+def _resolve_weight(places: int, pallet_type: str, gross_kg, net_kg, package_tare, manual: bool):
     if places < 1 or places > 500:
         raise WarehouseError("Укажите количество упаковок")
-    if pallet_type not in ("EUR", "USA"):
+    if pallet_type not in PALLET_TARE:
         raise WarehouseError("Укажите вид паллета")
     gross = as_kg(gross_kg)
-    net = as_kg(net_kg)
     if gross <= 0:
         raise WarehouseError("Укажите грязный вес")
+    net = as_kg(net_kg) if manual else expected_net(gross, places, pallet_type, package_tare)
     if net <= 0 or net > gross:
         raise WarehouseError("Чистый вес должен быть больше нуля и не больше грязного")
     return gross, net
@@ -117,7 +124,8 @@ def accept_pallet(
     places: int,
     pallet_type: str,
     gross_kg,
-    net_kg,
+    net_kg=None,
+    net_manual: bool = False,
     caliber_id: int,
     grade_id: int,
     user,
@@ -125,9 +133,9 @@ def accept_pallet(
     client_id: int | None = None,
 ):
     task, line = _open_line(task_line_id, "receive")
-    gross, net = _check_weight(places, pallet_type, gross_kg, net_kg)
     caliber, grade = _fact(caliber_id, grade_id)
     packaging = get_row(Packaging, packaging_id, "тара")
+    gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, net_manual)
     receipt = _ensure_receipt(task, user)
     lot = _lot(receipt, line.product_id, caliber.id, grade.id)
     customer_line = None
@@ -229,11 +237,22 @@ def _editable(movement_id: int):
 
 
 @transaction.atomic
-def edit_inbound(movement_id: int, *, caliber_id, grade_id, packaging_id, places, pallet_type, gross_kg, net_kg):
+def edit_inbound(
+    movement_id: int,
+    *,
+    caliber_id,
+    grade_id,
+    packaging_id,
+    places,
+    pallet_type,
+    gross_kg,
+    net_kg=None,
+    net_manual: bool = False,
+):
     movement, pallet, receipt = _editable(movement_id)
-    gross, net = _check_weight(places, pallet_type, gross_kg, net_kg)
     caliber, grade = _fact(caliber_id, grade_id)
     packaging = get_row(Packaging, packaging_id, "тара")
+    gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, net_manual)
     pallet.units.all().delete()
     pallet.pallet_type = pallet_type
     pallet.save(update_fields=["pallet_type"])
