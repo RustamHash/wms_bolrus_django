@@ -454,7 +454,7 @@ def routes_sheets_pdf(sheets: list) -> bytes:
 
 
 def schedule_sheet_pdf(tree: dict) -> bytes:
-    """Печать графика таблицей: план | факт | водитель | комментарий | вес | ТТ."""
+    """Печать графика таблицей: план | факт | водитель | маршрут | комментарий | вес | ТТ."""
     ensure_font()
     buffer = BytesIO()
     page = landscape(A4)
@@ -464,12 +464,13 @@ def schedule_sheet_pdf(tree: dict) -> bytes:
     bottom = 16 * mm
     day = tree["day"]
     columns = (
-        ("План", 22 * mm),
+        ("План", 36 * mm),
         ("Факт", 24 * mm),
-        ("Водитель", 55 * mm),
-        ("Комментарий", 100 * mm),
-        ("Вес, кг", 28 * mm),
-        ("ТТ", 16 * mm),
+        ("Водитель", 40 * mm),
+        ("Маршрут", 52 * mm),
+        ("Комментарий", 80 * mm),
+        ("Вес, кг", 26 * mm),
+        ("ТТ", 14 * mm),
     )
     widths = [item[1] for item in columns]
     titles = [item[0] for item in columns]
@@ -488,7 +489,7 @@ def schedule_sheet_pdf(tree: dict) -> bytes:
     y -= 2 * mm
 
     def header(top: float) -> float:
-        return _row(pdf, top, left, titles, widths, 9, {4, 5})
+        return _row(pdf, top, left, titles, widths, 9, {5, 6})
 
     def ensure(top: float, need: float) -> float:
         if top - need >= bottom:
@@ -509,12 +510,13 @@ def schedule_sheet_pdf(tree: dict) -> bytes:
                 row.get("plan") or "",
                 row.get("fact") or "",
                 row.get("label") or "",
+                row.get("route") or "",
                 row.get("notes") or "",
                 format_kg(row.get("weight") or 0),
                 str(row.get("tt_count") or 0),
             ]
             y = ensure(y, 8 * mm)
-            y = _row(pdf, y, left, cells, widths, 9, {4, 5})
+            y = _row(pdf, y, left, cells, widths, 9, {5, 6})
         y -= 4 * mm
         y = _text(
             pdf,

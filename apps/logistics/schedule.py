@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
@@ -70,17 +69,6 @@ def _load_stamp(value) -> str:
     return f"{local:%d.%m.%Y} {local.hour:02d}:{local.minute:02d}"
 
 
-def _plan_label(value, delivery_day: date) -> str:
-    """План: время; если погрузка в другой день — с датой."""
-    if not value:
-        return ""
-    local = load_local(value)
-    clock = f"{local.hour:02d}:{local.minute:02d}"
-    if local.date() != delivery_day:
-        return f"{local:%d.%m} {clock}"
-    return clock
-
-
 def _fact_label(value, delivery_day: date) -> str:
     if not value:
         return ""
@@ -101,8 +89,9 @@ def _sort_key_plan(value) -> tuple:
 
 def schedule_print_tree(day: date) -> dict:
     """
-    Все маршруты с датой доставки = day.
-    Сортировка по плану погрузки. Строки: план | факт | водитель | комментарий | вес | ТТ.
+    Все маршруты с датой доставки = day, по строке на маршрут.
+    Сортировка по плану погрузки. План — дата и время, как в графике на экране.
+    Строки: план | факт | водитель | маршрут | комментарий | вес | ТТ.
     """
     routes = list(
         _routes_for_delivery_day(day)
@@ -120,61 +109,53 @@ def schedule_print_tree(day: date) -> dict:
     all_orders = [stop.order for route in routes for stop in route.route_orders.all()]
     weights = order_weights(all_orders)
 
-    # sort_key -> plan_label -> driver_id -> node
-    by_group: dict[tuple, dict[int, dict]] = defaultdict(dict)
-
+    prepared = []
     for route in routes:
-        plan_label = _plan_label(route.planned_load_at, day) or "Без плана"
-        sort_key = _sort_key_plan(route.planned_load_at)
-        group_key = (sort_key, plan_label)
-        fact = _fact_label(route.actual_load_at, day)
-        driver_id = route.driver_id or 0
         driver_name = route.driver.full_name if route.driver_id else "Без водителя"
-
-        if driver_id not in by_group[group_key]:
-            by_group[group_key][driver_id] = {
-                "driver_id": driver_id,
-                "driver_name": driver_name,
-                "plan": plan_label if plan_label != "Без плана" else "",
-                "facts": [],
-                "notes": [],
-                "weight": Decimal("0"),
-                "tt": set(),
-            }
-        node = by_group[group_key][driver_id]
-        if fact and fact not in node["facts"]:
-            node["facts"].append(fact)
-        note = (route.notes or "").strip()
-        if note and note not in node["notes"]:
-            node["notes"].append(note)
-
+        route_name = route.name or f"Маршрут {route.id}"
+        route_weight = Decimal("0")
+        tt: set[str] = set()
         for stop in route.route_orders.all():
             order = stop.order
-            node["weight"] += weights.get(order.id) or Decimal("0")
-            node["tt"].add(_tt_key(order))
+            route_weight += weights.get(order.id) or Decimal("0")
+            tt.add(_tt_key(order))
+        prepared.append(
+            {
+                "sort": (
+                    _sort_key_plan(route.planned_load_at),
+                    driver_name.casefold(),
+                    route_name.casefold(),
+                    route.id,
+                ),
+                "plan": _load_stamp(route.planned_load_at),
+                "fact": _fact_label(route.actual_load_at, day),
+                "label": driver_name,
+                "route": route_name,
+                "notes": (route.notes or "").strip(),
+                "weight": route_weight,
+                "tt": tt,
+            }
+        )
+    prepared.sort(key=lambda item: item["sort"])
 
     table_rows = []
     grand_weight = Decimal("0")
     grand_tt: set[str] = set()
-
-    for group_key in sorted(by_group.keys(), key=lambda item: item[0]):
-        for driver_id, node in sorted(
-            by_group[group_key].items(),
-            key=lambda item: (item[1]["driver_name"].casefold(), item[0]),
-        ):
-            table_rows.append(
-                {
-                    "kind": "driver",
-                    "plan": node["plan"],
-                    "fact": ", ".join(node["facts"]) if node["facts"] else "",
-                    "label": node["driver_name"],
-                    "notes": "; ".join(node["notes"]) if node["notes"] else "",
-                    "weight": node["weight"],
-                    "tt_count": len(node["tt"]),
-                }
-            )
-            grand_weight += node["weight"]
-            grand_tt |= node["tt"]
+    for item in prepared:
+        table_rows.append(
+            {
+                "kind": "driver",
+                "plan": item["plan"],
+                "fact": item["fact"],
+                "label": item["label"],
+                "route": item["route"],
+                "notes": item["notes"],
+                "weight": item["weight"],
+                "tt_count": len(item["tt"]),
+            }
+        )
+        grand_weight += item["weight"]
+        grand_tt |= item["tt"]
 
     return {
         "day": day,
