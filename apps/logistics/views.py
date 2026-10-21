@@ -281,27 +281,54 @@ def routing_assign_order(request):
     return redirect(f"/logistics/routing?date={result.isoformat()}")
 
 
+def _posted_load_times(request, ship_date):
+    """Время загрузки по водителю. Пустое поле — маршрут без плана."""
+    load_day = parse_load_date(text(request.POST, "planned_load_date")) or ship_date
+    times = {}
+    for key, raw in request.POST.items():
+        if not key.startswith("load_time_"):
+            continue
+        value = (raw or "").strip()
+        if not value:
+            continue
+        try:
+            driver_id = int(key.removeprefix("load_time_"))
+        except ValueError as exc:
+            raise WarehouseError("Некорректное время загрузки") from exc
+        times[driver_id] = parse_load_datetime(load_day, value)
+    return times
+
+
 @roles_required("office")
 def routing_create(request):
     def action():
         ship_date = _ship_date(request)
+        load_times = _posted_load_times(request, ship_date)
         rows, assignments, _total = routing_rows(ship_date, request.session)
         created = create_routes_from_zone_assignments(ship_date=ship_date, zone_rows=rows)
+        warnings = []
+        for route in created:
+            load_at = load_times.get(route.driver_id or 0)
+            if load_at is None:
+                continue
+            warning = set_planned_load_at(route, load_at)
+            if warning:
+                warnings.append(warning)
         order_ids, zone_ids = consumed_for_create(rows)
         present = {row["zone_id"] for row in rows}
         stale_zones = [zone_id for zone_id in assignments if zone_id not in present]
         clear_session_assignments(request.session, ship_date, list(zone_ids) + stale_zones)
         clear_session_order_assignments(request.session, ship_date, order_ids)
-        return ship_date, created
+        return ship_date, created, warnings
 
     result, response = guarded(request, "/logistics/routing", action)
     if response:
         return response
-    ship_date, created = result
+    ship_date, created, warnings = result
     messages.success(request, f"Создано маршрутов: {len(created)}")
-    if len(created) == 1:
-        return redirect(f"/logistics/routes/{created[0].id}")
-    return redirect(f"/logistics/routes?date={ship_date.isoformat()}")
+    for warning in warnings:
+        messages.warning(request, warning)
+    return redirect(f"/logistics/routing?date={ship_date.isoformat()}")
 
 
 @roles_required("office")
@@ -313,19 +340,27 @@ def routing_add_to_route(request):
         if route is None:
             raise WarehouseError("Маршрут не найден")
         rows, _assignments, _total = routing_rows(ship_date, request.session)
+        raw_time = text(request.POST, "planned_load_time")
+        load_at = None
+        if raw_time:
+            load_day = parse_load_date(text(request.POST, "planned_load_date")) or ship_date
+            load_at = parse_load_datetime(load_day, raw_time)
         added = add_assigned_orders_to_route(route=route, zone_rows=rows)
+        warning = set_planned_load_at(route, load_at) if load_at is not None else None
         if added:
             order_ids, zone_ids = consumed_for_route(route, rows)
             clear_session_assignments(request.session, ship_date, zone_ids)
             clear_session_order_assignments(request.session, ship_date, order_ids)
-        return route, added
+        return ship_date, added, warning
 
     result, response = guarded(request, "/logistics/routing", action)
     if response:
         return response
-    route, added = result
+    ship_date, added, warning = result
     messages.success(request, f"Добавлено заказов: {added}")
-    return redirect(f"/logistics/routes/{route.id}")
+    if warning:
+        messages.warning(request, warning)
+    return redirect(f"/logistics/routing?date={ship_date.isoformat()}")
 
 
 # --- Routes ---

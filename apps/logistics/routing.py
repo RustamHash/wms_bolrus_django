@@ -123,6 +123,7 @@ def driver_load_summary(rows: list[dict], drivers) -> list[dict]:
         if driver_id == NO_DRIVER_ID:
             result.append(
                 {
+                    "driver_id": NO_DRIVER_ID,
                     "name": "Без водителя",
                     "weight": weight,
                     "count": counts[driver_id],
@@ -137,6 +138,7 @@ def driver_load_summary(rows: list[dict], drivers) -> list[dict]:
             capacity = driver.vehicle.load_capacity_kg
         result.append(
             {
+                "driver_id": driver_id,
                 "name": driver.full_name if driver is not None else f"#{driver_id}",
                 "weight": weight,
                 "count": counts[driver_id],
@@ -225,6 +227,31 @@ def consumed_for_route(route: Route, zone_rows: list[dict]) -> tuple[list[int], 
     return order_ids, zone_ids
 
 
+def _zone_label(names: list[str]) -> str:
+    unique = []
+    for name in names:
+        cleaned = (name or "").strip() or "Без зоны"
+        if cleaned not in unique:
+            unique.append(cleaned)
+    return ", ".join(unique)[:255]
+
+
+def _driver_zone_names(zone_rows: list[dict]) -> dict[int, list[str]]:
+    names: dict[int, list[str]] = defaultdict(list)
+    for row in zone_rows:
+        zone_driver = row.get("driver_id")
+        label = (row.get("zone_name") or "").strip() or "Без зоны"
+        seen = set()
+        for order in _row_orders(row):
+            explicit = _order_override(order)
+            driver_id = explicit if explicit is not None else zone_driver
+            if driver_id is None or driver_id == NO_DRIVER_ID or driver_id in seen:
+                continue
+            seen.add(driver_id)
+            names[driver_id].append(label)
+    return names
+
+
 def create_routes_from_zone_assignments(
     *,
     ship_date: date,
@@ -239,6 +266,7 @@ def create_routes_from_zone_assignments(
         driver.id: driver
         for driver in Driver.objects.filter(pk__in=by_driver.keys(), is_active=True).select_related("vehicle")
     }
+    zone_names = _driver_zone_names(zone_rows)
     created = []
     for driver_id, order_ids in by_driver.items():
         driver = drivers.get(driver_id)
@@ -251,7 +279,7 @@ def create_routes_from_zone_assignments(
             route_date=ship_date,
             driver=driver,
             order_ids=unique_ids,
-            name=driver.full_name,
+            name=_zone_label(zone_names.get(driver_id, [])) or driver.full_name,
             status=Route.Status.DRAFT,
         )
         created.append(route)

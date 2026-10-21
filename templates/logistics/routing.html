@@ -85,8 +85,16 @@
 
 {% if rows %}
 <div class="actions" style="margin-top:16px">
-  <form method="post" action="/logistics/routing">{% csrf_token %}
+  <form method="post" action="/logistics/routing" class="row">{% csrf_token %}
     <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+    <label>Дата загрузки
+      <input type="date" name="planned_load_date" value="{{ ship_date|date:'Y-m-d' }}">
+    </label>
+    {% for item in driver_loads %}
+    <label>Время · {{ item.name }}
+      <input type="time" name="load_time_{{ item.driver_id }}" step="1800">
+    </label>
+    {% endfor %}
     <button type="submit">Создать маршруты</button>
   </form>
   {% if existing_routes %}
@@ -98,6 +106,12 @@
         <option value="{{ route.id }}">{{ route.name|default:route.id }} · {{ route.driver.full_name|default:"без водителя" }}</option>
         {% endfor %}
       </select>
+    </label>
+    <label>Дата загрузки
+      <input type="date" name="planned_load_date" value="{{ ship_date|date:'Y-m-d' }}">
+    </label>
+    <label>Время загрузки
+      <input type="time" name="planned_load_time" step="1800">
     </label>
     <button type="submit" class="slim">Добавить заказы</button>
   </form>
