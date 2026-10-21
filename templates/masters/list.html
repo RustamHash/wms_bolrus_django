@@ -14,9 +14,9 @@
 <table class="sheet">
   <tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}<th></th></tr>
   {% for row in rows %}
-  <tr data-href="/masters/{{ kind }}/{{ row.id }}">
+  <tr data-href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">
     {% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}
-    <td><a href="/masters/{{ kind }}/{{ row.id }}">Изменить</a></td>
+    <td><a href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">Изменить</a></td>
   </tr>
   {% empty %}
   <tr><td colspan="{{ headers|length|add:1 }}">Пока пусто</td></tr>

@@ -6,16 +6,12 @@ from apps.inventory.models import Movement
 from apps.inventory.services import has_downstream, inbound_for_pallet, post_pick
 from apps.catalog.grade_policy import allowed_grade_ids
 from apps.planning.models import TaskLine
+from apps.planning.spec import same_spec, specificity
 from apps.storage.models import Pallet
 
 
 def _same_spec(movement, line: TaskLine) -> bool:
-    lot = movement.lot
-    return (
-        lot.product_id == line.product_id
-        and lot.caliber_id == line.caliber_id
-        and lot.grade_id == line.grade_id
-    )
+    return same_spec(movement.lot, line)
 
 
 @transaction.atomic
@@ -54,10 +50,26 @@ def pick_pallet(*, task_line_id: int, pallet_id: int, user):
 
 def waiting_pallets(task) -> list[dict]:
     rows = Movement.objects.filter(kind="in").select_related(
-        "task", "pallet__reserved_line", "pallet__reserved_client", "pallet__order", "task_line", "lot__grade"
+        "task",
+        "pallet__reserved_line",
+        "pallet__reserved_client",
+        "pallet__order",
+        "task_line",
+        "lot__product",
+        "lot__caliber",
+        "lot__grade",
     )
     found = []
-    lines = list(task.lines.all())
+    lines = sorted(
+        task.lines.select_related(
+            "order_line__order__consignee",
+            "order_line__caliber_from",
+            "order_line__caliber_to",
+            "caliber",
+            "grade",
+        ).prefetch_related("order_line__grades", "order_line__order__consignee__allowed_grades"),
+        key=specificity,
+    )
     consignee = task.order.consignee if task.order_id else None
     allowed = allowed_grade_ids(consignee)
     for movement in rows:

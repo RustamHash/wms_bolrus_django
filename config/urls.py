@@ -9,6 +9,7 @@ from apps.picking import views as picking
 from apps.planning import views as planning
 from apps.printing import views as printing
 from apps.receiving import views as receiving
+from apps.logistics import views as logistics
 from apps.shipping import views as shipping
 from apps.storage import views as storage
 from apps.tsd import views as tsd
@@ -22,6 +23,9 @@ urlpatterns = [
     path("logout", accept(post=accounts.logout_submit)),
     path("notices/seen", accept(post=accounts.notices_seen)),
     path("service", accounts.service_home),
+    path("service/imports", accounts.service_imports),
+    path("service/imports/customers", accept(post=planning.customer_orders_import_excel)),
+    path("service/imports/suppliers", accept(post=planning.supplier_orders_import_excel)),
     path("users", accept(accounts.users_list, accounts.users_create)),
     path("users/new", accounts.users_new),
     path("users/<int:user_id>/badge.png", accounts.users_badge_png),
@@ -56,6 +60,7 @@ urlpatterns = [
     path("orders/<int:order_id>/tasks", accept(post=planning.order_task)),
     path("orders/<int:order_id>", accept(planning.order_detail, planning.order_save)),
     path("tasks", accept(planning.task_list, planning.tasks_bulk)),
+    path("tasks/<int:task_id>/print", printing.task_sheet),
     path("tasks/<int:task_id>/status", accept(post=planning.task_status)),
     path("tasks/<int:task_id>/close", planning.task_close),
     path("tasks/<int:task_id>/close-order", accept(post=planning.task_close_order)),
@@ -83,6 +88,26 @@ urlpatterns = [
     path("crossdock", shipping.crossdock_redirect),
     path("shipments", shipping.shipment_list),
     path("shipments/<int:shipment_id>", shipping.shipment_detail),
+    path("logistics", logistics.index),
+    path("logistics/vehicles", accept(logistics.vehicle_list, logistics.vehicle_create)),
+    path("logistics/vehicles/new", logistics.vehicle_new),
+    path("logistics/vehicles/<int:item_id>", accept(logistics.vehicle_edit, logistics.vehicle_update)),
+    path("logistics/drivers", accept(logistics.driver_list, logistics.driver_create)),
+    path("logistics/drivers/new", logistics.driver_new),
+    path("logistics/drivers/<int:item_id>", accept(logistics.driver_edit, logistics.driver_update)),
+    path("logistics/routing", accept(logistics.routing, logistics.routing_create)),
+    path("logistics/routing/assign", accept(post=logistics.routing_assign)),
+    path("logistics/routing/add", accept(post=logistics.routing_add_to_route)),
+    path("logistics/routes", logistics.route_list),
+    path("logistics/routes/bulk", accept(post=logistics.routes_bulk)),
+    path("logistics/routes/<int:route_id>/add", accept(post=logistics.route_add_orders)),
+    path("logistics/routes/<int:route_id>/delete", accept(post=logistics.route_delete)),
+    path("logistics/routes/<int:route_id>/orders/<int:order_id>/move", accept(post=logistics.route_move_order)),
+    path("logistics/routes/<int:route_id>/orders/<int:order_id>/remove", accept(post=logistics.route_remove_order)),
+    path("logistics/routes/<int:route_id>/print", printing.route_sheet),
+    path("logistics/routes/<int:route_id>", accept(logistics.route_detail, logistics.route_save)),
+    path("logistics/schedule", accept(logistics.schedule, logistics.schedule_set_time)),
+    path("logistics/schedule/print", printing.schedule_sheet),
     path("print/units/<int:unit_id>.pdf", printing.unit_pdf),
     path("print/units/<int:unit_id>", printing.unit_print),
     path("print/pallets/<int:pallet_id>.pdf", printing.pallet_pdf),

@@ -105,6 +105,23 @@ body.tsd label { font-size: 18px; }
 body.tsd form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
 .hint { font-size: 14px; color: #5d6b61; }
+.import-log {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  background: #f4f7f5;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 13px/1.45 Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+.import-log[hidden] { display: none; }
+.page-bar .doc-filter .import-log { max-width: 720px; }
 .client-pick { position: relative; display: block; }
 .client-pick ul { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 280px; overflow: auto; background: white; border: 1px solid #b7c4b8; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
 .client-pick li { margin: 0; }
@@ -197,6 +214,30 @@ table.grouping-table textarea { min-height: 52px; resize: vertical; }
 .setup-modal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; background: rgba(0, 0, 0, .35); }
 .setup-modal .card { width: min(480px, 100%); max-height: 70vh; overflow: auto; }
 .setup-modal h3 { margin: 0 0 8px; font-size: 16px; }
+.import-log-modal { z-index: 50; align-items: center; }
+.import-log-modal .import-log-card {
+  width: min(720px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+  overflow: hidden;
+}
+.import-log-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-log-head h3 { margin: 0; font-size: 16px; }
+.import-log-modal .import-log {
+  flex: 1 1 auto;
+  margin: 0;
+  max-height: none;
+  min-height: 240px;
+  overflow: auto;
+}
+.import-log-actions { display: flex; justify-content: flex-end; margin: 0; }
 .setup-pick { max-height: 360px; overflow: auto; margin-bottom: 8px; }
 table.sheet tr.subtotal td { background: #f7f8f6; font-weight: 600; }
 h2.sheet-title { margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
@@ -238,3 +279,15 @@ button.xl-filter svg { width: 12px; height: 12px; display: block; margin: 0 auto
 .xl-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px; }
 .xl-actions button { padding: 4px 14px; font-size: 13px; }
 .xl-actions button.xl-cancel { background: white; color: var(--ink); border: 1px solid var(--line); }
+.inline-form { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
+.schedule-wrap { overflow: auto; max-width: 100%; background: white; border: 1px solid var(--line); border-radius: 6px; }
+table.schedule-grid { min-width: 1200px; font-size: 12px; }
+table.schedule-grid th, table.schedule-grid td { padding: 4px; vertical-align: top; }
+table.schedule-grid th { white-space: nowrap; font-size: 11px; }
+.schedule-driver { position: sticky; left: 0; background: #eef2ee; z-index: 1; min-width: 140px; font-weight: 600; }
+.schedule-cell { min-width: 72px; min-height: 48px; height: auto; vertical-align: top; }
+.schedule-card { display: block; padding: 4px 6px; margin: 0 0 4px; border-radius: 4px; background: #e5f4ea; color: var(--ink); text-decoration: none; line-height: 1.2; }
+.schedule-card b { display: block; font-size: 11px; }
+.schedule-card span { font-size: 10px; color: #5d6b61; }
+.schedule-untimed { margin: 0; padding-left: 18px; }
+.schedule-untimed li { margin: 0 0 8px; }

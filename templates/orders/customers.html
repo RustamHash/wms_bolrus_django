@@ -41,18 +41,29 @@
       <input type="hidden" name="sort" value="{{ sort }}">
       <input type="hidden" name="dir" value="{{ dir }}">
     </form>
-    <div class="tool-box stack">
-      {% if user.is_office %}
-      <form method="post" action="/orders/customers/import" enctype="multipart/form-data">{% csrf_token %}
-        <input type="file" name="file" accept=".xlsx" hidden data-import-file>
-        <label class="icon-btn" data-tip="Обновить существующие">
-          <input type="checkbox" name="update" value="1" aria-label="Обновить существующие">
+    {% if user.is_office %}
+    <form class="doc-filter" method="post" action="/orders/customers/import" data-onec-import data-onec-title="Импорт заказов покупателей из 1С">{% csrf_token %}
+      <div class="filter-row">
+        <label>Отгрузка из 1С
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ import_from }}" data-period required>
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ import_to }}" data-period required>
+          </span>
         </label>
-        <button type="button" class="icon-btn" data-tip="Импорт" data-import aria-label="Импорт">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
-        </button>
-      </form>
-      {% endif %}
+        <label class="check">
+          <input type="checkbox" name="by_number" value="1" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          По номеру
+        </label>
+        <label>Номер 1С
+          <input name="order_number" placeholder="НФНФ-000000" disabled>
+        </label>
+        <label class="check"><input type="checkbox" name="update" value="1"> Обновить</label>
+        <button class="slim">Импорт</button>
+      </div>
+    </form>
+    {% endif %}
+    <div class="tool-box stack">
       <a class="icon-btn" href="/orders/customers/revisions" data-tip="Расхождения" aria-label="Расхождения">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
       </a>
@@ -86,6 +97,8 @@
     <th>Версия</th>
     <th>Дата отгрузки</th>
     <th>Грузополучатель</th>
+    <th>Адрес доставки</th>
+    <th>Зона доставки</th>
     <th>Продавец</th>
     <th class="num">Кг</th>
     <th>Статус</th>
@@ -97,12 +110,14 @@
     <td>{% if row.order.revision > 1 %}<a href="/orders/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
     <td>{{ row.order.ship_date|date:"d.m.Y" }}</td>
     <td>{% if row.order.consignee_id %}{{ row.order.consignee.name }}{% else %}{{ row.order.client.name }}{% endif %}</td>
+    <td>{% if row.order.consignee_id %}{{ row.order.consignee.address }}{% endif %}</td>
+    <td>{% if row.order.consignee_id and row.order.consignee.zone_id %}{{ row.order.consignee.zone.name }}{% endif %}</td>
     <td>{{ row.order.seller.name }}</td>
     <td class="num">{{ row.kg|kg }}</td>
     <td>{{ DOC_STATUS|label:row.order.status }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="8">Заказов нет</td></tr>
+  <tr><td colspan="10">Заказов нет</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

@@ -104,6 +104,27 @@ def load_refs() -> dict:
     }
 
 
+def _alias_rows():
+    headers = ["Код 1С", "Номенклатура 1С", "Код", "Номенклатура"]
+    aliases = {
+        item.external_product_id: item
+        for item in ProductAlias.objects.select_related("product", "external_product")
+    }
+    rows = []
+    for external in ExternalProduct.objects.order_by("code"):
+        alias = aliases.get(external.id)
+        if alias is not None:
+            cells = [external.code, external.name, alias.product.code, alias.product.name]
+            href = f"/masters/aliases/{alias.id}"
+            row_id = alias.id
+        else:
+            cells = [external.code, external.name, "", ""]
+            href = f"/masters/aliases/new?external_product_id={external.id}"
+            row_id = external.id
+        rows.append({"id": row_id, "cells": cells, "href": href})
+    return headers, rows
+
+
 def master_rows(kind: str):
     model = MODELS[kind]
     if kind == "products":
@@ -111,7 +132,7 @@ def master_rows(kind: str):
     elif kind == "externals":
         items = model.objects.select_related("group").order_by("code")
     elif kind == "aliases":
-        items = model.objects.select_related("external_product", "product").order_by("external_product__code")
+        return _alias_rows()
     elif kind == "consignees":
         items = model.objects.select_related("zone").order_by("name")
     elif kind in ("groups", "zones"):
@@ -124,8 +145,6 @@ def master_rows(kind: str):
             cells = [item.code, item.barcode or "", item.group.name if item.group_id else "", item.name]
         elif kind == "externals":
             cells = [item.code, item.group.name if item.group_id else "", item.name]
-        elif kind == "aliases":
-            cells = [item.external_product.code, item.external_product.name, item.product.code, item.product.name]
         elif kind in ("calibers", "grades"):
             cells = [item.name, str(item.sort_order)]
         elif kind == "clients":

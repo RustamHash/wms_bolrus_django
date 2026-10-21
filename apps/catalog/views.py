@@ -95,7 +95,7 @@ def master_list(request, kind):
     )
 
 
-def _form_context(kind, item):
+def _form_context(kind, item, *, external_product_id=None):
     return {
         "kind": kind,
         "title": TITLES[kind],
@@ -106,6 +106,7 @@ def _form_context(kind, item):
         "groups": list(ProductGroup.objects.order_by("name")),
         "zones": list(DeliveryZone.objects.order_by("name")),
         "grades": list(Grade.objects.order_by("sort_order", "name")),
+        "external_product_id": external_product_id,
     }
 
 
@@ -113,7 +114,13 @@ def _form_context(kind, item):
 def master_new(request, kind):
     if kind not in MODELS:
         raise Http404
-    return render(request, "masters/form.html", _form_context(kind, None))
+    external_product_id = None
+    if kind == "aliases":
+        try:
+            external_product_id = int(request.GET.get("external_product_id") or 0) or None
+        except ValueError:
+            external_product_id = None
+    return render(request, "masters/form.html", _form_context(kind, None, external_product_id=external_product_id))
 
 
 @roles_required("office")

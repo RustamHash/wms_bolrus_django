@@ -51,9 +51,10 @@ def upsert_supplier(name: str, code: str = "") -> Supplier:
     return found
 
 
-def upsert_consignee(name: str, code: str = "") -> Consignee:
+def upsert_consignee(name: str, code: str = "", address: str = "") -> Consignee:
     name = _clean(name, 200)
     code = _clean(code, 32)
+    address = _clean(address, 1000)
     if not name:
         raise WarehouseError("Укажите грузополучателя")
     found = Consignee.objects.filter(code=code).first() if code else None
@@ -62,7 +63,7 @@ def upsert_consignee(name: str, code: str = "") -> Consignee:
         if named is not None and (not code or not named.code or named.code == code):
             found = named
     if found is None:
-        return Consignee.objects.create(name=name, code=code or None)
+        return Consignee.objects.create(name=name, code=code or None, address=address)
     changed = []
     if found.name != name:
         found.name = name
@@ -70,6 +71,9 @@ def upsert_consignee(name: str, code: str = "") -> Consignee:
     if code and found.code != code:
         found.code = code
         changed.append("code")
+    if address and found.address != address:
+        found.address = address
+        changed.append("address")
     if changed:
         found.save(update_fields=changed)
     return found

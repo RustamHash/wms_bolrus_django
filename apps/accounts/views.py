@@ -106,8 +106,20 @@ def service_home(request):
     return render(
         request,
         "hub.html",
-        {"title": "Сервис", "items": [{"href": "/tsd", "title": "ТСД"}, {"href": "/admin", "title": "Админка"}]},
+        {
+            "title": "Сервис",
+            "items": [
+                {"href": "/tsd", "title": "ТСД"},
+                {"href": "/admin", "title": "Админка"},
+                {"href": "/service/imports", "title": "Импорт Excel (запасной)"},
+            ],
+        },
     )
+
+
+@roles_required("office")
+def service_imports(request):
+    return render(request, "service/imports.html")
 
 
 def home(request):

@@ -6,17 +6,13 @@ from apps.common.numbers import document_number
 from apps.inventory.models import Movement
 from apps.inventory.services import pick_for_pallet, post_out
 from apps.planning.models import TaskLine
+from apps.planning.spec import same_spec, specificity
 from apps.shipping.models import Shipment, ShipmentUnit
 from apps.storage.models import Pallet
 
 
 def _same_spec(movement, line: TaskLine) -> bool:
-    lot = movement.lot
-    return (
-        lot.product_id == line.product_id
-        and lot.caliber_id == line.caliber_id
-        and lot.grade_id == line.grade_id
-    )
+    return same_spec(movement.lot, line)
 
 
 def _shipment(task, user) -> Shipment:
@@ -64,13 +60,25 @@ def ship_pallet(*, task_line_id: int, pallet_id: int, user, confirmed: bool):
 
 
 def waiting_pallets(task) -> list[dict]:
-    rows = Movement.objects.filter(kind="pick").select_related("task", "pallet", "lot")
+    rows = Movement.objects.filter(kind="pick").select_related(
+        "task", "pallet", "lot__product", "lot__caliber", "lot__grade"
+    )
     found = []
+    lines = sorted(
+        task.lines.select_related(
+            "order_line__order__consignee",
+            "order_line__caliber_from",
+            "order_line__caliber_to",
+            "caliber",
+            "grade",
+        ).prefetch_related("order_line__grades", "order_line__order__consignee__allowed_grades"),
+        key=specificity,
+    )
     for movement in rows:
         shipped = Movement.objects.filter(pallet_id=movement.pallet_id, kind="out").exists()
         if shipped or movement.task.order_id != task.order_id:
             continue
-        for line in task.lines.all():
+        for line in lines:
             if _same_spec(movement, line):
                 found.append({"line": line, "movement": movement})
                 break

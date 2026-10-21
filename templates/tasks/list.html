@@ -17,29 +17,62 @@
             {% endfor %}
           </select>
         </label>
+        {% if kind != "receive" %}
+        <label class="check">
+          <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()" aria-label="Разбить по группам" title="Разбить по группам">
+        </label>
+        {% endif %}
         <button class="slim">Найти</button>
       </div>
     </form>
-    <form id="tasks-bulk" class="doc-filter" method="post" action="/tasks" onsubmit="return confirm('Удалить выбранные задания?')">{% csrf_token %}
+    <form id="tasks-bulk" class="doc-filter" method="post" action="/tasks" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить отмеченные задания?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
       <input type="hidden" name="kind" value="{{ kind|default:'all' }}">
       <div class="filter-row">
         <span class="bulk-count" data-bulk-count="tasks-bulk">Выбрано: 0</span>
         <label>Действие
           <select name="action">
+            <option value="print">Печать</option>
             <option value="delete">Удалить</option>
           </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="print_groups" value="1">
+          Печать по группам
         </label>
         <button class="slim">Выполнить</button>
       </div>
     </form>
   </div>
 </div>
-<table class="sheet" data-bulk="tasks-bulk">
+<table class="sheet" data-bulk="tasks-bulk" {% if grouped %}id="tasks-grouped"{% endif %}>
   <tr>
     <th>Номер</th><th>Вид</th><th>Заказ</th>
     {% if kind == "receive" %}<th>Поставщик</th>{% endif %}
+    {% if kind != "receive" %}<th>Грузополучатель</th><th>Зона доставки</th>{% endif %}
     <th>Статус</th>
   </tr>
+  {% if grouped %}
+  {% for group in groups %}
+  <tr class="group" data-open="1">
+    <td colspan="6"><span class="fold">−</span> {{ group.title }} · {{ group.tasks|length }}</td>
+  </tr>
+  {% for task in group.tasks %}
+  <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
+    <td><a href="/tasks/{{ task.id }}">{{ task.number }}</a></td>
+    <td>{{ TASK_KIND|label:task.kind }}</td>
+    <td>
+      {% if task.purchase_order %}<a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>
+      {% elif task.order %}<a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>{% endif %}
+    </td>
+    <td>{% if task.order %}{% if task.order.consignee_id %}{{ task.order.consignee.name }}{% else %}{{ task.order.client.name }}{% endif %}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    <td>{{ TASK_STATUS|label:task.status }}</td>
+  </tr>
+  {% endfor %}
+  {% empty %}
+  <tr><td colspan="6">Заданий нет</td></tr>
+  {% endfor %}
+  {% else %}
   {% for task in tasks %}
   <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
     <td><a href="/tasks/{{ task.id }}">{{ task.number }}</a></td>
@@ -51,10 +84,37 @@
     {% if kind == "receive" %}
     <td>{% if task.supplier %}{{ task.supplier.name }}{% elif task.purchase_order %}{{ task.purchase_order.supplier.name }}{% endif %}</td>
     {% endif %}
+    {% if kind != "receive" %}
+    <td>{% if task.order %}{% if task.order.consignee_id %}{{ task.order.consignee.name }}{% else %}{{ task.order.client.name }}{% endif %}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    {% endif %}
     <td>{{ TASK_STATUS|label:task.status }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="{% if kind == 'receive' %}5{% else %}4{% endif %}">Заданий нет</td></tr>
+  <tr><td colspan="{% if kind == 'receive' %}5{% else %}6{% endif %}">Заданий нет</td></tr>
   {% endfor %}
+  {% endif %}
 </table>
+{% endblock %}
+{% block scripts %}
+{% if grouped %}
+<script>
+  const table = document.getElementById("tasks-grouped");
+  if (table) {
+    table.querySelectorAll("tr.group").forEach((row) => {
+      row.addEventListener("click", () => {
+        const open = row.dataset.open !== "0";
+        row.dataset.open = open ? "0" : "1";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = open ? "+" : "−";
+        let next = row.nextElementSibling;
+        while (next && !next.classList.contains("group")) {
+          next.classList.toggle("folded", open);
+          next = next.nextElementSibling;
+        }
+      });
+    });
+  }
+</script>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Импорт Excel{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Импорт заказов из Excel</h1>
+    <a class="btn slim" href="/service">К сервису</a>
+  </div>
+</div>
+<p class="hint">Запасной вариант. Основной импорт — из 1С на страницах заказов.</p>
+
+<div class="hub" style="grid-template-columns: 1fr 1fr; gap: 16px; max-width: 720px;">
+  <form class="doc-filter" method="post" action="/service/imports/customers" enctype="multipart/form-data" style="height:auto;">{% csrf_token %}
+    <h2 style="margin:0 0 8px; font-size:16px;">Заказы покупателей</h2>
+    <div class="filter-row">
+      <label>Файл шапки (.xlsx)
+        <input type="file" name="file" accept=".xlsx" required>
+      </label>
+    </div>
+    <div class="filter-row">
+      <label class="check"><input type="checkbox" name="update" value="1"> Обновить существующие</label>
+      <button class="slim">Импорт</button>
+    </div>
+  </form>
+
+  <form class="doc-filter" method="post" action="/service/imports/suppliers" enctype="multipart/form-data" style="height:auto;">{% csrf_token %}
+    <h2 style="margin:0 0 8px; font-size:16px;">Заказы поставщикам</h2>
+    <div class="filter-row">
+      <label>Файл (.xlsx)
+        <input type="file" name="file" accept=".xlsx" required>
+      </label>
+    </div>
+    <div class="filter-row">
+      <label class="check"><input type="checkbox" name="update" value="1"> Обновить существующие</label>
+      <button class="slim">Импорт</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -39,27 +39,32 @@
       </div>
     </form>
     {% if user.is_office %}
-    <div class="tool-box stack">
-      <form method="post" action="/orders/suppliers/import" enctype="multipart/form-data">{% csrf_token %}
-        <input type="file" name="file" accept=".xlsx" hidden data-import-file>
-        <label class="icon-btn" data-tip="Обновить существующие">
-          <input type="checkbox" name="update" value="1" aria-label="Обновить существующие">
+    <form class="doc-filter" method="post" action="/orders/suppliers/import" data-onec-import data-onec-title="Импорт заказов поставщикам из 1С">{% csrf_token %}
+      <div class="filter-row">
+        <label>Поступление из 1С
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ import_from }}" data-period required>
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ import_to }}" data-period required>
+          </span>
         </label>
-        <button type="button" class="icon-btn" data-tip="Импорт" data-import aria-label="Импорт">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
-        </button>
-      </form>
-      <a class="icon-btn" href="/orders/suppliers/revisions" data-tip="Расхождения" aria-label="Расхождения">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
-      </a>
-    </div>
-    {% else %}
+        <label class="check">
+          <input type="checkbox" name="by_number" value="1" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          По номеру
+        </label>
+        <label>Номер 1С
+          <input name="order_number" placeholder="НФНФ-000000" disabled>
+        </label>
+        <label class="check"><input type="checkbox" name="update" value="1"> Обновить</label>
+        <button class="slim">Импорт</button>
+      </div>
+    </form>
+    {% endif %}
     <div class="tool-box stack">
       <a class="icon-btn" href="/orders/suppliers/revisions" data-tip="Расхождения" aria-label="Расхождения">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
       </a>
     </div>
-    {% endif %}
     {% if user.is_office %}
     <form id="suppliers-bulk" class="doc-filter" method="post" action="/orders/suppliers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
       <div class="filter-row">

@@ -3,6 +3,9 @@
 {% block title %}{{ task.number }}{% endblock %}
 {% block content %}
 <h1>{{ task.number }} · {{ TASK_KIND|label:task.kind }}</h1>
+<div class="doc-bar">
+  <a class="btn slim" href="/tasks/{{ task.id }}/print" target="_blank">Печать</a>
+</div>
 <p>
   {% if task.purchase_order %}
   Заказ <a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>,
@@ -43,8 +46,8 @@
   {% for line in task.lines.all %}
   <tr>
     <td>{{ line.product.name }}</td>
-    <td>{% if line.caliber %}{{ line.caliber.name }}{% endif %}</td>
-    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% elif line.order_line_id %}любой{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% elif line.order_line_id %}любая{% endif %}</td>
     <td class="num">{{ line.qty_kg|kg }}</td>
     <td class="num">{{ received|get_item:line.id|kg }}</td>
   </tr>
@@ -92,7 +95,7 @@
 <form method="post" action="/tasks/{{ task.id }}/pick" class="row">{% csrf_token %}
   <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
   <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
-  <span>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.line.product.name }} {{ item.line.caliber.name }}{% if item.movement.pallet.order %} · резерв {{ item.movement.pallet.order.number }}{% elif item.movement.pallet.reserved_client %} · резерв {{ item.movement.pallet.reserved_client.name }}{% else %} · свободный остаток{% endif %}</span>
+  <span>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}{% if item.movement.pallet.order %} · резерв {{ item.movement.pallet.order.number }}{% elif item.movement.pallet.reserved_client %} · резерв {{ item.movement.pallet.reserved_client.name }}{% else %} · свободный остаток{% endif %}</span>
   <button>Отобрать паллету</button>
 </form>
 {% empty %}
@@ -106,7 +109,7 @@
 <form method="post" action="/tasks/{{ task.id }}/ship" class="card">{% csrf_token %}
   <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
   <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
-  <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.line.product.name }} {{ item.line.caliber.name }}</p>
+  <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}</p>
   <label><input type="checkbox" name="confirm" value="1"> Условия отгрузки проверены: {% if task.order %}{{ task.order.shipping_terms }}{% else %}не указаны{% endif %}</label>
   <button>Провести в накладную</button>
 </form>

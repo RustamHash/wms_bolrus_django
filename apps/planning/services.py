@@ -199,14 +199,17 @@ def unmapped_titles(order: Order) -> list[str]:
     return titles
 
 
-def _check_concrete(line: OrderLine, caliber: Caliber, grade: Grade) -> None:
-    if line.caliber_mode == "exact" and caliber.id != line.caliber_id:
-        raise WarehouseError("Калибр не совпадает со строкой заказа")
-    if line.caliber_mode == "range":
+def _check_concrete(line: OrderLine, caliber: Caliber | None, grade: Grade | None) -> None:
+    if line.caliber_mode == "exact":
+        if caliber is None or caliber.id != line.caliber_id:
+            raise WarehouseError("Калибр не совпадает со строкой заказа")
+    elif line.caliber_mode == "range" and caliber is not None:
         start = line.caliber_from.sort_order if line.caliber_from_id else None
         end = line.caliber_to.sort_order if line.caliber_to_id else None
         if start is None or end is None or caliber.sort_order < start or caliber.sort_order > end:
             raise WarehouseError("Калибр вне диапазона строки заказа")
+    if grade is None:
+        return
     allowed = set(line.grades.values_list("id", flat=True))
     if allowed and grade.id not in allowed:
         raise WarehouseError("Сортность не разрешена строкой заказа")
@@ -263,8 +266,8 @@ def create_task(*, order_id, kind, supplier_id, ttn_number, doc_date, lines, use
         if order_line.product_id != product.id:
             order_line.product = product
             order_line.save(update_fields=["product"])
-        caliber = get_row(Caliber, item["caliber_id"], "калибр")
-        grade = get_row(Grade, item["grade_id"], "сортность")
+        caliber = get_row(Caliber, item["caliber_id"], "калибр") if item.get("caliber_id") else None
+        grade = get_row(Grade, item["grade_id"], "сортность") if item.get("grade_id") else None
         _check_concrete(order_line, caliber, grade)
         qty = as_kg(item["qty_kg"])
         if qty <= 0:

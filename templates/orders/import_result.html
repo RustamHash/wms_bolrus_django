@@ -3,6 +3,11 @@
 {% block content %}
 <h1>{{ title }}</h1>
 <p><a class="btn slim" href="{{ list_href }}">К списку</a></p>
+{% if report.log %}
+<h2>Журнал</h2>
+<pre class="import-log">{% for line in report.log %}{{ line }}
+{% endfor %}</pre>
+{% endif %}
 <h2>Создано {{ report.created|length }}</h2>
 <table class="sheet">
   <tr><th>Номер</th><th>Номер 1С</th><th>{{ party_label }}</th><th class="num">Строк</th></tr>

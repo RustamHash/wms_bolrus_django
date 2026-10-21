@@ -46,8 +46,10 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.picking",
     "apps.shipping",
+    "apps.logistics",
     "apps.printing",
     "apps.tsd",
+    "apps.onec",
 ]
 
 if DEBUG:
@@ -102,6 +104,17 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 APPEND_SLASH = False
 SESSION_COOKIE_AGE = 60 * 60 * 14
 LOGIN_URL = "/login"
+
+ONEC_ODATA_URL = os.environ.get("ONEC_ODATA_URL", "").rstrip("/")
+ONEC_ODATA_USER = os.environ.get("ONEC_ODATA_USER", "")
+ONEC_ODATA_PASSWORD = os.environ.get("ONEC_ODATA_PASSWORD", "")
+ONEC_ODATA_TIMEOUT = float(os.environ.get("ONEC_ODATA_TIMEOUT", "60"))
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 if DEBUG:
     MIDDLEWARE.insert(0, "debug_toolbar.middleware.DebugToolbarMiddleware")

@@ -32,7 +32,7 @@
   <label>Номенклатура 1С
     <select name="external_product_id" required>
       {% for row in externals %}
-      <option value="{{ row.id }}" {% if item and item.external_product_id == row.id %}selected{% endif %}>{{ row.code }} · {{ row.name }}</option>
+      <option value="{{ row.id }}" {% if item and item.external_product_id == row.id or not item and external_product_id == row.id %}selected{% endif %}>{{ row.code }} · {{ row.name }}</option>
       {% endfor %}
     </select>
   </label>

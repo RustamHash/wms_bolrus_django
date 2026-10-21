@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import quote, urlencode
 
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.catalog.models import Client
@@ -21,6 +21,9 @@ from apps.inventory.services import has_downstream, received_kg
 from apps.picking.services import waiting_pallets as pick_waiting
 from apps.planning.models import Order, OrderLine, OrderRevision, PurchaseOrder, PurchaseOrderRevision, Task
 from apps.planning.revisions import revision_summary
+from apps.onec.exceptions import OnecError
+from apps.onec.sync import iter_sync_customer_orders, iter_sync_purchase_orders, sync_customer_orders, sync_purchase_orders
+from apps.planning.import_customer import ImportReport
 from apps.planning.import_customer import import_customer_orders
 from apps.planning.import_supplier import import_supplier_orders
 from apps.planning.services import (
@@ -329,6 +332,7 @@ def supplier_orders(request):
     if status in ("draft", "incoming", "closed"):
         query = query.filter(status=status)
     orders = list(query)
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
     return render(
         request,
         "orders/suppliers.html",
@@ -339,6 +343,8 @@ def supplier_orders(request):
             "date_to": request.GET.get("date_to") or "",
             "supplier_id": supplier_id,
             "status": status,
+            "import_from": tomorrow,
+            "import_to": tomorrow,
         },
     )
 
@@ -358,7 +364,10 @@ CUSTOMER_SORTS = {
 
 @roles_required("warehouse", "receiver")
 def customer_orders(request):
-    date_from = query_date(request.GET.get("date_from"))
+    if "date_from" in request.GET:
+        date_from = query_date(request.GET.get("date_from"))
+    else:
+        date_from = date.today()
     date_to = query_date(request.GET.get("date_to"))
     party = (request.GET.get("party") or "").strip()
     number = (request.GET.get("number") or "").strip()
@@ -370,7 +379,7 @@ def customer_orders(request):
         sort = "ship_date"
     if direction not in ("asc", "desc"):
         direction = "desc"
-    query = Order.objects.select_related("client", "seller", "consignee").annotate(
+    query = Order.objects.select_related("client", "seller", "consignee__zone").annotate(
         kg_total=Coalesce(
             Sum("lines__qty_kg", filter=Q(lines__for_task=True)),
             Value(Decimal("0.000")),
@@ -397,13 +406,14 @@ def customer_orders(request):
         field = f"-{field}"
     orders = list(query.order_by(field, "-id"))
     kept = {
-        "date_from": request.GET.get("date_from") or "",
+        "date_from": date_from.isoformat() if date_from else "",
         "date_to": request.GET.get("date_to") or "",
         "party": party,
         "number": number,
         "document": document,
         "status": status if status in ("open", "closed") else "",
     }
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
     return render(
         request,
         "orders/customers.html",
@@ -418,6 +428,8 @@ def customer_orders(request):
             "sort": sort,
             "dir": direction,
             "filter_query": urlencode({key: value for key, value in kept.items() if value}),
+            "import_from": tomorrow,
+            "import_to": tomorrow,
         },
     )
 
@@ -517,28 +529,106 @@ def _error(request, url, message):
     return redirect(url)
 
 
+def _onec_import_params(request, *, back: str):
+    from apps.onec.sync import delivery_period
+
+    update = request.POST.get("update") == "1"
+    by_number = request.POST.get("by_number") == "1"
+    number = (request.POST.get("order_number") or "").strip() if by_number else ""
+    if by_number and not number:
+        raise WarehouseError("Укажите номер заказа 1С")
+    date_from = date_to = None
+    if not by_number:
+        date_from, date_to = delivery_period(
+            query_date(request.POST.get("date_from")),
+            query_date(request.POST.get("date_to")),
+        )
+    return update, by_number, number, date_from, date_to
+
+
+def _onec_stream(iterator):
+    """Потоковая отдача журнала импорта (по строке).
+
+    Каждая строка дополняется паддингом ~2 КиБ — иначе runserver/прокси
+    буферизуют мелкие чанки и лог появляется только в конце.
+    """
+
+    pad = " " * 2048
+
+    def chunk(text: str) -> bytes:
+        return (text.rstrip("\n") + "\n" + pad + "\n").encode("utf-8")
+
+    def generate():
+        close_old_connections()
+        try:
+            yield chunk("Импорт начат…")
+            for item in iterator:
+                if isinstance(item, ImportReport):
+                    created = len(item.created)
+                    updated = len(item.updated)
+                    yield chunk(
+                        f"Итог: создано {created}, обновлено {updated}, "
+                        f"без изменений {len(item.unchanged)}"
+                    )
+                    continue
+                yield chunk(str(item))
+        except (OnecError, WarehouseError) as exc:
+            yield chunk(f"Ошибка: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            yield chunk(f"Ошибка: {exc}")
+        finally:
+            close_old_connections()
+
+    response = StreamingHttpResponse(generate(), content_type="text/plain; charset=utf-8")
+    response["Cache-Control"] = "no-cache, no-store"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
 @roles_required("office")
 def customer_orders_import(request):
-    upload = request.FILES.get("file")
-    filename = getattr(upload, "name", "") or ""
-    if not filename:
-        return _error(request, "/orders/customers", "Выберите файл шапки")
-    if not filename.lower().endswith(".xlsx"):
-        return _error(request, "/orders/customers", "Нужен файл .xlsx")
-    payload = upload.read()
+    """Импорт заказов покупателей из 1С по периоду отгрузки или по номеру."""
+    try:
+        update, by_number, number, date_from, date_to = _onec_import_params(request, back="/orders/customers")
+    except WarehouseError as exc:
+        return _error(request, "/orders/customers", str(exc))
+
+    if request.headers.get("X-Onec-Stream") == "1":
+        return _onec_stream(
+            iter_sync_customer_orders(
+                request.user,
+                update=update,
+                date_from=date_from,
+                date_to=date_to,
+                number=number or None,
+            )
+        )
 
     def action():
-        return import_customer_orders(payload, request.user, update=request.POST.get("update") == "1")
+        try:
+            return sync_customer_orders(
+                request.user,
+                update=update,
+                date_from=date_from,
+                date_to=date_to,
+                number=number or None,
+            )
+        except OnecError as exc:
+            raise WarehouseError(str(exc)) from exc
 
     result, response = guarded(request, "/orders/customers", action)
     if response:
         return response
+    if by_number:
+        title = f"Импорт из 1С · номер {number}"
+    else:
+        title = f"Импорт из 1С · отгрузка {date_from:%d.%m.%Y}–{date_to:%d.%m.%Y}"
     return render(
         request,
         "orders/import_result.html",
         {
             "report": result,
-            "title": "Импорт заказов покупателей",
+            "title": title,
             "list_href": "/orders/customers",
             "party_label": "Покупатель",
             "item_href": "/orders/",
@@ -548,18 +638,70 @@ def customer_orders_import(request):
 
 @roles_required("office")
 def supplier_orders_import(request):
+    """Импорт заказов поставщикам из 1С по периоду поступления или по номеру."""
+    try:
+        update, by_number, number, date_from, date_to = _onec_import_params(request, back="/orders/suppliers")
+    except WarehouseError as exc:
+        return _error(request, "/orders/suppliers", str(exc))
+
+    if request.headers.get("X-Onec-Stream") == "1":
+        return _onec_stream(
+            iter_sync_purchase_orders(
+                request.user,
+                update=update,
+                date_from=date_from,
+                date_to=date_to,
+                number=number or None,
+            )
+        )
+
+    def action():
+        try:
+            return sync_purchase_orders(
+                request.user,
+                update=update,
+                date_from=date_from,
+                date_to=date_to,
+                number=number or None,
+            )
+        except OnecError as exc:
+            raise WarehouseError(str(exc)) from exc
+
+    result, response = guarded(request, "/orders/suppliers", action)
+    if response:
+        return response
+    if by_number:
+        title = f"Импорт из 1С · номер {number}"
+    else:
+        title = f"Импорт из 1С · поступление {date_from:%d.%m.%Y}–{date_to:%d.%m.%Y}"
+    return render(
+        request,
+        "orders/import_result.html",
+        {
+            "report": result,
+            "title": title,
+            "list_href": "/orders/suppliers",
+            "party_label": "Поставщик",
+            "item_href": "/orders/suppliers/",
+            "revisions_href": "/orders/suppliers/",
+        },
+    )
+
+
+@roles_required("office")
+def customer_orders_import_excel(request):
     upload = request.FILES.get("file")
     filename = getattr(upload, "name", "") or ""
     if not filename:
-        return _error(request, "/orders/suppliers", "Выберите файл")
+        return _error(request, "/service/imports", "Выберите файл шапки")
     if not filename.lower().endswith(".xlsx"):
-        return _error(request, "/orders/suppliers", "Нужен файл .xlsx")
+        return _error(request, "/service/imports", "Нужен файл .xlsx")
     payload = upload.read()
 
     def action():
-        return import_supplier_orders(payload, request.user, update=request.POST.get("update") == "1")
+        return import_customer_orders(payload, request.user, update=request.POST.get("update") == "1")
 
-    result, response = guarded(request, "/orders/suppliers", action)
+    result, response = guarded(request, "/service/imports", action)
     if response:
         return response
     return render(
@@ -567,7 +709,36 @@ def supplier_orders_import(request):
         "orders/import_result.html",
         {
             "report": result,
-            "title": "Импорт заказов поставщикам",
+            "title": "Импорт Excel · заказы покупателей",
+            "list_href": "/orders/customers",
+            "party_label": "Покупатель",
+            "item_href": "/orders/",
+        },
+    )
+
+
+@roles_required("office")
+def supplier_orders_import_excel(request):
+    upload = request.FILES.get("file")
+    filename = getattr(upload, "name", "") or ""
+    if not filename:
+        return _error(request, "/service/imports", "Выберите файл")
+    if not filename.lower().endswith(".xlsx"):
+        return _error(request, "/service/imports", "Нужен файл .xlsx")
+    payload = upload.read()
+
+    def action():
+        return import_supplier_orders(payload, request.user, update=request.POST.get("update") == "1")
+
+    result, response = guarded(request, "/service/imports", action)
+    if response:
+        return response
+    return render(
+        request,
+        "orders/import_result.html",
+        {
+            "report": result,
+            "title": "Импорт Excel · заказы поставщикам",
             "list_href": "/orders/suppliers",
             "party_label": "Поставщик",
             "item_href": "/orders/suppliers/",
@@ -718,7 +889,7 @@ def _customer_task_lines(order, form=None):
         elif line.caliber_mode == "exact" and line.caliber_id:
             caliber_id = line.caliber_id
         else:
-            raise WarehouseError(f"Укажите калибр для {title}")
+            caliber_id = None
         from apps.catalog.grade_policy import effective_grade_ids
 
         effective = effective_grade_ids(line, order.consignee)
@@ -733,8 +904,8 @@ def _customer_task_lines(order, form=None):
             elif effective is not None and len(effective) == 0:
                 raise WarehouseError(f"Грузополучателю {order.consignee.name} нельзя сортность {title}")
             else:
-                raise WarehouseError(f"Укажите сортность для {title}")
-        if effective is not None and grade_id not in effective:
+                grade_id = None
+        if effective is not None and grade_id is not None and grade_id not in effective:
             raise WarehouseError(f"Грузополучателю {order.consignee.name} нельзя эту сортность для {title}")
         lines.append(
             {
@@ -750,7 +921,7 @@ def _customer_task_lines(order, form=None):
 def _load_customer_order(order_id):
     return (
         Order.objects.filter(pk=order_id)
-        .select_related("consignee")
+        .select_related("consignee__zone")
         .prefetch_related(
             "consignee__allowed_grades",
             "lines__external_product__alias__product",
@@ -907,6 +1078,22 @@ def order_task(request, order_id):
     return done(request, f"/tasks/{result.id}", "Задание создано")
 
 
+def _task_zone_groups(tasks):
+    buckets: dict[str, list] = {}
+    order: list[str] = []
+    for task in tasks:
+        zone = ""
+        if task.order_id and task.order.consignee_id and task.order.consignee.zone_id:
+            zone = task.order.consignee.zone.name
+        title = zone or "Без зоны"
+        if title not in buckets:
+            buckets[title] = []
+            order.append(title)
+        buckets[title].append(task)
+    order.sort(key=lambda name: (name == "Без зоны", name.casefold()))
+    return [{"title": title, "tasks": buckets[title]} for title in order]
+
+
 @roles_required("receiver", "warehouse")
 def task_list(request):
     kind = request.GET.get("kind") or ""
@@ -924,20 +1111,33 @@ def task_list(request):
                 ],
             },
         )
-    query = Task.objects.select_related("supplier", "purchase_order__supplier", "order").order_by("-id")
+    query = Task.objects.select_related(
+        "supplier",
+        "purchase_order__supplier",
+        "order__client",
+        "order__consignee__zone",
+    ).order_by("-id")
     if kind in ("receive", "pick", "ship"):
         query = query.filter(kind=kind)
     else:
         kind = ""
-    return render(request, "tasks/list.html", {"tasks": list(query), "kind": kind})
+    tasks = list(query)
+    grouped = kind != "receive" and request.GET.get("grouped") == "1"
+    groups = _task_zone_groups(tasks) if grouped else []
+    return render(
+        request,
+        "tasks/list.html",
+        {"tasks": tasks, "kind": kind, "grouped": grouped, "groups": groups},
+    )
 
 
 @roles_required("receiver", "warehouse")
 def tasks_bulk(request):
+    from apps.printing.views import load_print_tasks, task_sheet_response
+
     raw_kind = text(request.POST, "kind")
     back = f"/tasks?kind={raw_kind}" if raw_kind in ("receive", "pick", "ship", "all") else "/tasks"
-    if text(request.POST, "action") != "delete":
-        return _error(request, back, "Выберите действие")
+    action = text(request.POST, "action")
     ids = []
     for raw in request.POST.getlist("id"):
         try:
@@ -946,6 +1146,13 @@ def tasks_bulk(request):
             continue
     if not ids:
         return _error(request, back, "Отметьте задания")
+    if action == "print":
+        tasks = load_print_tasks(ids)
+        if not tasks:
+            return _error(request, back, "Задания не найдены")
+        return task_sheet_response(tasks, by_groups=text(request.POST, "print_groups") == "1")
+    if action != "delete":
+        return _error(request, back, "Выберите действие")
     deleted, failed = delete_tasks(ids)
     if deleted:
         notify(request.user, [f"Задание {number} — удалено" for number in deleted])

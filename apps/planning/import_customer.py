@@ -36,6 +36,7 @@ class ImportReport:
     skipped_units: list[dict] = field(default_factory=list)
     empty: list[str] = field(default_factory=list)
     other_status: int = 0
+    log: list[str] = field(default_factory=list)
 
 
 def _parse_date(raw: str) -> date | None:

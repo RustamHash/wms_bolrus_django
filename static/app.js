@@ -585,6 +585,101 @@ function bindNotices() {
   box.addEventListener("focusin", mark);
 }
 
+function openImportLogModal(title) {
+  document.querySelectorAll("[data-import-log-modal]").forEach((node) => node.remove());
+  const modal = document.createElement("div");
+  modal.className = "setup-modal import-log-modal";
+  modal.setAttribute("data-import-log-modal", "");
+  modal.innerHTML =
+    `<div class="card import-log-card" role="dialog" aria-modal="true" aria-labelledby="import-log-title">` +
+    `<div class="import-log-head">` +
+    `<h3 id="import-log-title"></h3>` +
+    `<button type="button" class="slim alt" data-close>Закрыть</button>` +
+    `</div>` +
+    `<pre class="import-log" data-onec-log></pre>` +
+    `<div class="actions import-log-actions">` +
+    `<button type="button" class="slim alt" data-close>Закрыть</button>` +
+    `</div>` +
+    `</div>`;
+  modal.querySelector("#import-log-title").textContent = title || "Импорт из 1С";
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    modal.remove();
+  };
+  modal.querySelectorAll("[data-close]").forEach((btn) => btn.addEventListener("click", close));
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(modal);
+  return modal.querySelector("[data-onec-log]");
+}
+
+function bindOnecImport() {
+  document.querySelectorAll("form[data-onec-import]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const byNumber = form.elements.namedItem("by_number");
+      const orderNumber = form.elements.namedItem("order_number");
+      if (byNumber && byNumber.checked && orderNumber && !(orderNumber.value || "").trim()) {
+        alert("Укажите номер заказа 1С");
+        return;
+      }
+      const title = form.getAttribute("data-onec-title") || "Импорт из 1С";
+      const log = openImportLogModal(title);
+      log.textContent = "Запрос к серверу…\n";
+      log.scrollTop = log.scrollHeight;
+      const button = form.querySelector("button.slim, button[type='submit']");
+      if (button) button.disabled = true;
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          headers: { "X-Onec-Stream": "1", Accept: "text/plain" },
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.body) {
+          log.textContent = `Ошибка HTTP ${response.status}\n`;
+          return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let pending = "";
+        const append = (raw) => {
+          // Сервер добивает строки пробелами для сброса буфера — убираем их.
+          pending += raw.replace(/ +\n/g, "\n");
+          const parts = pending.split("\n");
+          pending = parts.pop() || "";
+          if (!parts.length) return;
+          log.textContent += parts.join("\n") + "\n";
+          log.scrollTop = log.scrollHeight;
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          append(decoder.decode(value, { stream: true }));
+        }
+        append(decoder.decode());
+        if (pending) {
+          log.textContent += pending.replace(/ +$/g, "") + "\n";
+          log.scrollTop = log.scrollHeight;
+        }
+        if (!response.ok && log.textContent.trim() === "Запрос к серверу…") {
+          log.textContent = `Ошибка HTTP ${response.status}\n`;
+        }
+      } catch (err) {
+        log.textContent += `Ошибка: ${err}\n`;
+      } finally {
+        if (button) button.disabled = false;
+      }
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bindNotices();
   bindVarietyFilter();
@@ -596,4 +691,5 @@ document.addEventListener("DOMContentLoaded", () => {
   bindFilePick();
   bindSheetMarks();
   bindExcelFilters();
+  bindOnecImport();
 });
