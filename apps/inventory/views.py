@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
 
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -8,6 +10,7 @@ from apps.catalog.models import ProductGroup
 from apps.common.forms import query_date
 from apps.common.http import roles_required
 from apps.common.kg import as_kg
+from apps.common.xlsx import write_book
 from apps.inventory.services import stock_rows
 from apps.planning.services import demand_report, group_demand
 
@@ -473,6 +476,144 @@ def _demand_categories(request):
     return rows, chosen if marked else None
 
 
+_LINE_KG = {
+    "ordered": "ordered_kg",
+    "picked": "picked_kg",
+    "stock": "stock_kg",
+    "incoming": "incoming_kg",
+    "short": "short_kg",
+}
+
+
+def _demand_line_cell(row, column):
+    key = column["key"]
+    if key == "order":
+        return row["order_number"] or ""
+    if key == "ship_date":
+        return row["ship_date"]
+    if key in _LINE_KG:
+        return row[_LINE_KG[key]]
+    return row.get(key) or ""
+
+
+def _demand_sum_cell(source, column, text_style, num_style):
+    if column.get("total_label"):
+        return source["title"], text_style
+    field = _LINE_KG.get(column["key"])
+    if field:
+        return source[field], num_style
+    return None, text_style
+
+
+def _demand_order_rows(context) -> list[list]:
+    columns = context["columns"]
+    header = [(column["label"], "header") for column in columns] or [("Поля", "header")]
+    rows = [header]
+
+    def walk(nodes):
+        for item in nodes:
+            if item["title"]:
+                titled = {**item, "title": ("  " * item["level"]) + item["title"]}
+                rows.append(
+                    [_demand_sum_cell(titled, column, "group", "group_num") for column in columns]
+                    or [(item["title"], "group")]
+                )
+            walk(item["children"])
+            for line in item["rows"]:
+                rows.append([_demand_line_cell(line, column) for column in columns])
+
+    groups = context["groups"]
+    if groups:
+        walk(groups)
+        totals = {
+            "title": "Итого",
+            "ordered_kg": context["ordered_total"],
+            "picked_kg": context["picked_total"],
+            "stock_kg": context["stock_total"],
+            "incoming_kg": context["incoming_total"],
+            "short_kg": context["short_total"],
+        }
+        rows.append([_demand_sum_cell(totals, column, "total", "total_num") for column in columns] or [("Итого", "total")])
+    else:
+        if context["filtered"]:
+            message = "Ничего не найдено."
+        elif context["has_orders"]:
+            message = "Нехватки нет."
+        else:
+            message = "Открытых заказов нет."
+        rows.append([(message, "text")])
+    return rows
+
+
+def _demand_inbound_rows(context) -> list[list]:
+    header = [
+        ("Заказ", "header"),
+        ("Поставщик", "header"),
+        ("Поступление", "header"),
+        ("Товар", "header"),
+        ("Калибр", "header"),
+        ("Сортность", "header"),
+        ("Заказано", "header"),
+        ("Принято", "header"),
+        ("Осталось", "header"),
+    ]
+    rows = [header]
+    inbound = context["inbound"]
+    if not inbound:
+        if context["date_from"] or context["date_to"] or context["product"]:
+            message = "Ничего не найдено."
+        else:
+            message = "Нет заказов, которые ещё нужно принять."
+        rows.append([(message, "text")])
+        return rows
+    for row in inbound:
+        rows.append(
+            [
+                row["order_number"] or "",
+                row["supplier"] or "",
+                row["receipt_date"],
+                row["product"] or "",
+                row["caliber"] or "",
+                row["grade"] or "",
+                row["ordered_kg"],
+                row["received_kg"],
+                row["left_kg"],
+            ]
+        )
+    rows.append(
+        [
+            ("Итого к приёмке", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            (context["inbound_total"], "total_num"),
+        ]
+    )
+    return rows
+
+
+def _demand_xlsx(context) -> HttpResponse:
+    content = write_book(
+        [
+            ("Под заказы", _demand_order_rows(context)),
+            ("К приёмке", _demand_inbound_rows(context)),
+        ]
+    )
+    start = context["date_from"] or ""
+    end = context["date_to"] or ""
+    name = f"потребность-{start}-{end}.xlsx" if start or end else "потребность.xlsx"
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename=demand.xlsx; filename*=UTF-8''{quote(name)}"
+    return response
+
+
 @roles_required("receiver", "warehouse")
 def demand(request):
     chosen = request.GET.getlist("all")
@@ -482,7 +623,8 @@ def demand(request):
     picks = _demand_picks(request)
     sorts = _demand_sorts(request)
     categories, category_ids = _demand_categories(request)
-    built = request.GET.get("run") == "1"
+    export = request.GET.get("export") == "xlsx"
+    built = request.GET.get("run") == "1" or export
     filters = _demand_query(request)
     picks_on = any(_pick_live(pick) for pick in picks)
     ordering = _ordering(sorts)
@@ -538,4 +680,6 @@ def demand(request):
             "inbound_total": as_kg(sum((row["left_kg"] for row in inbound), Decimal("0"))),
         }
     )
+    if export:
+        return _demand_xlsx(context)
     return render(request, "demand.html", context)
