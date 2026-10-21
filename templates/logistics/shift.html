@@ -73,13 +73,7 @@
         <td>{{ order.weight|kg }}</td>
         <td>{{ PURCHASE_STATUS|label:order.status }}</td>
         <td>{{ order.receive }}</td>
-        <td>
-          <form method="post" action="/shift/incoming/{{ order.id }}/comment" class="inline-form">{% csrf_token %}
-            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
-            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
-            <input name="comment" value="{{ order.comment }}" onchange="this.form.submit()">
-          </form>
-        </td>
+        <td>{{ order.comment|default:"—" }}</td>
         <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.arrived_at kind="incoming" item_id=order.id action="arrive" label="Прибыл" %}</td>
         <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.gate_at kind="incoming" item_id=order.id action="gate" label="Постановка" %}</td>
         <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.receive_finished_at kind="incoming" item_id=order.id action="finish" label="Окончание" %}</td>

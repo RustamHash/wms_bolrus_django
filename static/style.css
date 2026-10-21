@@ -386,15 +386,14 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .journal-table button.xl-filter svg { width: 10px; height: 10px; }
 
 body:has(.shift-page) { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
-body:has(.shift-page) main { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.shift-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body:has(.shift-page) main { flex: 1; min-width: 0; width: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.shift-page { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; }
 .shift-page .page-bar { margin-bottom: 8px; }
-.shift-page input[name="comment"] { width: 180px; }
 .shift-presets { display: flex; gap: 6px; align-items: flex-end; }
-.shift-board { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-.shift-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.shift-board { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.shift-pane { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; }
 .shift-pane.routes { flex: 1.25; }
 .shift-pane h2 { margin: 0 0 4px; font-size: 15px; }
-.shift-scroll { flex: 1; min-height: 0; overflow: auto; background: #fff; }
-.shift-scroll table.sheet { border-collapse: separate; border-spacing: 0; }
+.shift-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; background: #fff; }
+.shift-scroll table.sheet { width: 100%; min-width: max(100%, max-content); border-collapse: separate; border-spacing: 0; }
 .shift-scroll table.sheet tr:first-child th { position: sticky; top: 0; z-index: 2; background: #eef2ee; }
