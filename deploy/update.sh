@@ -11,12 +11,14 @@ fi
 
 mkdir -p "$APP_DIR"
 rsync -a --delete \
+  --no-owner --no-group \
   --exclude '.git/' \
   --exclude '.venv/' \
   --exclude '.env' \
   --exclude 'pgdata/' \
   --exclude 'staticfiles/' \
   --exclude '__pycache__/' \
+  --exclude 'deploy/traefik/acme.json' \
   "$SRC"/ "$APP_DIR"/
 
 if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
