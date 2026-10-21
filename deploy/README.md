@@ -1,7 +1,8 @@
 # Деплой WMS BolRus (сервер с нуля)
 
-Стек: Ubuntu → PostgreSQL → Django (gunicorn/systemd на `127.0.0.1:8050`) → Traefik (Docker, HTTPS).  
-Домен: `wms.bolrus.ru`. LAN-сервер: `192.168.1.109`.
+Стек: Ubuntu → PostgreSQL → Django (gunicorn/systemd на `127.0.0.1:8050`) → Traefik (Docker, `network_mode: host`, HTTPS).  
+Домен: `wms.bolrus.ru`. LAN-сервер: `192.168.1.109`.  
+Traefik слушает 80/443 на хосте и проксирует на `http://127.0.0.1:8050` (gunicorn снаружи не торчит).
 
 После установки вход: пользователь `admin` / PIN `0000` (из `seed`).
 
@@ -156,27 +157,23 @@ curl -sI http://127.0.0.1:8050/ | head
 
 ---
 
-## 7. Traefik (HTTPS)
+## 7. Traefik (HTTPS, host network)
 
-При необходимости поправьте email в `/opt/wms/deploy/traefik/traefik.yml` (`admin@bolrus.ru`).
+`network_mode: host` — порты 80/443 на хосте, бэкенд `http://127.0.0.1:8050`.  
+Email ACME: `traefik.yml` → `certificatesResolvers.le.acme.email`.
 
 ```bash
 cd /opt/wms/deploy/traefik
 sudo touch acme.json
 sudo chmod 600 acme.json
+sudo docker compose down
 sudo docker compose up -d
-sudo docker compose ps
-sudo docker compose logs --tail=80
+sudo docker compose logs --tail=40
+curl -skI -H 'Host: wms.bolrus.ru' https://127.0.0.1/ | head -5
 ```
 
-Проверка с сервера (после того как DNS уже указывает на этот хост):
-
-```bash
-curl -I https://wms.bolrus.ru
-```
-
-Ожидается `HTTP/2 200` или `302`, сертификат Let's Encrypt.  
-Если ACME падает — проверьте DNS, проброс 80/443 и логи Traefik.
+Ожидается `HTTP/2 302` или `200` (не 502).  
+ACME: DNS A + проброс 80/443. CI не перезапускает Traefik — конфиг меняется редко, вручную как выше.
 
 ---
 
