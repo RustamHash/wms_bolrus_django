@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Инвентаризация</h1>
+    <a class="btn slim" href="/inventory/new">Новая</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Режим</th><th>Статус</th><th>Посчитано</th></tr>
+  {% for document in documents %}
+  <tr data-href="/inventory/{{ document.id }}">
+    <td><a href="/inventory/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_scope_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{% if document.status == "draft" %}—{% else %}{{ document.counted_count }} из {{ document.line_count }}{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

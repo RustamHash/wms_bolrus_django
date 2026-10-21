@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.shortcuts import redirect, render
+from django.utils import timezone
 
 from apps.catalog.models import ProductGroup
 from apps.common.forms import query_date
@@ -121,8 +122,13 @@ def _contains(value: str, needle: str) -> bool:
 
 
 def _demand_query(request):
-    date_from_raw = request.GET.get("date_from") or ""
-    date_to_raw = request.GET.get("date_to") or ""
+    if "date_from" not in request.GET and "date_to" not in request.GET:
+        today = timezone.localdate()
+        date_from_raw = today.isoformat()
+        date_to_raw = (today + timedelta(days=7)).isoformat()
+    else:
+        date_from_raw = request.GET.get("date_from") or ""
+        date_to_raw = request.GET.get("date_to") or ""
     product = (request.GET.get("product") or "").strip()
     party = (request.GET.get("party") or "").strip()
     date_from = query_date(date_from_raw)

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/inventory">К списку</a>
+      {% if document.status == "draft" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <button class="slim" type="submit">Начать</button>
+      </form>
+      {% endif %}
+      {% if document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести инвентаризацию и поправить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      {% endif %}
+      {% if document.status == "draft" or document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить инвентаризацию?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }} · {{ document.get_scope_display }}{% if document.status == "counting" or document.status == "posted" %} · посчитано {{ counted }} из {{ lines|length }}{% endif %}{% if document.notes %} · {{ document.notes }}{% endif %}</p>
+{% if products %}
+<p class="hint">Номенклатура: {% for product in products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+{% endif %}
+
+{% if document.status == "draft" %}
+<p class="hint">Нажмите «Начать», чтобы зафиксировать учётный вес паллет на складе.</p>
+{% elif open %}
+<p class="hint">Паспорт не нужен: факт и поставщик вводятся в строке. Ноль — паллеты нет. Если паллеты нет в учёте, добавьте её внизу: на остаток она встанет после проводки.</p>
+{% endif %}
+
+{% if lines %}
+<table class="sheet">
+  <tr>
+    <th>Паллета</th>
+    <th>Товар</th>
+    <th>Место</th>
+    <th>Учёт, кг</th>
+    <th>Факт, кг</th>
+    <th>Поставщик</th>
+    <th>Расхождение</th>
+    {% if open %}<th></th>{% endif %}
+  </tr>
+  {% for line in lines %}
+  <tr>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number|default:line.pallet_id }}</a>{% else %}новая{% endif %}</td>
+    <td>{% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</td>
+    <td>{{ line.location|default:"—" }}</td>
+    <td>{{ line.book_kg|kg }}</td>
+    <td>
+      {% if open %}
+      <input form="line-{{ line.id }}" name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal">
+      {% elif line.fact_kg != None %}{{ line.fact_kg|kg }}{% else %}—{% endif %}
+    </td>
+    <td>
+      {% if open %}
+      <select form="line-{{ line.id }}" name="supplier_id">
+        {% for supplier in suppliers %}
+        <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+        {% endfor %}
+      </select>
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% else %}
+      {{ line.supplier.name }}
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% endif %}
+    </td>
+    <td>{% if line.delta_kg != None %}{{ line.delta_kg|kg }}{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form id="line-{{ line.id }}" method="post" action="/inventory/{{ document.id }}/line" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="line_id" value="{{ line.id }}">
+        <button class="slim" type="submit">Сохранить</button>
+      </form>
+      {% if line.found %}
+      <form method="post" action="/inventory/{{ document.id }}/found/{{ line.id }}/delete" class="inline-form" onsubmit="return confirm('Убрать эту паллету из документа?');">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif document.status != "draft" %}
+<p class="hint">В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+{% endif %}
+{% if open %}
+<h2>Паллета не из учёта</h2>
+<form method="post" action="/inventory/{{ document.id }}/found" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in all_products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Место <input name="location" maxlength="120"></label>
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}

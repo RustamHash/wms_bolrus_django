@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая инвентаризация</h1>
+    <a class="btn slim" href="/inventory">К списку</a>
+  </div>
+</div>
+<form method="post" action="/inventory" class="card">{% csrf_token %}
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Режим
+    <select name="scope">
+      <option value="all">Весь склад</option>
+      <option value="products">Выбранные номенклатуры</option>
+    </select>
+  </label>
+  <label>Номенклатура
+    <select name="product_id" multiple size="12">
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Для режима «Выбранные номенклатуры» отметьте товары. Калибр и сорт не ограничивают снимок.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "tsd_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>Инвентаризация</h1>
+<nav class="digit-menu">
+  {% for document in documents %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}" {% if forloop.counter <= 9 %}data-digit="{{ forloop.counter }}"{% endif %}>
+    {% if forloop.counter <= 9 %}<span class="digit">{{ forloop.counter }}</span>{% endif %}
+    <span>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</span>
+  </a>
+  {% empty %}
+  <p>Открытых подсчётов нет.</p>
+  {% endfor %}
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}

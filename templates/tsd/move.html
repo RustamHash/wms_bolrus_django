@@ -1,0 +1,22 @@
+{% extends "tsd_base.html" %}
+{% block content %}
+<h1>Перемещение</h1>
+<form method="get" action="/tsd/move">
+  <label>Паллета <input name="barcode" value="{{ barcode }}" {% if not pallet %}autofocus{% endif %} placeholder="PL или номер"></label>
+  <button class="btn menu">Найти</button>
+</form>
+{% if missing %}
+<p>Паллета не найдена.</p>
+{% endif %}
+{% if pallet %}
+<p>{{ pallet.number }}{% if pallet.location %} · сейчас {{ pallet.location }}{% else %} · ячейка не задана{% endif %}</p>
+<form method="post" action="/tsd/move">{% csrf_token %}
+  <input type="hidden" name="pallet_id" value="{{ pallet.id }}">
+  <label>Новая ячейка <input name="location" value="{{ pallet.location }}" autofocus required></label>
+  <button class="btn menu">Переместить</button>
+</form>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}

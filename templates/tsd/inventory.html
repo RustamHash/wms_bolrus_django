@@ -1,0 +1,88 @@
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ document.number }}</h1>
+<p class="hint">{{ document.doc_date|date:"d.m.Y" }}. Паспорт не обязателен: откройте паллету в списке по товару и месту. Скан — если паспорт на месте.</p>
+<form method="get" action="/tsd/inventory/{{ document.id }}">
+  <label>Паллета
+    <input name="barcode" value="{{ barcode }}" autofocus placeholder="Номер или штрихкод">
+  </label>
+  <button class="btn menu">Найти</button>
+</form>
+{% if line %}
+<p>{% if line.pallet_id %}{{ line.pallet.number|default:line.pallet_id }}{% else %}Новая паллета{% endif %} · {% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</p>
+<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.location %} · {{ line.location }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
+<form method="post" action="/tsd/inventory/{{ document.id }}">{% csrf_token %}
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <label>Факт, кг
+    <input name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal" required>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Ноль — паллеты нет на складе.</p>
+  <button class="btn menu" type="submit">Сохранить</button>
+</form>
+{% elif missing %}
+<p>Паллеты нет в этом документе.</p>
+{% endif %}
+{% if not line %}
+<nav class="digit-menu">
+  {% for item in lines %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}?line={{ item.id }}">
+    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.location %} · {{ item.location }}{% endif %}</span>
+  </a>
+  {% empty %}
+  <p>В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+  {% endfor %}
+</nav>
+<h2>Нет в учёте</h2>
+<form method="post" action="/tsd/inventory/{{ document.id }}/found">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Место <input name="location" maxlength="120"></label>
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <button class="btn menu" type="submit">Добавить на остаток</button>
+</form>
+{% else %}
+<p><a href="/tsd/inventory/{{ document.id }}">Все паллеты</a></p>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd/inventory"><span class="digit">0</span>К списку</a>
+</nav>
+{% endblock %}
