@@ -4,3 +4,4 @@ __pycache__/
 .env
 staticfiles/
 pgdata/
+deploy/traefik/acme.json

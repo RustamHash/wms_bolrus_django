@@ -1,0 +1,15 @@
+http:
+  routers:
+    wms:
+      rule: Host(`wms.bolrus.ru`)
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: le
+      service: wms
+
+  services:
+    wms:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:8050
