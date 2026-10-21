@@ -31,6 +31,16 @@
     </div>
     <a href="/shipments" class="{% if request.path|startswith:'/shipments' %}active{% endif %}">Накладные</a>
     {% if user.is_authenticated and user.is_office %}
+    <div class="menu-group">
+      <a href="/logistics" class="{% if request.path|startswith:'/logistics' %}active{% endif %}">Логистика</a>
+      <div>
+        <a href="/logistics/routing">Маршрутизация</a>
+        <a href="/logistics/routes">Маршруты</a>
+        <a href="/logistics/schedule">График отгрузки</a>
+        <a href="/logistics/drivers">Водители</a>
+        <a href="/logistics/vehicles">Автомобили</a>
+      </div>
+    </div>
     <a href="/masters" class="{% if request.path|startswith:'/masters' or request.path|startswith:'/users' or request.path|startswith:'/office' %}active{% endif %}">Справочники</a>
     {% endif %}
     {% if user.is_authenticated and user.opens_admin %}

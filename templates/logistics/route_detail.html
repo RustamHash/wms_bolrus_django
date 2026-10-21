@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ route.name|default:"Маршрут" }} · {{ route.route_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/logistics/routes?date={{ route.route_date|date:'Y-m-d' }}">К списку</a>
+      <a class="btn slim" href="/logistics/routes/{{ route.id }}/print" target="_blank">Маршрутный лист</a>
+      <form method="post" action="/logistics/routes/{{ route.id }}/delete" class="inline-form" onsubmit="return confirm('Удалить маршрут? Заказы снова станут свободными.');">{% csrf_token %}
+        <button type="submit" class="slim">Удалить</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/logistics/routes/{{ route.id }}" class="card grid">{% csrf_token %}
+  <label>Название <input name="name" value="{{ route.name }}"></label>
+  <label>Водитель
+    <select name="driver_id">
+      <option value=""></option>
+      {% for driver in drivers %}
+      <option value="{{ driver.id }}" {% if route.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Статус
+    <select name="status">
+      {% for value, label in statuses.choices %}
+      <option value="{{ value }}" {% if route.status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>План: дата <input type="date" name="planned_load_date" value="{{ load_date }}"></label>
+  <label>План: время <input type="time" name="planned_load_time" value="{{ load_time }}" step="1800"></label>
+  <label>Факт: дата <input type="date" name="actual_load_date" value="{{ actual_date }}"></label>
+  <label>Факт: время отгрузки <input type="time" name="actual_load_time" value="{{ actual_time }}" step="60"></label>
+  <label class="wide">Комментарий <textarea name="notes">{{ route.notes }}</textarea></label>
+  <p class="hint wide">План погрузки может быть накануне рейса ({{ route.route_date|date:"d.m.Y" }}). Факт — фактическое время отгрузки. Авто: {{ route.vehicle_text|default:"—" }} · Всего {{ stops|length }} ост. · {{ total_kg|kg }} кг</p>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+
+<h2>Остановки</h2>
+{% if stops %}
+<table class="sheet">
+  <tr><th>№</th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th></tr>
+  {% for stop in stops %}
+  <tr>
+    <td>{{ stop.position }}</td>
+    <td><a href="/orders/{{ stop.order_id }}">{{ stop.order.number|default:stop.order_id }}</a></td>
+    <td>{{ stop.order.client.name }}</td>
+    <td>{% if stop.order.consignee %}{{ stop.order.consignee.name }}{% endif %}</td>
+    <td>{% if stop.order.consignee %}{{ stop.order.consignee.address }}{% endif %}</td>
+    <td>{% if stop.order.consignee and stop.order.consignee.zone %}{{ stop.order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
+    <td>{{ stop.weight_kg|kg }}</td>
+    <td>
+      {% for task in stop.ship_tasks %}
+      <a href="/tasks/{{ task.id }}">{{ task.number|default:task.id }}</a>{% if not forloop.last %}, {% endif %}
+      {% empty %}—{% endfor %}
+    </td>
+    <td class="fit">
+      {% if route.status == 'draft' or route.status == 'planned' %}
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/move" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="direction" value="up">
+        <button class="slim" type="submit" {% if forloop.first %}disabled{% endif %}>↑</button>
+      </form>
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/move" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="direction" value="down">
+        <button class="slim" type="submit" {% if forloop.last %}disabled{% endif %}>↓</button>
+      </form>
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/remove" class="inline-form">{% csrf_token %}
+        <button class="slim" type="submit">Убрать</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">В маршруте пока нет заказов.</p>
+{% endif %}
+
+{% if available %}{% if route.status == 'draft' or route.status == 'planned' %}
+<h2>Добавить заказы</h2>
+<form method="post" action="/logistics/routes/{{ route.id }}/add" class="card">{% csrf_token %}
+  <table class="sheet">
+    <tr><th></th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Зона</th></tr>
+    {% for order in available %}
+    <tr>
+      <td><input type="checkbox" name="order_id" value="{{ order.id }}"></td>
+      <td>{{ order.number|default:order.id }}</td>
+      <td>{{ order.client.name }}</td>
+      <td>{% if order.consignee %}{{ order.consignee.name }}{% endif %}</td>
+      <td>{% if order.consignee and order.consignee.zone %}{{ order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="actions"><button type="submit">Добавить выбранные</button></div>
+</form>
+{% endif %}{% endif %}
+{% endblock %}

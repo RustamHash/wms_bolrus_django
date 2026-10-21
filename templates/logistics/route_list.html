@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Маршруты</h1>
+    <a class="btn slim" href="/logistics/routing?date={{ day|date:'Y-m-d' }}">Маршрутизация</a>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/logistics/routes">
+      <div class="filter-row">
+        <label>Дата <input type="date" name="date" value="{{ day|date:'Y-m-d' }}"></label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+    <form id="routes-bulk" class="doc-filter" method="post" action="/logistics/routes/bulk" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить выбранные маршруты?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
+      <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+      <div class="filter-row">
+        <span class="bulk-count" data-bulk-count="routes-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="print">Печать листов</option>
+            <option value="delete">Удалить</option>
+          </select>
+        </label>
+        <button class="slim">Выполнить</button>
+      </div>
+    </form>
+  </div>
+</div>
+<table class="sheet" data-bulk="routes-bulk">
+  <tr><th>Название</th><th>Водитель</th><th>Авто</th><th>Статус</th><th>План</th><th>Факт</th><th>Остановок</th><th>Вес, кг</th><th></th></tr>
+  {% for route in routes %}
+  <tr data-href="/logistics/routes/{{ route.id }}" data-id="{{ route.id }}">
+    <td>{{ route.name|default:route.id }}</td>
+    <td>{% if route.driver %}{{ route.driver.full_name }}{% endif %}</td>
+    <td>{{ route.vehicle_text }}</td>
+    <td>{{ route.get_status_display }}</td>
+    <td>{% if route.planned_load_at %}{% if route.planned_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.planned_load_at|date:"d.m" }} {% endif %}{{ route.planned_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+    <td>{% if route.actual_load_at %}{% if route.actual_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.actual_load_at|date:"d.m" }} {% endif %}{{ route.actual_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+    <td>{{ route.stops }}</td>
+    <td>{{ route.weight_kg|kg }}</td>
+    <td>
+      <a href="/logistics/routes/{{ route.id }}">Открыть</a>
+      · <a href="/logistics/routes/{{ route.id }}/print" target="_blank">Лист</a>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">Нет маршрутов на эту дату</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/vehicles">К списку</a>
+  </div>
+</div>
+<form method="post" action="{% if item %}/logistics/vehicles/{{ item.id }}{% else %}/logistics/vehicles{% endif %}" class="card grid">{% csrf_token %}
+  <label>Госномер <input name="plate_number" value="{% if item %}{{ item.plate_number }}{% endif %}" required></label>
+  <label>Марка и модель <input name="brand_model" value="{% if item %}{{ item.brand_model }}{% endif %}"></label>
+  <label>Госномер прицепа <input name="trailer_plate" value="{% if item %}{{ item.trailer_plate }}{% endif %}"></label>
+  <label>Тоннаж, кг <input name="load_capacity_kg" type="number" min="1" value="{% if item and item.load_capacity_kg %}{{ item.load_capacity_kg }}{% endif %}"></label>
+  <label>Кол-во паллет <input name="pallet_capacity" type="number" min="1" value="{% if item and item.pallet_capacity %}{{ item.pallet_capacity }}{% endif %}"></label>
+  <label><input type="checkbox" name="is_active" value="1" {% if not item or item.is_active %}checked{% endif %}> Активен</label>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Маршрутизация</h1>
+    <a class="btn slim" href="/logistics">К логистике</a>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/logistics/routing">
+      <div class="filter-row">
+        <label>Дата отгрузки <input type="date" name="date" value="{{ ship_date|date:'Y-m-d' }}"></label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+  </div>
+</div>
+<p class="hint">Свободные заказы по зонам. Назначьте водителя или «Без водителя», затем создайте маршрут или добавьте заказы в существующий.</p>
+
+<table class="sheet">
+  <tr><th>Зона</th><th>Заказов</th><th>ТТ</th><th>Вес, кг</th><th>Водитель</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.zone_name }}</td>
+    <td>{{ row.order_count }}</td>
+    <td>{{ row.tt_count }}</td>
+    <td>{{ row.weight|kg }}</td>
+    <td>
+      <form method="post" action="/logistics/routing/assign" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+        <input type="hidden" name="zone_id" value="{{ row.zone_id }}">
+        <select name="driver_id" onchange="this.form.submit()">
+          <option value="">—</option>
+          <option value="0" {% if row.driver_id == 0 %}selected{% endif %}>Без водителя</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if row.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Нет свободных заказов на эту дату</td></tr>
+  {% endfor %}
+  {% if rows %}
+  <tr class="subtotal">
+    <td>Итого</td>
+    <td>{{ total_orders }}</td>
+    <td></td>
+    <td>{{ total_weight|kg }}</td>
+    <td></td>
+  </tr>
+  {% endif %}
+</table>
+
+{% if rows %}
+<div class="actions" style="margin-top:16px">
+  <form method="post" action="/logistics/routing">{% csrf_token %}
+    <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+    <button type="submit">Создать маршруты</button>
+  </form>
+  {% if existing_routes %}
+  <form method="post" action="/logistics/routing/add" class="row">{% csrf_token %}
+    <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+    <label>В существующий
+      <select name="route_id" required>
+        {% for route in existing_routes %}
+        <option value="{{ route.id }}">{{ route.name|default:route.id }} · {{ route.driver.full_name|default:"без водителя" }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="slim">Добавить заказы</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

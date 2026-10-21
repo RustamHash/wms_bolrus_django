@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Логистика{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Логистика</h1>
+  </div>
+</div>
+<p class="hint">Дата по умолчанию: {{ day|date:"d.m.Y" }}</p>
+<div class="hub">
+  <a class="hub-card" href="/logistics/routing?date={{ day|date:'Y-m-d' }}">Маршрутизация<br><span class="muted" style="font-size:14px;font-weight:400">Свободных заказов: {{ unassigned }}</span></a>
+  <a class="hub-card" href="/logistics/routes?date={{ day|date:'Y-m-d' }}">Маршруты<br><span class="muted" style="font-size:14px;font-weight:400">На день: {{ route_count }}</span></a>
+  <a class="hub-card" href="/logistics/schedule?date={{ day|date:'Y-m-d' }}">График отгрузки</a>
+  <a class="hub-card" href="/logistics/drivers">Водители<br><span class="muted" style="font-size:14px;font-weight:400">Активных: {{ drivers }}</span></a>
+  <a class="hub-card" href="/logistics/vehicles">Автомобили</a>
+</div>
+{% endblock %}

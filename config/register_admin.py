@@ -6,6 +6,7 @@ from apps.inventory.models import Balance, Movement
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine, Task, TaskLine
 from apps.printing.models import Printer
 from apps.receiving.models import Receipt
+from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
 from apps.shipping.models import Shipment
 from apps.storage.models import HandlingUnit, Pallet
 from config.admin_site import wms_admin
@@ -73,6 +74,10 @@ for model, fields in (
     (Shipment, ("number", "client_name", "order")),
     (Pallet, ("number", "kind", "status")),
     (HandlingUnit, ("barcode", "status", "net_kg")),
+    (Vehicle, ("plate_number", "brand_model", "load_capacity_kg", "pallet_capacity", "is_active")),
+    (Driver, ("full_name", "phone", "vehicle", "is_active")),
+    (Route, ("route_date", "name", "driver", "status", "planned_load_at", "actual_load_at")),
+    (RouteOrder, ("route", "order", "position")),
 ):
     _show(model, fields)
 

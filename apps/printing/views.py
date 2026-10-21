@@ -5,6 +5,7 @@ from django.shortcuts import redirect
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import text
 from apps.common.http import back_url, roles_required
+from apps.planning.models import Task
 from apps.printing import labels, pdfs
 from apps.printing.models import Printer
 from apps.printing.services import print_pallet, print_shipment, print_unit, send_pdf, send_tspl
@@ -14,6 +15,37 @@ from apps.storage.models import HandlingUnit, Pallet
 
 def _pdf(content: bytes, filename: str) -> HttpResponse:
     return HttpResponse(content, content_type="application/pdf", headers={"Content-Disposition": f"inline; filename={filename}"})
+
+
+def load_print_tasks(ids: list[int]):
+    rows = Task.objects.filter(pk__in=ids).select_related(
+        "order__client",
+        "order__consignee",
+        "order__seller",
+        "purchase_order__supplier",
+        "supplier",
+    ).prefetch_related(
+        "lines__product__group",
+        "lines__caliber",
+        "lines__grade",
+        "lines__order_line__caliber_from",
+        "lines__order_line__caliber_to",
+    )
+    found = {item.id: item for item in rows}
+    return [found[item] for item in ids if item in found]
+
+
+def task_sheet_response(tasks, *, by_groups: bool = False) -> HttpResponse:
+    filename = "tasks.pdf" if len(tasks) > 1 else f"task-{tasks[0].id}.pdf"
+    return _pdf(pdfs.tasks_pdf(tasks, by_groups=by_groups), filename)
+
+
+@roles_required("receiver", "warehouse")
+def task_sheet(request, task_id):
+    tasks = load_print_tasks([task_id])
+    if not tasks:
+        return HttpResponse("Не найдено", status=404)
+    return task_sheet_response(tasks, by_groups=text(request.GET, "print_groups") == "1")
 
 
 def _fail(request, target, message):
@@ -103,6 +135,63 @@ def shipment_print(request, shipment_id):
     except WarehouseError as exc:
         return _fail(request, target, str(exc))
     return _ok(request, target, message)
+
+
+def load_print_routes(ids: list[int]):
+    from apps.logistics.models import Route
+    from apps.logistics.queries import order_weights
+
+    routes = list(
+        Route.objects.filter(pk__in=ids)
+        .select_related("driver", "driver__vehicle")
+        .prefetch_related(
+            "route_orders__order__client",
+            "route_orders__order__consignee__zone",
+        )
+    )
+    found = {route.id: route for route in routes}
+    sheets = []
+    for route_id in ids:
+        route = found.get(route_id)
+        if route is None:
+            continue
+        stops = sorted(route.route_orders.all(), key=lambda row: (row.position, row.id))
+        weights = order_weights([stop.order for stop in stops])
+        sheets.append((route, stops, weights))
+    return sheets
+
+
+def route_sheet_response(sheets) -> HttpResponse:
+    if len(sheets) == 1:
+        filename = f"route-{sheets[0][0].id}.pdf"
+    else:
+        filename = "routes.pdf"
+    return _pdf(pdfs.routes_sheets_pdf(sheets), filename)
+
+
+@roles_required("office")
+def route_sheet(request, route_id):
+    sheets = load_print_routes([route_id])
+    if not sheets:
+        return HttpResponse("Не найдено", status=404)
+    return route_sheet_response(sheets)
+
+
+@roles_required("office")
+def schedule_sheet(request):
+    from datetime import date, timedelta
+
+    from django.utils import timezone
+
+    from apps.logistics.schedule import schedule_print_tree
+
+    raw = (request.GET.get("date") or "").strip()
+    try:
+        day = date.fromisoformat(raw) if raw else timezone.localdate() + timedelta(days=1)
+    except ValueError:
+        return HttpResponse("Некорректная дата", status=400)
+    tree = schedule_print_tree(day)
+    return _pdf(pdfs.schedule_sheet_pdf(tree), f"schedule-{day.isoformat()}.pdf")
 
 
 @roles_required("office")

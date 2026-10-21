@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/drivers">К списку</a>
+  </div>
+</div>
+<form method="post" action="{% if item %}/logistics/drivers/{{ item.id }}{% else %}/logistics/drivers{% endif %}" class="card grid">{% csrf_token %}
+  <label>ФИО <input name="full_name" value="{% if item %}{{ item.full_name }}{% endif %}" required></label>
+  <label>Телефон <input name="phone" value="{% if item %}{{ item.phone }}{% endif %}"></label>
+  <label>Автомобиль
+    <select name="vehicle_id">
+      <option value=""></option>
+      {% for vehicle in vehicles %}
+      <option value="{{ vehicle.id }}" {% if item and item.vehicle_id == vehicle.id %}selected{% endif %}>{{ vehicle.display_name }}{% if vehicle.load_capacity_kg or vehicle.pallet_capacity %} · {% if vehicle.load_capacity_kg %}{{ vehicle.load_capacity_kg }} кг{% endif %}{% if vehicle.load_capacity_kg and vehicle.pallet_capacity %}, {% endif %}{% if vehicle.pallet_capacity %}{{ vehicle.pallet_capacity }} палл.{% endif %}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if item and item.vehicle %}
+  <p class="hint wide">С авто: тоннаж {% if item.vehicle.load_capacity_kg %}{{ item.vehicle.load_capacity_kg }} кг{% else %}—{% endif %}, паллет {% if item.vehicle.pallet_capacity %}{{ item.vehicle.pallet_capacity }}{% else %}—{% endif %}. Меняется в <a href="/logistics/vehicles/{{ item.vehicle_id }}">карточке автомобиля</a>.</p>
+  {% endif %}
+  <label><input type="checkbox" name="is_active" value="1" {% if not item or item.is_active %}checked{% endif %}> Активен</label>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+{% endblock %}

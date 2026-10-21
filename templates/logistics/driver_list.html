@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/drivers/new">Добавить</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>ФИО</th><th>Телефон</th><th>Автомобиль</th><th>Тоннаж, кг</th><th>Паллет</th><th>Статус</th><th></th></tr>
+  {% for item in items %}
+  <tr data-href="/logistics/drivers/{{ item.id }}">
+    <td>{{ item.full_name }}</td>
+    <td>{{ item.phone }}</td>
+    <td>{{ item.vehicle_display }}</td>
+    <td>{% if item.vehicle and item.vehicle.load_capacity_kg %}{{ item.vehicle.load_capacity_kg }}{% endif %}</td>
+    <td>{% if item.vehicle and item.vehicle.pallet_capacity %}{{ item.vehicle.pallet_capacity }}{% endif %}</td>
+    <td>{% if item.is_active %}Активен{% else %}Неактивен{% endif %}</td>
+    <td><a href="/logistics/drivers/{{ item.id }}">Изменить</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
