@@ -1,13 +1,16 @@
 {% extends "layout.html" %}
-{% load wms %}
 {% block title %}Вход{% endblock %}
+{% block body_class %}login-page{% endblock %}
 {% block content %}
-<h1>Вход в WMS</h1>
-<form method="post" action="/login" class="card grid">{% csrf_token %}
-  <label>Логин <input name="login" autocomplete="username" required></label>
-  <label>Пароль <input name="password" type="password" autocomplete="current-password" required></label>
-  <button>Войти</button>
+<form method="post" action="/login" class="login-card">{% csrf_token %}
+  <h1>Вход в WMS</h1>
+  <label>Логин
+    <input name="login" autocomplete="username" required autofocus>
+  </label>
+  <label>Пароль
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Войти</button>
+  <a class="login-alt" href="/tsd/login">Вход в ТСД по PIN или QR</a>
 </form>
-<p class="hint">Первый вход после создания базы: admin / admin. ТСД: PIN 1111 приёмка, 2222 склад, 0000 администратор. Пароли лучше сменить.</p>
-<p><a href="/tsd/login">Вход в ТСД по PIN или QR</a></p>
 {% endblock %}

@@ -333,7 +333,8 @@ def _task_lines(pdf, task, y, left, right, height, columns, *, by_groups: bool =
     if not lines:
         y = _text(pdf, left, y - 4 * mm, "Строк нет")
     else:
-        y = _text(pdf, left, y - 2 * mm, f"Итого план {format_kg(total)} кг", 11)
+        y -= 8 * mm
+        y = _text(pdf, left, y, f"Итого план {format_kg(total)} кг", 11)
     if y < bottom + 16 * mm:
         pdf.showPage()
         y = height - 14 * mm

@@ -1,6 +1,54 @@
 {% load wms %}
-<nav class="catalog-nav">
-  {% for key, label in nav %}
-  <a class="{% if key == kind %}on{% endif %}" href="{% if key == 'users' %}/users{% else %}/masters/{{ key }}{% endif %}">{{ label }}</a>
+<nav class="catalog-nav by-groups" id="catalog-nav">
+  <label class="catalog-by-groups">
+    <input type="checkbox" id="catalog-by-groups" checked>
+    По группам
+  </label>
+  {% for title, items in nav %}
+  <div class="catalog-group{% for key, label in items %}{% if key == kind %} current{% endif %}{% endfor %}">
+    <button type="button" class="catalog-toggle" aria-expanded="false">{{ title }}</button>
+    <div class="catalog-items">
+      {% for key, label in items %}
+      <a class="{% if key == kind %}on{% endif %}" href="{% if key == 'users' %}/users{% elif key == 'staff' %}/staff{% elif key == 'positions' %}/positions{% else %}/masters/{{ key }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
   {% endfor %}
 </nav>
+<script>
+(function () {
+  const nav = document.getElementById("catalog-nav");
+  const box = document.getElementById("catalog-by-groups");
+  if (!nav || !box) return;
+  let stored = null;
+  try { stored = localStorage.getItem("catalog-by-groups"); } catch (error) { stored = null; }
+  const grouped = stored === null ? true : stored === "1";
+  box.checked = grouped;
+  nav.classList.toggle("by-groups", grouped);
+  box.addEventListener("change", () => {
+    nav.classList.toggle("by-groups", box.checked);
+    nav.querySelectorAll(".catalog-group.open").forEach((group) => {
+      group.classList.remove("open");
+      const toggle = group.querySelector(".catalog-toggle");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
+    try { localStorage.setItem("catalog-by-groups", box.checked ? "1" : "0"); } catch (error) {}
+  });
+  nav.querySelectorAll(".catalog-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!nav.classList.contains("by-groups")) return;
+      const group = button.closest(".catalog-group");
+      const willOpen = !group.classList.contains("open");
+      nav.querySelectorAll(".catalog-group.open").forEach((item) => {
+        item.classList.remove("open");
+        const toggle = item.querySelector(".catalog-toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+      if (willOpen) {
+        group.classList.add("open");
+        button.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+})();
+</script>

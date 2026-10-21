@@ -563,6 +563,63 @@ function bindExcelFilters() {
   });
 }
 
+function bindColumnResize() {
+  document.querySelectorAll(".journal-table table.sheet").forEach((table) => {
+    const header = [...table.rows].find((row) => row.querySelector("th"));
+    if (!header || table.querySelector("colgroup")) return;
+    const cells = [...header.cells];
+    table.style.tableLayout = "auto";
+    table.style.width = "max-content";
+    const widths = cells.map((cell) => {
+      const measured = Math.ceil(cell.getBoundingClientRect().width);
+      if (cell.classList.contains("pick") || cell.classList.contains("count")) return Math.max(28, measured);
+      return Math.max(48, Math.min(240, measured));
+    });
+    table.style.tableLayout = "fixed";
+    const colgroup = document.createElement("colgroup");
+    const cols = widths.map((width) => {
+      const col = document.createElement("col");
+      col.style.width = width + "px";
+      colgroup.appendChild(col);
+      return col;
+    });
+    table.insertBefore(colgroup, table.firstChild);
+    const fit = () => {
+      const sum = cols.reduce((total, col) => total + parseInt(col.style.width, 10), 0);
+      table.style.width = sum + "px";
+      const room = table.parentElement.clientWidth;
+      table.style.width = Math.max(sum, room) + "px";
+    };
+    fit();
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(table.parentElement);
+    cells.forEach((cell, index) => {
+      if (cell.classList.contains("pick") || cell.classList.contains("count")) return;
+      const handle = document.createElement("span");
+      handle.className = "col-resize";
+      handle.title = "Ширина колонки";
+      handle.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const startX = event.clientX;
+        const startW = parseInt(cols[index].style.width, 10);
+        const move = (ev) => {
+          cols[index].style.width = Math.max(36, startW + ev.clientX - startX) + "px";
+          fit();
+        };
+        const up = () => {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+          document.body.classList.remove("col-resizing");
+        };
+        document.body.classList.add("col-resizing");
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      });
+      cell.appendChild(handle);
+    });
+  });
+}
+
 function bindNotices() {
   const box = document.querySelector(".notices");
   if (!box) return;
@@ -691,5 +748,6 @@ document.addEventListener("DOMContentLoaded", () => {
   bindFilePick();
   bindSheetMarks();
   bindExcelFilters();
+  bindColumnResize();
   bindOnecImport();
 });
