@@ -5,18 +5,21 @@
 <div class="page-bar">
   <div class="page-bar-row">
     <h1>{{ title }}</h1>
-    <a class="btn slim" href="/masters/{{ kind }}/new">Добавить</a>
+    {% if can_change %}<a class="btn slim" href="/masters/{{ kind }}/new">Добавить</a>{% endif %}
   </div>
   <div class="page-tools">
     {% include "masters/nav.html" %}
   </div>
 </div>
+{% if kind == 'categories' %}
+<p class="hint">Категория грузополучателя задаёт сортность в заказе. В самом заказе сорт можно сменить. Добавлять и переименовывать категории может только администратор.</p>
+{% endif %}
 <table class="sheet">
   <tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}<th></th></tr>
   {% for row in rows %}
-  <tr data-href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">
+  <tr {% if can_change %}data-href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}"{% endif %}>
     {% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}
-    <td><a href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">Изменить</a></td>
+    <td>{% if can_change %}<a href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">Изменить</a>{% endif %}</td>
   </tr>
   {% empty %}
   <tr><td colspan="{{ headers|length|add:1 }}">Пока пусто</td></tr>

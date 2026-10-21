@@ -99,7 +99,20 @@ def _fill_customer_line(line: OrderLine, item: dict) -> None:
     if not item.get("keep_grade"):
         if not item["grade_id"]:
             raise WarehouseError("Укажите сортность")
-        line.grades.set([get_row(Grade, item["grade_id"], "сортность")])
+        grade = get_row(Grade, item["grade_id"], "сортность")
+        previous = set(line.grades.values_list("id", flat=True))
+        unchanged = previous == {grade.id}
+        line.grades.set([grade])
+        from apps.catalog.grade_policy import grade_for_consignee
+
+        incoming = grade_for_consignee(line.order.consignee)
+        if incoming is not None and grade.id == incoming.id:
+            line.grade_manual = False
+        elif not line.grade_manual and unchanged:
+            line.grade_manual = False
+        else:
+            line.grade_manual = True
+        line.save(update_fields=["grade_manual"])
     allowed = set(line.grades.values_list("id", flat=True))
     for task_line in line.task_lines.all():
         if line.caliber_mode == "exact" and line.caliber_id:
@@ -150,6 +163,9 @@ def save_customer_order(order, *, client_id, seller_id, ship_date, shipping_term
         _sync_customer_lines(order, lines)
         order.status = status
         order.save(update_fields=["status"])
+        from apps.catalog.grade_policy import stamp_order_grades
+
+        stamp_order_grades(order)
         _check_party_grades(order)
         return order
     if was_closed:
@@ -169,6 +185,9 @@ def save_customer_order(order, *, client_id, seller_id, ship_date, shipping_term
     order.status = status
     order.save()
     _sync_customer_lines(order, lines)
+    from apps.catalog.grade_policy import stamp_order_grades
+
+    stamp_order_grades(order)
     _check_party_grades(order)
     return order
 

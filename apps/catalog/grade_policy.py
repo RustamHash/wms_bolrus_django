@@ -40,3 +40,54 @@ def grade_names(consignee) -> str:
         return ""
     grades = sorted(consignee.allowed_grades.all(), key=lambda item: (item.sort_order, item.name))
     return ", ".join(item.name for item in grades)
+
+
+def grade_for_consignee(consignee):
+    """Сортность по категории грузополучателя. Пусто, если категория не задана или сорт ей запрещён."""
+    if consignee is None or not consignee.category_id:
+        return None
+    grade = consignee.category.grade
+    party = allowed_grade_ids(consignee)
+    if party is not None and grade.id not in party:
+        return None
+    return grade
+
+
+def _write_category_grade(line, grade) -> None:
+    from apps.inventory.models import Movement
+
+    if Movement.objects.filter(task_line__order_line_id=line.id).exists():
+        return
+    current = {item.id for item in line.grades.all()}
+    if current != {grade.id}:
+        line.grades.set([grade])
+        line._effective_grades = ({grade.id},)
+    for task_line in line.task_lines.all():
+        if task_line.grade_id != grade.id:
+            task_line.grade_id = grade.id
+            task_line.save(update_fields=["grade"])
+
+
+def stamp_order_grades(order) -> None:
+    grade = grade_for_consignee(order.consignee)
+    if grade is None:
+        return
+    lines = order.lines.filter(for_task=True, grade_manual=False).prefetch_related("grades", "task_lines")
+    for line in lines:
+        _write_category_grade(line, grade)
+
+
+def fill_consignee_orders(consignee) -> None:
+    from apps.planning.models import OrderLine
+
+    grade = grade_for_consignee(consignee)
+    if grade is None:
+        return
+    lines = OrderLine.objects.filter(
+        order__consignee=consignee,
+        order__status="open",
+        for_task=True,
+        grade_manual=False,
+    ).prefetch_related("grades", "task_lines")
+    for line in lines:
+        _write_category_grade(line, grade)

@@ -29,7 +29,8 @@
       <div class="filter-row">
         <label>Статус
           <select name="status">
-            <option value=""></option>
+            <option value="" {% if status == "" %}selected{% endif %}>Кроме закрытых</option>
+            <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
             {% for key, label in PURCHASE_STATUS.items %}
             <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
             {% endfor %}

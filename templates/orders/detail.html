@@ -48,10 +48,11 @@
       <select name="consignee_id" {% if not editable %}disabled{% endif %}>
         <option value="">Как покупатель</option>
         {% for item in consignees %}
-        <option value="{{ item.id }}" {% if order and order.consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        <option value="{{ item.id }}" data-grade="{% if item.category_id %}{{ item.category.grade_id }}{% endif %}" {% if order and order.consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
         {% endfor %}
       </select>
       {% if order and order.consignee %}
+      {% if order.consignee.category_id %}<span class="hint">Категория: {{ order.consignee.category.name }}{% if category_grade_id %}. Сортность в новых строках берётся из неё, в этом заказе сорт можно сменить{% endif %}.</span>{% endif %}
       {% if order.consignee.address %}<span class="hint">Адрес: {{ order.consignee.address }}</span>{% endif %}
       {% if order.consignee.zone_id %}<span class="hint">Зона: {{ order.consignee.zone.name }}</span>{% endif %}
       {% endif %}
@@ -123,11 +124,13 @@
         </select>
       </td>
       <td>
-        <select name="grade" required>
+        <select name="grade" required {% if line.grades|length == 0 %}data-fresh{% endif %}>
           {% if line.grades|length != 1 %}
-          <option value="keep" selected>{{ line.grades|join_attr:'name' }}</option>
+            {% if line.grades|length != 0 or not category_grade_id %}
+            <option value="keep" selected>{{ line.grades|join_attr:'name' }}</option>
+            {% endif %}
           {% endif %}
-          {% for item in grades %}<option value="{{ item.id }}" {% if line.grades|length == 1 and line.grades.all.0.id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+          {% for item in grades %}<option value="{{ item.id }}" {% if line.grades|length == 1 and line.grades.all.0.id == item.id %}selected{% elif line.grades|length == 0 and category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
         </select>
       </td>
       {% endif %}
@@ -150,7 +153,7 @@
         <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
       </td>
       <td>
-        <select name="grade">{% for item in grades %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+        <select name="grade" data-fresh>{% for item in grades %}<option value="{{ item.id }}" {% if category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
       </td>
       <td class="num"><input name="qty"></td>
       <td>кг</td>
@@ -191,7 +194,7 @@
       <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
     </td>
     <td>
-      <select name="grade">{% for item in grades %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+      <select name="grade" data-fresh>{% for item in grades %}<option value="{{ item.id }}" {% if category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
     </td>
     <td class="num"><input name="qty"></td>
     <td>кг</td>
@@ -230,14 +233,47 @@
     }
   }
 
+  function consigneeGrade() {
+    const party = document.querySelector("[name=consignee_id]");
+    if (!party) return "";
+    const option = party.options[party.selectedIndex];
+    return option && option.dataset.grade ? option.dataset.grade : "";
+  }
+
+  function fillFreshGrade(select) {
+    if (!select || select.dataset.touched === "1") return;
+    const grade = consigneeGrade();
+    if (!grade) return;
+    const has = Array.from(select.options).some((item) => item.value === grade);
+    if (has) select.value = grade;
+  }
+
+  function watchGrade(select) {
+    if (!select || select.dataset.watched === "1") return;
+    select.dataset.watched = "1";
+    select.addEventListener("change", () => {
+      select.dataset.touched = "1";
+    });
+  }
+
   document.querySelectorAll("#lines tr").forEach(bindRow);
+  document.querySelectorAll("[name=grade][data-fresh]").forEach(watchGrade);
   renumber();
+  const party = document.querySelector("[name=consignee_id]");
+  if (party) {
+    party.addEventListener("change", () => {
+      document.querySelectorAll("[name=grade][data-fresh]").forEach(fillFreshGrade);
+    });
+  }
   const add = document.getElementById("add-line");
   if (add) {
     add.addEventListener("click", () => {
       const row = document.getElementById("customer-line").content.firstElementChild.cloneNode(true);
       table.appendChild(row);
       bindRow(row);
+      const grade = row.querySelector("[name=grade]");
+      watchGrade(grade);
+      fillFreshGrade(grade);
       renumber();
     });
   }

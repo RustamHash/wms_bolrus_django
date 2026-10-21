@@ -50,6 +50,12 @@
   {% if kind == 'calibers' or kind == 'grades' %}
   <label>Порядок для диапазонов <input name="sort_order" type="number" value="{% if item %}{{ item.sort_order }}{% else %}{{ 0 }}{% endif %}"></label>
   {% endif %}
+  {% if kind == 'categories' %}
+  <label>Порядок <input name="sort_order" type="number" value="{% if item %}{{ item.sort_order }}{% else %}{{ 0 }}{% endif %}"></label>
+  {% endif %}
+  {% if kind == 'categories' %}
+  <p class="hint">Категория грузополучателя. В заказ сортность подставляется с тем же названием. Список меняет только администратор, у грузополучателя категорию выбирает офис.</p>
+  {% endif %}
   {% if kind == 'clients' or kind == 'consignees' or kind == 'suppliers' %}
   <label>Код <input name="code" value="{% if item and item.code %}{{ item.code }}{% else %}{% endif %}"></label>
   {% endif %}
@@ -64,6 +70,19 @@
       {% endfor %}
     </select>
   </label>
+  <label>Очередность в зоне
+    <input name="delivery_order" type="number" min="0" value="{% if item and item.delivery_order %}{{ item.delivery_order }}{% endif %}">
+  </label>
+  <p class="hint wide">Порядок остановки при сборке маршрута этой зоны. Пусто — точка встаёт в конец.</p>
+  <label>Категория
+    <select name="category_id">
+      <option value=""></option>
+      {% for category in categories %}
+      <option value="{{ category.id }}" {% if item and item.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Сортность в заказе подставляется из категории. В отдельном заказе её можно сменить. Новые категории добавляет только администратор.</p>
   <fieldset class="grades">
     <legend>Сортность</legend>
     <div class="grade-picks">

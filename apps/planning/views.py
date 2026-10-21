@@ -1,9 +1,9 @@
 from datetime import date, timedelta
 from decimal import Decimal
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from django.db import close_old_connections, transaction
-from django.db.models import DecimalField, Q, Sum, Value
+from django.db.models import DecimalField, Exists, OuterRef, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -14,9 +14,11 @@ from apps.common.constants import task_status_choices
 from apps.common.exceptions import WarehouseError
 from apps.common.kg import as_kg
 from apps.common.forms import optional_int, optional_int_query, parse_date, parse_kg, query_date, require_int, text
+from apps.common.periods import range_from_query
 from apps.common.http import back_url, done, guarded, roles_required
 from apps.common.notices import notify
 from apps.inventory.models import Movement
+from apps.logistics.models import Driver, Route, RouteOrder
 from apps.inventory.services import has_downstream, received_kg
 from apps.picking.services import waiting_pallets as pick_waiting
 from apps.planning.models import Order, OrderLine, OrderRevision, PurchaseOrder, PurchaseOrderRevision, Task
@@ -227,13 +229,19 @@ def _customer_page(order, user):
                 reserves.append({"title": line.product_title(), "kg": kg})
     refs = load_refs()
     party_grades = ""
+    category_grade_id = None
     if order is not None and order.consignee_id:
-        from apps.catalog.grade_policy import grade_names
+        from apps.catalog.grade_policy import grade_for_consignee, grade_names
 
         party = list(order.consignee.allowed_grades.order_by("sort_order", "name"))
         if party:
             party_grades = grade_names(order.consignee)
             refs["grades"] = party
+        category_grade = grade_for_consignee(order.consignee)
+        if category_grade is not None:
+            category_grade_id = category_grade.id
+            if all(item.id != category_grade.id for item in refs["grades"]):
+                refs["grades"] = [category_grade, *refs["grades"]]
     return {
         "order": order,
         "editable": user.is_office and (order is None or order.status != "closed"),
@@ -243,6 +251,7 @@ def _customer_page(order, user):
         "unmapped": unmapped,
         "reserves": reserves,
         "party_grades": party_grades,
+        "category_grade_id": category_grade_id,
         "today": date.today().isoformat(),
         **refs,
     }
@@ -321,7 +330,9 @@ def supplier_orders(request):
     date_from = query_date(request.GET.get("date_from"))
     date_to = query_date(request.GET.get("date_to"))
     supplier_id = optional_int_query(request.GET.get("supplier_id"))
-    status = request.GET.get("status") or ""
+    status = request.GET.get("status")
+    if status not in ("", "all", "draft", "incoming", "closed"):
+        status = ""
     query = PurchaseOrder.objects.prefetch_related("lines").order_by("-doc_date", "-id")
     if date_from:
         query = query.filter(doc_date__gte=date_from)
@@ -329,7 +340,9 @@ def supplier_orders(request):
         query = query.filter(doc_date__lte=date_to)
     if supplier_id:
         query = query.filter(supplier_id=supplier_id)
-    if status in ("draft", "incoming", "closed"):
+    if status == "":
+        query = query.exclude(status="closed")
+    elif status != "all":
         query = query.filter(status=status)
     orders = list(query)
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -362,24 +375,57 @@ CUSTOMER_SORTS = {
 }
 
 
+def _customer_ranges(params):
+    legacy = "date_from" in params or "date_to" in params
+    ship_asked = any((params.get(key) or "").strip() for key in ("ship_from_type", "ship_from", "ship_to_type", "ship_to"))
+    if legacy and not ship_asked:
+        ship_from = query_date(params.get("date_from")) if "date_from" in params else date.today()
+        ship = {
+            "from_type": "custom" if (params.get("date_from") or "").strip() else ("" if "date_from" in params else "today"),
+            "from_value": (params.get("date_from") or "").strip(),
+            "to_type": "custom" if (params.get("date_to") or "").strip() else "",
+            "to_value": (params.get("date_to") or "").strip(),
+            "from_date": ship_from,
+            "to_date": query_date(params.get("date_to")),
+        }
+        if ship["from_type"] == "today":
+            ship["from_date"] = date.today()
+    else:
+        ship = range_from_query(params, "ship", default_from="" if params else "today")
+    return ship
+
+
+def _order_driver(order) -> str:
+    names = []
+    for link in order.live_routes:
+        if link.route.driver_id and link.route.driver.full_name not in names:
+            names.append(link.route.driver.full_name)
+    return ", ".join(names)
+
+
 @roles_required("warehouse", "receiver")
 def customer_orders(request):
-    if "date_from" in request.GET:
-        date_from = query_date(request.GET.get("date_from"))
-    else:
-        date_from = date.today()
-    date_to = query_date(request.GET.get("date_to"))
+    ship_range = _customer_ranges(request.GET)
+    search = (request.GET.get("search") or "").strip()
     party = (request.GET.get("party") or "").strip()
     number = (request.GET.get("number") or "").strip()
     document = (request.GET.get("document") or "").strip()
     status = request.GET.get("status") or ""
+    driver_id = optional_int_query(request.GET.get("driver"))
     sort = request.GET.get("sort") or "ship_date"
     direction = request.GET.get("dir") or "desc"
     if sort not in CUSTOMER_SORTS:
         sort = "ship_date"
     if direction not in ("asc", "desc"):
         direction = "desc"
-    query = Order.objects.select_related("client", "seller", "consignee__zone").annotate(
+    on_route = RouteOrder.objects.filter(order_id=OuterRef("pk")).exclude(route__status=Route.Status.CANCELLED)
+    query = Order.objects.select_related("client", "seller", "consignee__zone").prefetch_related(
+        Prefetch(
+            "route_orders",
+            queryset=RouteOrder.objects.exclude(route__status=Route.Status.CANCELLED).select_related("route__driver"),
+            to_attr="live_routes",
+        )
+    ).annotate(
         kg_total=Coalesce(
             Sum("lines__qty_kg", filter=Q(lines__for_task=True)),
             Value(Decimal("0.000")),
@@ -387,10 +433,21 @@ def customer_orders(request):
         ),
         consignee_sort=Coalesce("consignee__name", "client__name"),
     )
-    if date_from:
-        query = query.filter(ship_date__gte=date_from)
-    if date_to:
-        query = query.filter(ship_date__lte=date_to)
+    if ship_range["from_date"]:
+        query = query.filter(ship_date__gte=ship_range["from_date"])
+    if ship_range["to_date"]:
+        query = query.filter(ship_date__lte=ship_range["to_date"])
+    if search:
+        query = query.filter(
+            Q(number__icontains=search)
+            | Q(external_number__icontains=search)
+            | Q(client__name__icontains=search)
+            | Q(consignee__name__icontains=search)
+            | Q(consignee__address__icontains=search)
+            | Q(consignee__zone__name__icontains=search)
+            | Q(seller__name__icontains=search)
+            | Exists(on_route.filter(route__driver__full_name__icontains=search))
+        )
     if party:
         query = query.filter(
             Q(consignee__name__icontains=party) | Q(consignee__isnull=True, client__name__icontains=party)
@@ -401,33 +458,24 @@ def customer_orders(request):
         query = query.filter(external_number__icontains=document)
     if status in ("open", "closed"):
         query = query.filter(status=status)
+    if driver_id:
+        query = query.filter(Exists(on_route.filter(route__driver_id=driver_id)))
     field = CUSTOMER_SORTS[sort]
     if direction == "desc":
         field = f"-{field}"
     orders = list(query.order_by(field, "-id"))
-    kept = {
-        "date_from": date_from.isoformat() if date_from else "",
-        "date_to": request.GET.get("date_to") or "",
-        "party": party,
-        "number": number,
-        "document": document,
-        "status": status if status in ("open", "closed") else "",
-    }
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     return render(
         request,
         "orders/customers.html",
         {
-            "rows": [{"order": item, "kg": item.kg_total} for item in orders],
-            "date_from": kept["date_from"],
-            "date_to": kept["date_to"],
-            "party": party,
-            "number": number,
-            "document": document,
-            "status": kept["status"],
+            "rows": [{"order": item, "kg": item.kg_total, "driver": _order_driver(item)} for item in orders],
+            "ship_range": ship_range,
+            "search": search,
+            "driver_id": driver_id,
+            "drivers": list(Driver.objects.filter(is_active=True).order_by("full_name")),
             "sort": sort,
             "dir": direction,
-            "filter_query": urlencode({key: value for key, value in kept.items() if value}),
             "import_from": tomorrow,
             "import_to": tomorrow,
         },
@@ -831,7 +879,8 @@ def order_create(request):
 @roles_required("warehouse", "receiver")
 def order_detail(request, order_id):
     order = get_object_or_404(
-        Order.objects.prefetch_related(
+        Order.objects.select_related("consignee__category__grade", "consignee__zone").prefetch_related(
+            "consignee__allowed_grades",
             "lines__product",
             "lines__external_product__alias__product",
             "lines__caliber",

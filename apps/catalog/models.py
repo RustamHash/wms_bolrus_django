@@ -152,6 +152,26 @@ class DeliveryZone(models.Model):
         return self.name
 
 
+class ConsigneeCategory(models.Model):
+    name = models.CharField("Категория", max_length=80, unique=True)
+    sort_order = models.IntegerField("Порядок", default=0)
+    grade = models.ForeignKey(
+        Grade,
+        on_delete=models.PROTECT,
+        related_name="consignee_categories",
+        verbose_name="Сортность",
+    )
+
+    class Meta:
+        db_table = "consignee_categories"
+        verbose_name = "Категория грузополучателя"
+        verbose_name_plural = "Категории грузополучателей"
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Consignee(models.Model):
     name = models.CharField("Грузополучатель", max_length=200)
     code = models.CharField("Код", max_length=32, unique=True, null=True, blank=True)
@@ -164,6 +184,19 @@ class Consignee(models.Model):
         on_delete=models.SET_NULL,
         related_name="consignees",
         verbose_name="Зона доставки",
+    )
+    delivery_order = models.PositiveIntegerField(
+        "Очередность в зоне",
+        default=0,
+        help_text="Порядок остановки при сборке маршрута. 0 — без очереди, точка встаёт в конец.",
+    )
+    category = models.ForeignKey(
+        ConsigneeCategory,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="consignees",
+        verbose_name="Категория",
     )
     allowed_grades = models.ManyToManyField(
         Grade,

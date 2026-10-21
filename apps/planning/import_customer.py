@@ -291,6 +291,9 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
                 unit=item.get("unit") or "кг",
                 for_task=item.get("for_task", True),
             )
+        from apps.catalog.grade_policy import stamp_order_grades
+
+        stamp_order_grades(order)
         store_baseline(order, user)
         report.created.append(
             {

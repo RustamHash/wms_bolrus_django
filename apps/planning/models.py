@@ -78,6 +78,7 @@ class OrderLine(models.Model):
     )
     qty_kg = models.DecimalField(max_digits=12, decimal_places=3)
     grades = models.ManyToManyField("catalog.Grade", through="OrderLineGrade", related_name="order_lines")
+    grade_manual = models.BooleanField("Сорт задан в заказе", default=False)
 
     class Meta:
         db_table = "order_lines"
@@ -133,6 +134,10 @@ class PurchaseOrder(models.Model):
     receipt_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=32, default="draft")
     comment = models.TextField(blank=True, default="")
+    arrived_at = models.DateTimeField("Прибыл", null=True, blank=True)
+    gate_at = models.DateTimeField("Постановка на ворота", null=True, blank=True)
+    receive_finished_at = models.DateTimeField("Окончание приёмки", null=True, blank=True)
+    departed_at = models.DateTimeField("Убыл", null=True, blank=True)
     revision = models.PositiveIntegerField("Версия", default=1)
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="purchase_orders_created")
     created_at = models.DateTimeField(auto_now_add=True)

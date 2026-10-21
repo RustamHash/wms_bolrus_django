@@ -218,6 +218,9 @@ def apply_import(order: Order, user, *, client, consignee, seller, ship_date, te
     order.shipping_terms = (terms or "").strip()
     order.save()
     blocked = _apply_lines(order, lines)
+    from apps.catalog.grade_policy import stamp_order_grades
+
+    stamp_order_grades(order)
     wanted["blocked"] = blocked
     revision = remember_version(order, before_header, before_lines, wanted, user)
     if revision is None:

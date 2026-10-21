@@ -2,48 +2,39 @@
 {% load wms %}
 {% block title %}Заказы покупателей{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Заказы покупателей</h1>
-    {% if user.is_office %}<a class="btn slim" href="/orders/new">Создать</a>{% endif %}
-  </div>
-  <div class="page-tools">
-    <form class="doc-filter" method="get" action="/orders/customers">{% csrf_token %}
-      <div class="filter-row">
-        <label>Период
-          <span class="dates">
-            <input type="date" name="date_from" value="{{ date_from }}">
-            <span class="sep">—</span>
-            <input type="date" name="date_to" value="{{ date_to }}">
-          </span>
-        </label>
-        <label>Грузополучатель
-          <input name="party" value="{{ party }}" placeholder="Название">
-        </label>
+<div class="journal">
+  <div class="journal-tools">
+    <form class="journal-bar" method="get" action="/orders/customers" id="customers-filter">
+      <div class="journal-title">Заказы покупателей <span class="journal-count">{{ rows|length }}</span></div>
+      {% include "orders/_period.html" with prefix="ship" label="Дата отгрузки" bound=ship_range tomorrow=1 %}
+      <div class="field-grid">
+        <span>Поиск</span>
+        <input type="search" name="search" value="{{ search }}" placeholder="Номер, клиент, адрес, зона">
+        <span>Водитель</span>
+        <select name="driver">
+          <option value="">Все</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
       </div>
-      <div class="filter-row">
-        <label>Номер заказа
-          <input name="number" value="{{ number }}">
-        </label>
-        <label>Номер документа
-          <input name="document" value="{{ document }}">
-        </label>
-        <label>Статус
-          <select name="status">
-            <option value=""></option>
-            {% for key, label in DOC_STATUS.items %}
-            <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button class="slim">Найти</button>
-      </div>
-      <input type="hidden" name="sort" value="{{ sort }}">
-      <input type="hidden" name="dir" value="{{ dir }}">
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/customers" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+        {% if user.is_office %}
+        <a class="icon-btn" href="/orders/new" data-tip="Создать" aria-label="Создать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
+        {% endif %}
+      </span>
     </form>
     {% if user.is_office %}
-    <form class="doc-filter" method="post" action="/orders/customers/import" data-onec-import data-onec-title="Импорт заказов покупателей из 1С">{% csrf_token %}
-      <div class="filter-row">
+    <form class="journal-bar" method="post" action="/orders/customers/import" data-onec-import data-onec-title="Импорт заказов покупателей из 1С">{% csrf_token %}
+      <div class="journal-fields">
         <label>Отгрузка из 1С
           <span class="dates">
             <input type="date" name="date_from" value="{{ import_from }}" data-period required>
@@ -51,15 +42,16 @@
             <input type="date" name="date_to" value="{{ import_to }}" data-period required>
           </span>
         </label>
-        <label class="check">
-          <input type="checkbox" name="by_number" value="1" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
-          По номеру
-        </label>
         <label>Номер 1С
           <input name="order_number" placeholder="НФНФ-000000" disabled>
         </label>
-        <label class="check"><input type="checkbox" name="update" value="1"> Обновить</label>
-        <button class="slim">Импорт</button>
+        <span class="import-flags">
+          <input type="checkbox" name="by_number" value="1" title="По номеру" aria-label="По номеру" data-tip="По номеру" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          <input type="checkbox" name="update" value="1" title="Обновить" aria-label="Обновить" data-tip="Обновить">
+        </span>
+        <button class="icon-btn" type="submit" data-tip="Импорт" aria-label="Импорт">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>
+        </button>
       </div>
     </form>
     {% endif %}
@@ -69,8 +61,8 @@
       </a>
     </div>
     {% if user.is_office %}
-    <form id="customers-bulk" class="doc-filter" method="post" action="/orders/customers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
-      <div class="filter-row">
+    <form id="customers-bulk" class="journal-bar" method="post" action="/orders/customers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
+      <div class="journal-fields">
         <span class="bulk-count" data-bulk-count="customers-bulk">Выбрано: 0</span>
         <label>Действие
           <select name="action">
@@ -84,22 +76,26 @@
             <option value="ship">Отгрузка</option>
           </select>
         </label>
-        <button class="slim">Выполнить</button>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
       </div>
     </form>
     {% endif %}
   </div>
-</div>
+  <div class="journal-table">
 <table class="sheet" {% if user.is_office %}data-bulk="customers-bulk"{% endif %}>
   <tr>
     <th>Номер</th>
     <th>Номер 1С</th>
     <th>Версия</th>
+    <th>Дата заказа</th>
     <th>Дата отгрузки</th>
     <th>Грузополучатель</th>
     <th>Адрес доставки</th>
     <th>Зона доставки</th>
     <th>Продавец</th>
+    <th>Водитель</th>
     <th class="num">Кг</th>
     <th>Статус</th>
   </tr>
@@ -108,16 +104,39 @@
     <td><a href="/orders/{{ row.order.id }}">{{ row.order.number }}</a></td>
     <td>{{ row.order.external_number|default:"" }}</td>
     <td>{% if row.order.revision > 1 %}<a href="/orders/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
+    <td>{{ row.order.created_at|date:"d.m.Y" }}</td>
     <td>{{ row.order.ship_date|date:"d.m.Y" }}</td>
     <td>{% if row.order.consignee_id %}{{ row.order.consignee.name }}{% else %}{{ row.order.client.name }}{% endif %}</td>
     <td>{% if row.order.consignee_id %}{{ row.order.consignee.address }}{% endif %}</td>
     <td>{% if row.order.consignee_id and row.order.consignee.zone_id %}{{ row.order.consignee.zone.name }}{% endif %}</td>
     <td>{{ row.order.seller.name }}</td>
+    <td>{{ row.driver }}</td>
     <td class="num">{{ row.kg|kg }}</td>
     <td>{{ DOC_STATUS|label:row.order.status }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="10">Заказов нет</td></tr>
+  <tr><td colspan="12">Заказов нет</td></tr>
   {% endfor %}
 </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll("#customers-filter select.period-type").forEach((select) => {
+    const input = document.getElementById(select.dataset.periodInput);
+    select.addEventListener("change", () => {
+      const custom = select.value === "custom";
+      input.hidden = !custom;
+      input.disabled = !custom;
+      if (!custom) select.form.requestSubmit();
+      else input.focus();
+    });
+    input.addEventListener("change", () => {
+      if (input.value) select.form.requestSubmit();
+    });
+  });
+  const driver = document.querySelector("#customers-filter select[name=driver]");
+  if (driver) driver.addEventListener("change", () => driver.form.requestSubmit());
+</script>
 {% endblock %}

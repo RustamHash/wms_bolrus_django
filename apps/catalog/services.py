@@ -1,11 +1,13 @@
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError
+from django.db.models import Case, F, IntegerField, Value, When
 
 from apps.catalog.models import (
     Caliber,
     Client,
     Consignee,
+    ConsigneeCategory,
     DeliveryZone,
     ExternalProduct,
     Grade,
@@ -23,22 +25,35 @@ from apps.printing.models import Printer
 from apps.storage.models import Pallet
 
 NAV = [
-    ("groups", "Группы"),
-    ("products", "Номенклатура"),
-    ("externals", "Номенклатура 1С"),
-    ("aliases", "Соответствия"),
-    ("calibers", "Калибры"),
-    ("grades", "Сортность"),
-    ("packagings", "Тара"),
-    ("suppliers", "Поставщики"),
-    ("clients", "Контрагенты"),
-    ("consignees", "Грузополучатели"),
-    ("zones", "Зоны доставки"),
-    ("consignee-zones", "Грузополучатель — зона"),
-    ("consignee-grades", "Грузополучатель — сорт"),
-    ("sellers", "Продавцы"),
-    ("printers", "Принтеры"),
-    ("users", "Пользователи"),
+    ("Товары", [
+        ("groups", "Группы"),
+        ("products", "Номенклатура"),
+        ("externals", "Номенклатура 1С"),
+        ("aliases", "Соответствия"),
+        ("calibers", "Калибры"),
+        ("grades", "Сортность"),
+        ("packagings", "Тара"),
+    ]),
+    ("Контрагенты", [
+        ("suppliers", "Поставщики"),
+        ("clients", "Контрагенты"),
+        ("sellers", "Продавцы"),
+        ("consignees", "Грузополучатели"),
+        ("categories", "Категории"),
+        ("consignee-grades", "Грузополучатель — сорт"),
+    ]),
+    ("Доставка", [
+        ("zones", "Зоны доставки"),
+        ("consignee-zones", "Грузополучатель — зона"),
+    ]),
+    ("Пользователи и права", [
+        ("users", "Пользователи"),
+        ("staff", "Сотрудники"),
+        ("positions", "Должности"),
+    ]),
+    ("Печать", [
+        ("printers", "Принтеры"),
+    ]),
 ]
 MODELS = {
     "groups": ProductGroup,
@@ -51,11 +66,12 @@ MODELS = {
     "suppliers": Supplier,
     "clients": Client,
     "consignees": Consignee,
+    "categories": ConsigneeCategory,
     "zones": DeliveryZone,
     "sellers": Seller,
     "printers": Printer,
 }
-TITLES = dict(NAV)
+TITLES = {key: label for _title, items in NAV for key, label in items}
 
 
 def assign_consignee_grades(consignee, grade_ids: list[int]) -> str:
@@ -90,6 +106,14 @@ def assign_consignee_zone(consignee, name: str) -> str:
     return zone.name
 
 
+def ensure_category_grade(name: str) -> Grade:
+    grade = Grade.objects.filter(name=name).first()
+    if grade is not None:
+        return grade
+    last = Grade.objects.order_by("-sort_order").values_list("sort_order", flat=True).first() or 0
+    return Grade.objects.create(name=name, sort_order=last + 10)
+
+
 def load_refs() -> dict:
     return {
         "products": list(Product.objects.order_by("name")),
@@ -98,7 +122,8 @@ def load_refs() -> dict:
         "packagings": list(Packaging.objects.order_by("name")),
         "suppliers": list(Supplier.objects.order_by("name")),
         "clients": list(Client.objects.order_by("name")),
-        "consignees": list(Consignee.objects.order_by("name")),
+        "consignees": list(Consignee.objects.select_related("category").order_by("name")),
+        "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
         "sellers": list(Seller.objects.order_by("name")),
         "open_pallets": list(Pallet.objects.filter(kind="inbound", status="open").order_by("-id")),
     }
@@ -134,7 +159,19 @@ def master_rows(kind: str):
     elif kind == "aliases":
         return _alias_rows()
     elif kind == "consignees":
-        items = model.objects.select_related("zone").order_by("name")
+        items = (
+            model.objects.select_related("zone", "category")
+            .annotate(
+                delivery_rank=Case(
+                    When(delivery_order=0, then=Value(1_000_000)),
+                    default="delivery_order",
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by(F("zone__name").asc(nulls_last=True), "delivery_rank", "name")
+        )
+    elif kind == "categories":
+        items = model.objects.select_related("grade").order_by("sort_order", "name")
     elif kind in ("groups", "zones"):
         items = model.objects.order_by("name")
     else:
@@ -153,7 +190,17 @@ def master_rows(kind: str):
             cells = [item.code or "", item.name]
         elif kind == "consignees":
             terms = (item.shipping_terms or "").splitlines()[0] if item.shipping_terms else ""
-            cells = [item.code or "", item.name, item.address, item.zone.name if item.zone_id else "", terms]
+            cells = [
+                item.code or "",
+                item.name,
+                item.category.name if item.category_id else "",
+                item.address,
+                item.zone.name if item.zone_id else "",
+                str(item.delivery_order) if item.delivery_order else "",
+                terms,
+            ]
+        elif kind == "categories":
+            cells = [item.name, str(item.sort_order), item.grade.name]
         elif kind == "sellers":
             cells = [item.code, item.name]
         elif kind == "packagings":
@@ -178,7 +225,8 @@ def master_rows(kind: str):
         "packagings": ["Название", "Вес тары, кг"],
         "clients": ["Код", "Контрагент"],
         "suppliers": ["Код", "Поставщик"],
-        "consignees": ["Код", "Грузополучатель", "Адрес", "Зона доставки", "Условия отгрузки"],
+        "consignees": ["Код", "Грузополучатель", "Категория", "Адрес", "Зона доставки", "Очередность", "Условия отгрузки"],
+        "categories": ["Категория", "Порядок", "Сортность"],
         "zones": ["Зона доставки"],
         "printers": ["Имя", "Тип", "Адрес", "По умолчанию"],
     }.get(kind, ["Название"])
@@ -207,8 +255,13 @@ def apply_master(kind: str, item, form) -> None:
     if not name:
         raise WarehouseError("Укажите название")
     item.name = name
-    if kind in ("calibers", "grades"):
+    if kind in ("calibers", "grades", "categories"):
         item.sort_order = optional_int(form, "sort_order") or 0
+    if kind == "categories":
+        taken = ConsigneeCategory.objects.filter(name=item.name).exclude(pk=item.pk or 0).exists()
+        if taken:
+            raise WarehouseError("Такая категория уже есть")
+        item.grade = ensure_category_grade(item.name)
     if kind == "products":
         item.code = text(form, "code")
         item.barcode = text(form, "barcode")
@@ -252,6 +305,17 @@ def apply_master(kind: str, item, form) -> None:
         if zone_id and not DeliveryZone.objects.filter(pk=zone_id).exists():
             raise WarehouseError("Выберите зону доставки")
         item.zone_id = zone_id
+        delivery_order = optional_int(form, "delivery_order")
+        if delivery_order is None:
+            item.delivery_order = 0
+        elif delivery_order < 0:
+            raise WarehouseError("Очередность не может быть отрицательной")
+        else:
+            item.delivery_order = delivery_order
+        category_id = optional_int(form, "category_id")
+        if category_id and not ConsigneeCategory.objects.filter(pk=category_id).exists():
+            raise WarehouseError("Выберите категорию")
+        item.category_id = category_id
     if kind == "sellers":
         item.code = text(form, "code")
         if not item.code:
@@ -270,6 +334,11 @@ def apply_master(kind: str, item, form) -> None:
                 raise WarehouseError("Вес тары не может быть отрицательным")
             item.tare_kg = tare
     item.save()
+    if kind == "categories":
+        from apps.catalog.grade_policy import fill_consignee_orders
+
+        for consignee in Consignee.objects.filter(category=item).prefetch_related("allowed_grades"):
+            fill_consignee_orders(consignee)
     if kind == "consignees":
         raw_ids = []
         for raw in form.getlist("allowed_grade"):
@@ -281,3 +350,6 @@ def apply_master(kind: str, item, form) -> None:
         if len(grades) != len(set(raw_ids)):
             raise WarehouseError("Выберите сортность")
         item.allowed_grades.set(grades)
+        from apps.catalog.grade_policy import fill_consignee_orders
+
+        fill_consignee_orders(item)

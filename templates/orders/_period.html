@@ -1,0 +1,28 @@
+<div class="period-grid">
+  <span class="period-caption">{{ label }}</span>
+  <span class="from-word">от</span>
+  <select name="{{ prefix }}_from_type" class="period-type from-select" data-period-input="{{ prefix }}-from">
+    <option value="">—</option>
+    {% if tomorrow %}<option value="tomorrow" {% if bound.from_type == "tomorrow" %}selected{% endif %}>Завтра</option>{% endif %}
+    <option value="today" {% if bound.from_type == "today" %}selected{% endif %}>Сегодня</option>
+    <option value="yesterday" {% if bound.from_type == "yesterday" %}selected{% endif %}>Вчера</option>
+    <option value="start_of_week" {% if bound.from_type == "start_of_week" %}selected{% endif %}>С начала недели</option>
+    <option value="start_of_last_week" {% if bound.from_type == "start_of_last_week" %}selected{% endif %}>С начала прошлой недели</option>
+    <option value="start_of_month" {% if bound.from_type == "start_of_month" %}selected{% endif %}>С начала месяца</option>
+    <option value="start_of_last_month" {% if bound.from_type == "start_of_last_month" %}selected{% endif %}>С начала прошлого месяца</option>
+    <option value="custom" {% if bound.from_type == "custom" %}selected{% endif %}>Выбрать дату</option>
+  </select>
+  <input class="from-date" type="date" id="{{ prefix }}-from" name="{{ prefix }}_from" value="{{ bound.from_value }}" {% if bound.from_type != "custom" %}hidden disabled{% endif %}>
+  <span class="to-word">до</span>
+  <select name="{{ prefix }}_to_type" class="period-type to-select" data-period-input="{{ prefix }}-to">
+    <option value="">—</option>
+    <option value="tomorrow" {% if bound.to_type == "tomorrow" %}selected{% endif %}>Завтра</option>
+    <option value="today" {% if bound.to_type == "today" %}selected{% endif %}>Сегодня</option>
+    <option value="end_of_week" {% if bound.to_type == "end_of_week" %}selected{% endif %}>До конца недели</option>
+    <option value="end_of_last_week" {% if bound.to_type == "end_of_last_week" %}selected{% endif %}>До конца прошлой недели</option>
+    <option value="end_of_month" {% if bound.to_type == "end_of_month" %}selected{% endif %}>До конца месяца</option>
+    <option value="end_of_last_month" {% if bound.to_type == "end_of_last_month" %}selected{% endif %}>До конца прошлого месяца</option>
+    <option value="custom" {% if bound.to_type == "custom" %}selected{% endif %}>Выбрать дату</option>
+  </select>
+  <input class="to-date" type="date" id="{{ prefix }}-to" name="{{ prefix }}_to" value="{{ bound.to_value }}" {% if bound.to_type != "custom" %}hidden disabled{% endif %}>
+</div>

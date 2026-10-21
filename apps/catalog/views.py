@@ -1,7 +1,8 @@
+from django.contrib import messages
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.catalog.models import Consignee, DeliveryZone, ExternalProduct, Grade, Product, ProductGroup
+from apps.catalog.models import Consignee, ConsigneeCategory, DeliveryZone, ExternalProduct, Grade, Product, ProductGroup
 from apps.catalog.services import MODELS, NAV, TITLES, apply_master, assign_consignee_grades, assign_consignee_zone, master_rows
 from apps.common.exceptions import WarehouseError
 from apps.common.http import done, guarded, roles_required
@@ -91,7 +92,14 @@ def master_list(request, kind):
     return render(
         request,
         "masters/list.html",
-        {"kind": kind, "title": TITLES[kind], "headers": headers, "rows": rows, "nav": NAV},
+        {
+            "kind": kind,
+            "title": TITLES[kind],
+            "headers": headers,
+            "rows": rows,
+            "nav": NAV,
+            "can_change": kind != "categories" or request.user.role == "admin",
+        },
     )
 
 
@@ -106,14 +114,25 @@ def _form_context(kind, item, *, external_product_id=None):
         "groups": list(ProductGroup.objects.order_by("name")),
         "zones": list(DeliveryZone.objects.order_by("name")),
         "grades": list(Grade.objects.order_by("sort_order", "name")),
+        "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
         "external_product_id": external_product_id,
     }
+
+
+def _category_locked(request, kind):
+    if kind != "categories" or request.user.role == "admin":
+        return None
+    messages.error(request, "Категории меняет только администратор")
+    return redirect("/masters/categories")
 
 
 @roles_required("office")
 def master_new(request, kind):
     if kind not in MODELS:
         raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
     external_product_id = None
     if kind == "aliases":
         try:
@@ -127,6 +146,9 @@ def master_new(request, kind):
 def master_create(request, kind):
     if kind not in MODELS:
         raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
 
     def action():
         item = MODELS[kind]()
@@ -143,6 +165,9 @@ def master_create(request, kind):
 def master_edit(request, kind, item_id):
     if kind not in MODELS:
         raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
     item = get_object_or_404(MODELS[kind], pk=item_id)
     return render(request, "masters/form.html", _form_context(kind, item))
 
@@ -151,6 +176,9 @@ def master_edit(request, kind, item_id):
 def master_update(request, kind, item_id):
     if kind not in MODELS:
         raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
 
     def action():
         item = MODELS[kind].objects.filter(pk=item_id).first()
@@ -169,6 +197,9 @@ def master_update(request, kind, item_id):
 def master_delete(request, kind, item_id):
     if kind not in MODELS:
         raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
 
     def action():
         item = MODELS[kind].objects.filter(pk=item_id).first()
