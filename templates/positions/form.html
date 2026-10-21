@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Должность{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новая должность{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/positions/{{ item.id }}{% else %}/positions{% endif %}" class="card grid">{% csrf_token %}
+  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% endif %}" required></label>
+  <fieldset class="grades">
+    <legend>Права</legend>
+    <div class="grade-picks">
+      {% for key, field, label in rights %}
+      <label><input type="checkbox" name="access" value="{{ key }}" {% if key in selected %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <p class="hint">Эти права получают все, кому назначена должность.</p>
+  </fieldset>
+  <label>Активна <input type="checkbox" name="active" value="1" {% if not item or item.is_active %}checked{% endif %}></label>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<form method="post" action="/positions/{{ item.id }}/delete" onsubmit="return confirm('Удалить должность?');">{% csrf_token %}
+  <button>Удалить</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -25,7 +25,7 @@ def receipts_redirect(request, receipt_id=None):
     return redirect("/tasks?kind=receive")
 
 
-@roles_required("receiver")
+@roles_required("receiver", tsd=("receive",))
 def task_receive(request, task_id):
     form = request.POST
     back = text(form, "next") or f"/tasks/{task_id}"
@@ -79,7 +79,7 @@ def movement_edit(request, movement_id):
     return done(request, back, "Приход изменён, остаток пересчитан")
 
 
-@roles_required("receiver")
+@roles_required("receiver", tsd=("receive",))
 def movement_delete(request, movement_id):
     form = request.POST
     back = text(form, "next") or "/tasks?kind=receive"

@@ -48,7 +48,7 @@ def shipment_detail(request, shipment_id):
     return render(request, "shipments/detail.html", {"shipment": shipment})
 
 
-@roles_required("warehouse")
+@roles_required("warehouse", tsd=("ship",))
 def task_ship(request, task_id):
     form = request.POST
     back = text(form, "next") or f"/tasks/{task_id}"

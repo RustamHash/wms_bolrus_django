@@ -7,9 +7,9 @@
   <button class="btn menu">Найти</button>
 </form>
 {% if kind == "pallet" %}
-<p>Паллета <a href="/pallets/{{ obj.id }}">{{ obj.number }}</a></p>
+<p>Паллета {% if user.role == "employee" %}{{ obj.number }}{% else %}<a href="/pallets/{{ obj.id }}">{{ obj.number }}</a>{% endif %}{% if obj.location %} · {{ obj.location }}{% endif %}</p>
 {% elif kind == "unit" %}
-<p>Место <a href="/units/{{ obj.id }}">{{ obj.barcode }}</a> {{ obj.net_kg|kg }} кг</p>
+<p>Место {% if user.role == "employee" %}{{ obj.barcode }}{% else %}<a href="/units/{{ obj.id }}">{{ obj.barcode }}</a>{% endif %} {{ obj.net_kg|kg }} кг</p>
 {% elif barcode %}
 <p>Ничего не найдено.</p>
 {% endif %}

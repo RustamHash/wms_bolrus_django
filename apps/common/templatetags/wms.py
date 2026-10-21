@@ -37,6 +37,13 @@ def get_item(mapping, key):
 
 
 @register.filter
+def screen(user, key):
+    from apps.accounts.access import screen_allows
+
+    return screen_allows(user, key, "view")
+
+
+@register.filter
 def label(mapping, key):
     if isinstance(mapping, dict) and key in mapping:
         return mapping[key]

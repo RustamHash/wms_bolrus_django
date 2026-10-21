@@ -3,6 +3,14 @@ ROLE_LABELS = {
     "warehouse": "Кладовщик",
     "office": "Офис",
     "admin": "Администратор",
+    "employee": "Сотрудник",
+}
+
+TSD_ACCESS = {
+    "receive": "Приёмка",
+    "pick": "Отбор",
+    "ship": "Отгрузка",
+    "move": "Перемещение",
 }
 
 UNIT_STATUS = {

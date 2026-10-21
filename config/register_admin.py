@@ -1,6 +1,8 @@
 from django.contrib.admin import ModelAdmin
 
-from apps.accounts.models import AdminRoleGrant, AdminUserGrant, User
+from apps.accounts.access import ACTIONS
+
+from apps.accounts.models import AdminRoleGrant, AdminUserGrant, Position, User
 from apps.catalog.models import Caliber, Client, Grade, Packaging, Product, ProductGroup, Seller, Supplier
 from apps.inventory.models import Balance, Movement
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine, Task, TaskLine
@@ -13,20 +15,31 @@ from config.admin_site import wms_admin
 
 
 class OpenAdmin(ModelAdmin):
+    def _permit(self, request, action):
+        user = request.user
+        if not user.is_authenticated or not user.is_active:
+            return False
+        if user.is_superuser or getattr(user, "role", "") == "admin":
+            return True
+        if not getattr(user, "access_managed", False):
+            return True
+        opts = self.opts
+        return user.has_perm(f"{opts.app_label}.{action}_{opts.model_name}")
+
     def has_module_permission(self, request):
-        return True
+        return any(self._permit(request, action) for action, _label in ACTIONS)
 
     def has_view_permission(self, request, obj=None):
-        return True
+        return self._permit(request, "view") or self._permit(request, "change")
 
     def has_add_permission(self, request):
-        return True
+        return self._permit(request, "add")
 
     def has_change_permission(self, request, obj=None):
-        return True
+        return self._permit(request, "change")
 
     def has_delete_permission(self, request, obj=None):
-        return True
+        return self._permit(request, "delete")
 
 
 class ReadAdmin(OpenAdmin):
@@ -41,8 +54,8 @@ class ReadAdmin(OpenAdmin):
 
 
 class UserAdmin(OpenAdmin):
-    list_display = ("name", "login", "role", "is_active")
-    fields = ("name", "login", "role", "is_active")
+    list_display = ("name", "login", "role", "position", "is_active")
+    fields = ("name", "last_name", "first_name", "middle_name", "login", "role", "position", "tsd_code", "access_receive", "access_pick", "access_ship", "access_move", "is_active")
 
 
 def _show(model, fields):
@@ -51,6 +64,14 @@ def _show(model, fields):
 
 
 wms_admin.register(User, UserAdmin)
+wms_admin.register(
+    Position,
+    type(
+        "PositionAdmin",
+        (OpenAdmin,),
+        {"list_display": ("name", "access_receive", "access_pick", "access_ship", "access_move", "access_shift", "is_active")},
+    ),
+)
 wms_admin.register(AdminRoleGrant, type("RoleGrantAdmin", (OpenAdmin,), {"list_display": ("role",)}))
 wms_admin.register(AdminUserGrant, type("UserGrantAdmin", (OpenAdmin,), {"list_display": ("user",)}))
 
@@ -76,7 +97,7 @@ for model, fields in (
     (HandlingUnit, ("barcode", "status", "net_kg")),
     (Vehicle, ("plate_number", "brand_model", "load_capacity_kg", "pallet_capacity", "is_active")),
     (Driver, ("full_name", "phone", "vehicle", "is_active")),
-    (Route, ("route_date", "name", "driver", "status", "planned_load_at", "actual_load_at")),
+    (Route, ("route_date", "name", "driver", "status", "planned_load_at", "docked_at", "actual_load_at")),
     (RouteOrder, ("route", "order", "position")),
 ):
     _show(model, fields)

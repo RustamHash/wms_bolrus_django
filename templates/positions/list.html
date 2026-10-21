@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Должности{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Должности</h1>
+    <a class="btn slim" href="/positions/new">Добавить</a>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<p class="hint">Должность назначается пользователю или сотруднику и задаёт, что ему можно делать.</p>
+<table class="sheet">
+  <tr><th>Должность</th><th>Права</th><th>Активна</th><th></th></tr>
+  {% for item in rows %}
+  <tr data-href="/positions/{{ item.id }}">
+    <td>{{ item.name }}</td>
+    <td>{{ item.rights_title }}</td>
+    <td>{% if item.is_active %}да{% else %}нет{% endif %}</td>
+    <td><a href="/positions/{{ item.id }}">Изменить</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">Должностей пока нет.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

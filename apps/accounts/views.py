@@ -7,12 +7,21 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.db.models import F, Sum
 
-from apps.accounts.models import User, hash_secret, new_badge_token, verify_secret
-from apps.accounts.services import assignable_roles, can_open_admin, ensure_keeper, sync_user_grant, user_has_grant
+from apps.accounts.access import ACTIONS, TSD_SCREENS, WEB_SCREENS, read_grants, role_presets, screen_rows, sync_user_screens
+from apps.accounts.models import Position, User, hash_secret, new_badge_token, verify_secret
+from apps.accounts.services import (
+    assign_position,
+    assignable_roles,
+    can_open_admin,
+    ensure_keeper,
+    position_choices,
+    sync_user_grant,
+    user_has_grant,
+)
 from apps.catalog.services import NAV
 from apps.common.constants import TASK_WORK_STATUS
 from apps.common.exceptions import WarehouseError
-from apps.common.forms import text
+from apps.common.forms import optional_int, text
 from apps.common.http import done, guarded, roles_required
 from apps.common.notices import mark_notices_seen
 from apps.common.kg import as_kg
@@ -40,7 +49,7 @@ def _issue_missing_badges(users) -> None:
 def find_user_for_tsd(code: str):
     raw = code.strip()
     if not raw:
-        return None, "Введите PIN или отсканируйте бейдж"
+        return None, "Введите код или отсканируйте бейдж"
     token = raw[raw.rfind("WMS.") :] if "WMS." in raw else ""
     token = token.split()[0].strip() if token else ""
     if token.startswith("WMS."):
@@ -48,9 +57,14 @@ def find_user_for_tsd(code: str):
         if user is None:
             return None, "Бейдж не распознан"
         return user, None
+    by_code = list(User.objects.filter(tsd_code=raw, is_active=True)[:2])
+    if len(by_code) > 1:
+        return None, "Этот код задан нескольким сотрудникам"
+    if len(by_code) == 1:
+        return by_code[0], None
     matches = [user for user in User.objects.filter(is_active=True).exclude(pin_hash="") if verify_secret(raw, user.pin_hash)]
     if not matches:
-        return None, "Неверный PIN"
+        return None, "Неверный код"
     if len(matches) > 1:
         return None, "Этот PIN задан нескольким пользователям"
     return matches[0], None
@@ -64,10 +78,15 @@ def login_submit(request):
     login_name = text(request.POST, "login")
     password = request.POST.get("password") or ""
     user = User.objects.filter(login=login_name, is_active=True).first()
+    if user is not None and user.role == "employee" and not user.can_shift():
+        messages.error(request, "Сотрудник входит только на ТСД")
+        return redirect("/login")
     if user is None or not user.check_password(password):
         messages.error(request, "Неверный логин или пароль")
         return redirect("/login")
     login(request, user)
+    if user.role == "employee":
+        return redirect("/shift")
     return redirect("/")
 
 
@@ -141,7 +160,7 @@ def home(request):
 
 @roles_required("office")
 def users_list(request):
-    users = list(User.objects.order_by("name"))
+    users = list(User.objects.exclude(role="employee").select_related("position").order_by("name"))
     _issue_missing_badges(users)
     return render(request, "users/list.html", {"users": users, "nav": NAV, "kind": "users"})
 
@@ -149,10 +168,15 @@ def users_list(request):
 def _user_form(editor, item):
     return {
         "roles": assignable_roles(editor),
+        "positions": position_choices(item.position_id if item else None),
         "can_grant": can_open_admin(editor),
         "admin_access": bool(item and user_has_grant(item.id)),
         "nav": NAV,
         "kind": "users",
+        "actions": ACTIONS,
+        "web_screens": screen_rows(item, WEB_SCREENS),
+        "tsd_screens": screen_rows(item, TSD_SCREENS),
+        "role_presets": role_presets(),
     }
 
 
@@ -185,10 +209,13 @@ def users_create(request):
             role=role,
             is_active=form.get("active") == "1",
         )
+        assign_position(item, optional_int(form, "position_id"), required=False)
         item.set_password(password)
         item.save()
         if can_open_admin(request.user):
             sync_user_grant(item, form.get("admin_access") == "1")
+        if form.get("screens_present") == "1":
+            sync_user_screens(item, read_grants(form))
         return item
 
     result, response = guarded(request, "/users/new", action)
@@ -199,7 +226,9 @@ def users_create(request):
 
 @roles_required("office")
 def users_edit(request, user_id):
-    item = get_object_or_404(User, pk=user_id)
+    item = get_object_or_404(User.objects.prefetch_related("user_permissions"), pk=user_id)
+    if item.role == "employee":
+        return redirect(f"/staff/{item.id}")
     if item.role == "admin" and not can_open_admin(request.user):
         messages.error(request, "Недостаточно прав")
         return redirect("/")
@@ -215,6 +244,8 @@ def users_update(request, user_id):
         item = User.objects.filter(pk=user_id).first()
         if item is None:
             raise WarehouseError("Пользователь не найден")
+        if item.role == "employee":
+            raise WarehouseError("Сотрудника меняют в справочнике «Сотрудники»")
         name = text(form, "name")
         login_name = text(form, "login")
         role = text(form, "role")
@@ -230,6 +261,7 @@ def users_update(request, user_id):
         item.name = name
         item.login = login_name
         item.role = role
+        assign_position(item, optional_int(form, "position_id"), required=False)
         item.is_active = form.get("active") == "1"
         password = form.get("password") or ""
         if password:
@@ -240,6 +272,8 @@ def users_update(request, user_id):
         item.save()
         if can_open_admin(request.user):
             sync_user_grant(item, form.get("admin_access") == "1")
+        if form.get("screens_present") == "1":
+            sync_user_screens(item, read_grants(form))
         return item
 
     result, response = guarded(request, f"/users/{user_id}", action)
@@ -261,7 +295,8 @@ def users_new_badge(request, user_id):
     result, response = guarded(request, f"/users/{user_id}", action)
     if response:
         return response
-    return done(request, f"/users/{user_id}", "Новый QR-код выпущен, старый бейдж больше не действует")
+    target = f"/staff/{result.id}" if result.role == "employee" else f"/users/{result.id}"
+    return done(request, target, "Новый QR-код выпущен, старый бейдж больше не действует")
 
 
 @roles_required("office")
@@ -279,3 +314,217 @@ def users_badge_page(request, user_id):
     item = get_object_or_404(User, pk=user_id)
     _issue_missing_badges([item])
     return render(request, "users/badge.html", {"item": item})
+
+
+def _staff_fio(form):
+    last_name = text(form, "last_name")
+    first_name = text(form, "first_name")
+    middle_name = text(form, "middle_name")
+    if not last_name or not first_name:
+        raise WarehouseError("Укажите фамилию и имя")
+    full = " ".join(part for part in (last_name, first_name, middle_name) if part)
+    if len(full) > 120:
+        raise WarehouseError("ФИО длиннее 120 символов")
+    return last_name, first_name, middle_name
+
+
+def _staff_code(form, user_id: int | None) -> str | None:
+    code = text(form, "tsd_code")
+    if not code:
+        return None
+    if not code.isdigit() or not 4 <= len(code) <= 6:
+        raise WarehouseError("Короткий код — от 4 до 6 цифр")
+    if User.objects.filter(tsd_code=code).exclude(pk=user_id).exists() or _pin_taken(code, user_id):
+        raise WarehouseError("Этот код уже используется")
+    return code
+
+
+def _next_staff_login() -> str:
+    number = User.objects.count() + 1
+    login_name = f"s{number}"
+    while User.objects.filter(login=login_name).exists():
+        number += 1
+        login_name = f"s{number}"
+    return login_name
+
+
+def _staff_form(item=None):
+    return {
+        "positions": position_choices(item.position_id if item else None),
+        "nav": NAV,
+        "kind": "staff",
+    }
+
+
+@roles_required("office")
+def staff_list(request):
+    staff = list(User.objects.filter(role="employee").select_related("position").order_by("last_name", "first_name", "middle_name", "name"))
+    _issue_missing_badges(staff)
+    return render(request, "staff/list.html", {"staff": staff, "nav": NAV, "kind": "staff"})
+
+
+@roles_required("office")
+def staff_new(request):
+    return render(request, "staff/form.html", {"item": None, **_staff_form()})
+
+
+@roles_required("office")
+def staff_create(request):
+    form = request.POST
+
+    def action():
+        last_name, first_name, middle_name = _staff_fio(form)
+        item = User(
+            login=_next_staff_login(),
+            badge_token=new_badge_token(),
+            tsd_code=_staff_code(form, None),
+            role="employee",
+            is_active=form.get("active") == "1",
+        )
+        item.apply_fio(last_name, first_name, middle_name)
+        assign_position(item, optional_int(form, "position_id"), required=True)
+        item.set_unusable_password()
+        item.save()
+        return item
+
+    result, response = guarded(request, "/staff/new", action)
+    if response:
+        return response
+    return done(request, f"/staff/{result.id}", "Сотрудник создан. Токен для входа на бейдже.")
+
+
+@roles_required("office")
+def staff_edit(request, user_id):
+    item = get_object_or_404(User, pk=user_id, role="employee")
+    _issue_missing_badges([item])
+    return render(request, "staff/form.html", {"item": item, **_staff_form(item)})
+
+
+@roles_required("office")
+def staff_update(request, user_id):
+    form = request.POST
+
+    def action():
+        item = User.objects.filter(pk=user_id, role="employee").first()
+        if item is None:
+            raise WarehouseError("Сотрудник не найден")
+        last_name, first_name, middle_name = _staff_fio(form)
+        item.apply_fio(last_name, first_name, middle_name)
+        item.tsd_code = _staff_code(form, item.id)
+        item.is_active = form.get("active") == "1"
+        if not item.badge_token:
+            item.badge_token = new_badge_token()
+        assign_position(item, optional_int(form, "position_id"), required=True)
+        item.save()
+        return item
+
+    result, response = guarded(request, f"/staff/{user_id}", action)
+    if response:
+        return response
+    return done(request, "/staff", "Сохранено")
+
+
+_POSITION_RIGHTS = (
+    ("receive", "access_receive", "Приёмка"),
+    ("pick", "access_pick", "Отбор"),
+    ("ship", "access_ship", "Отгрузка"),
+    ("move", "access_move", "Перемещение"),
+    ("shift", "access_shift", "Экран смены"),
+)
+
+
+def _position_form(item):
+    selected = set()
+    if item is not None:
+        selected = {key for key, field, _label in _POSITION_RIGHTS if getattr(item, field)}
+    return {
+        "rights": _POSITION_RIGHTS,
+        "selected": selected,
+        "nav": NAV,
+        "kind": "positions",
+    }
+
+
+def _apply_position_rights(item: Position, form) -> None:
+    selected = set(form.getlist("access"))
+    known = {key for key, _field, _label in _POSITION_RIGHTS}
+    if not selected or not selected <= known:
+        if not selected:
+            raise WarehouseError("Отметьте хотя бы одно право")
+        raise WarehouseError("Некорректное право")
+    for key, field, _label in _POSITION_RIGHTS:
+        setattr(item, field, key in selected)
+
+
+@roles_required("office")
+def positions_list(request):
+    rows = list(Position.objects.order_by("name"))
+    return render(request, "positions/list.html", {"rows": rows, "nav": NAV, "kind": "positions"})
+
+
+@roles_required("office")
+def positions_new(request):
+    return render(request, "positions/form.html", {"item": None, **_position_form(None)})
+
+
+@roles_required("office")
+def positions_create(request):
+    form = request.POST
+
+    def action():
+        name = text(form, "name")
+        if not name:
+            raise WarehouseError("Укажите название должности")
+        item = Position(name=name, is_active=form.get("active") == "1")
+        _apply_position_rights(item, form)
+        item.save()
+        return item
+
+    result, response = guarded(request, "/positions/new", action)
+    if response:
+        return response
+    return done(request, "/positions", "Должность создана")
+
+
+@roles_required("office")
+def positions_edit(request, item_id):
+    item = get_object_or_404(Position, pk=item_id)
+    return render(request, "positions/form.html", {"item": item, **_position_form(item)})
+
+
+@roles_required("office")
+def positions_update(request, item_id):
+    form = request.POST
+
+    def action():
+        item = Position.objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Должность не найдена")
+        name = text(form, "name")
+        if not name:
+            raise WarehouseError("Укажите название должности")
+        item.name = name
+        item.is_active = form.get("active") == "1"
+        _apply_position_rights(item, form)
+        item.save()
+        return item
+
+    result, response = guarded(request, f"/positions/{item_id}", action)
+    if response:
+        return response
+    return done(request, "/positions", "Сохранено")
+
+
+@roles_required("office")
+def positions_delete(request, item_id):
+    def action():
+        item = Position.objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Должность не найдена")
+        item.delete()
+        return item
+
+    _result, response = guarded(request, "/positions", action)
+    if response:
+        return response
+    return done(request, "/positions", "Должность удалена")

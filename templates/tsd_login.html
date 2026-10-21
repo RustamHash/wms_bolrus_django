@@ -7,9 +7,9 @@
 {% endblock %}
 {% block content %}
 <h1>Вход</h1>
-<p class="hint">Введите свой PIN или отсканируйте свой QR-код. Сканер вводит код в поле и подтверждает вход.</p>
+<p class="hint">Введите короткий код или отсканируйте бейдж. Сканер вводит токен в поле и подтверждает вход.</p>
 <form method="post" action="/tsd/login" class="card">{% csrf_token %}
-  <label>PIN или бейдж
+  <label>Код или токен
     <input name="code" data-code autocomplete="off" autofocus>
   </label>
   <button class="btn">Войти</button>

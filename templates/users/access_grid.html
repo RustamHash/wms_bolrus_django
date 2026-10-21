@@ -1,0 +1,17 @@
+{% load wms %}
+<table class="sheet access-grid">
+  <tr>
+    <th>Меню</th>
+    {% for action, label in actions %}
+    <th>{{ label }}</th>
+    {% endfor %}
+  </tr>
+  {% for screen in screens %}
+  <tr>
+    <td class="screen">{{ screen.title }}{% if screen.hint %}<div class="hint">{{ screen.hint }}</div>{% endif %}</td>
+    {% for action, label in actions %}
+    <td><input type="checkbox" name="screen" value="{{ screen.key }}:{{ action }}" aria-label="{{ screen.title }} — {{ label }}" {% if screen.checks|get_item:action %}checked{% endif %}></td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>

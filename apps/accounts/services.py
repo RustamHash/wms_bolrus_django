@@ -1,4 +1,6 @@
-from apps.accounts.models import AdminRoleGrant, AdminUserGrant, User
+from django.db.models import Q
+
+from apps.accounts.models import AdminRoleGrant, AdminUserGrant, Position, User
 from apps.common.constants import ROLE_LABELS
 from apps.common.exceptions import WarehouseError
 
@@ -12,9 +14,29 @@ def can_open_admin(user) -> bool:
 
 def assignable_roles(editor) -> dict[str, str]:
     roles = dict(ROLE_LABELS)
+    roles.pop("employee", None)
     if not can_open_admin(editor):
         roles.pop("admin", None)
     return roles
+
+
+def position_choices(current_id: int | None = None):
+    query = Q(is_active=True)
+    if current_id:
+        query |= Q(pk=current_id)
+    return Position.objects.filter(query).order_by("name")
+
+
+def assign_position(item: User, position_id: int | None, *, required: bool) -> None:
+    if not position_id:
+        if required:
+            raise WarehouseError("Выберите должность")
+        item.position = None
+        return
+    position = Position.objects.filter(pk=position_id).first()
+    if position is None or (not position.is_active and position.id != item.position_id):
+        raise WarehouseError("Должность не найдена")
+    item.position = position
 
 
 def user_has_grant(user_id: int) -> bool:

@@ -12,12 +12,13 @@
   </div>
 </div>
 <table class="sheet">
-  <tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Активен</th><th></th></tr>
+  <tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Должность</th><th>Активен</th><th></th></tr>
   {% for item in users %}
   <tr data-href="/users/{{ item.id }}">
     <td>{{ item.name }}</td>
     <td>{{ item.login }}</td>
     <td>{{ ROLE_LABELS|label:item.role }}</td>
+    <td>{% if item.position %}{{ item.position.name }}{% else %}—{% endif %}</td>
     <td>{% if item.active %}да{% else %}нет{% endif %}</td>
     <td><a href="/users/{{ item.id }}">Изменить</a> · <a href="/users/{{ item.id }}/badge">Бейдж</a></td>
   </tr>

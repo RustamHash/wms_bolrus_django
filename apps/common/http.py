@@ -19,22 +19,33 @@ def accept(get=None, post=None):
     return view
 
 
-def roles_required(*roles):
+def roles_required(*roles, tsd=()):
     def decorator(view):
         @wraps(view)
         def wrapped(request, *args, **kwargs):
             user = request.user
             path = request.path
-            login_url = "/tsd/login" if path.startswith("/tsd") else "/login"
+            on_tsd = path.startswith("/tsd")
+            login_url = "/tsd/login" if on_tsd else "/login"
             if not user.is_authenticated or not user.is_active:
                 return redirect(login_url)
+            if user.role == "employee" and not on_tsd and request.method != "POST":
+                if not (path.startswith("/shift") and user.can_shift()):
+                    return redirect("/tsd")
+            needed = set(tsd)
+            if needed and needed & user.granted_access():
+                return view(request, *args, **kwargs)
+            if "shift" in roles and user.can_shift():
+                return view(request, *args, **kwargs)
+            if on_tsd and path.rstrip("/") == "/tsd" and user.can_shift():
+                return view(request, *args, **kwargs)
             if user.role != "admin":
                 allowed = set(roles)
                 if "office" not in allowed:
                     allowed.add("office")
                 if user.role not in allowed:
                     messages.error(request, "Недостаточно прав")
-                    return redirect("/tsd" if path.startswith("/tsd") else "/")
+                    return redirect("/tsd" if on_tsd or user.role == "employee" else "/")
             return view(request, *args, **kwargs)
 
         return wrapped

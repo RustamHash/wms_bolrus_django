@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Сотрудник{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новый сотрудник{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/staff/{{ item.id }}{% else %}/staff{% endif %}" class="card grid">{% csrf_token %}
+  <label>Фамилия <input name="last_name" value="{% if item %}{{ item.last_name }}{% endif %}" required></label>
+  <label>Имя <input name="first_name" value="{% if item %}{{ item.first_name }}{% endif %}" required></label>
+  <label>Отчество <input name="middle_name" value="{% if item %}{{ item.middle_name }}{% endif %}"></label>
+  <label>Короткий код <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
+  <label>Должность
+    <select name="position_id" required>
+      <option value=""></option>
+      {% for position in positions %}
+      <option value="{{ position.id }}" {% if item and item.position_id == position.id %}selected{% endif %}>{{ position.name }} — {{ position.rights_title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint wide">На ТСД входят постоянным токеном бейджа или коротким кодом. Достаточно одного, можно задать оба. Операции берутся из должности.</p>
+  <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<div class="card">
+  <h2>Токен входа</h2>
+  <p>Постоянный. QR на бейдже содержит этот токен, его можно и ввести вручную. При сохранении карточки токен не меняется.</p>
+  <label>Токен <input value="{{ item.badge_token }}" readonly></label>
+  <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="220" height="220"></p>
+  <p><a class="btn" href="/users/{{ item.id }}/badge" target="_blank">Печать бейджа</a></p>
+</div>
+{% endif %}
+{% endblock %}

@@ -10,25 +10,50 @@
     {% include "masters/nav.html" %}
   </div>
 </div>
-<form method="post" action="{% if item %}/users/{{ item.id }}{% else %}/users{% endif %}" class="card grid">{% csrf_token %}
-  <label>Имя <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
-  <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% else %}{% endif %}" required></label>
-  <label>Пароль <input name="password" type="password" placeholder="{% if item %}оставьте пустым, чтобы не менять{% else %}{% endif %}"></label>
-  <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
-  <label>Роль
-    <select name="role">
-      {% for key, label in roles.items %}
-      <option value="{{ key }}" {% if item and item.role == key %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  {% if can_grant %}
-  <label>Доступ в админку
-    <input type="checkbox" name="admin_access" value="1" {% if admin_access %}checked{% endif %}>
-  </label>
-  <p class="hint">Личный допуск этого пользователя. Допуск целой роли задаётся в админке, раздел «Доступ ролей».</p>
-  {% endif %}
-  <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+<nav class="sheet-tabs" id="user-tabs">
+  <button type="button" class="on" data-pane="card">Карточка</button>
+  <button type="button" data-pane="web">Доступы</button>
+  <button type="button" data-pane="tsd">Экран ТСД</button>
+</nav>
+<form method="post" action="{% if item %}/users/{{ item.id }}{% else %}/users{% endif %}" id="user-form">{% csrf_token %}
+  <input type="hidden" name="screens_present" value="1">
+  <div class="card grid" data-pane="card">
+    <label>Имя <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+    <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% else %}{% endif %}" required></label>
+    <label>Пароль <input name="password" type="password" placeholder="{% if item %}оставьте пустым, чтобы не менять{% else %}{% endif %}"></label>
+    <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
+    <label>Роль
+      <select name="role" id="user-role">
+        {% for key, label in roles.items %}
+        <option value="{{ key }}" {% if item and item.role == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Должность
+      <select name="position_id">
+        <option value=""></option>
+        {% for position in positions %}
+        <option value="{{ position.id }}" {% if item and item.position_id == position.id %}selected{% endif %}>{{ position.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="hint wide">Права должности задаются в справочнике «Должности» и действуют, пока доступы этой карточки не сохранены. Экран смены открывается, если у должности отмечен этот доступ. Офис и администратор видят его и без должности, пока галочки не заданы отдельно.</p>
+    {% if can_grant %}
+    <label>Доступ в админку
+      <input type="checkbox" name="admin_access" value="1" {% if admin_access %}checked{% endif %}>
+    </label>
+    <p class="hint">Личный допуск этого пользователя. Допуск целой роли задаётся в админке, раздел «Доступ ролей». Что можно делать внутри админки, задают галочки вкладок «Доступы» и «Экран ТСД».</p>
+    {% endif %}
+    <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+  </div>
+  <div class="card" data-pane="web" hidden>
+    <p class="hint">Меню сайта. Чтение открывает раздел, запись позволяет сохранять, создание — добавлять, удаление — удалять. Те же права получает Django-админка по моделям этого меню. У администратора доступ полный независимо от галочек.</p>
+    {% include "users/access_grid.html" with screens=web_screens %}
+  </div>
+  <div class="card" data-pane="tsd" hidden>
+    <p class="hint">Кнопки меню терминала. Чтение показывает пункт и открывает экран, запись разрешает сохранять операцию. Пока карточку с этими галочками не сохраняли, терминал берёт операции из должности и роли.</p>
+    {% include "users/access_grid.html" with screens=tsd_screens %}
+  </div>
   <button>Сохранить</button>
 </form>
 {% if item %}
@@ -42,4 +67,39 @@
   </form>
 </div>
 {% endif %}
+{{ role_presets|json_script:"role-access" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const tabs = document.getElementById("user-tabs");
+  const form = document.getElementById("user-form");
+  if (!tabs || !form) return;
+  const showPane = (pane) => {
+    tabs.querySelectorAll("button").forEach((item) => item.classList.toggle("on", item.dataset.pane === pane));
+    form.querySelectorAll("[data-pane]").forEach((item) => { item.hidden = item.dataset.pane !== pane; });
+  };
+  tabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-pane]");
+    if (!button) return;
+    showPane(button.dataset.pane);
+  });
+  form.addEventListener("invalid", (event) => {
+    const pane = event.target.closest("[data-pane]");
+    if (pane) showPane(pane.dataset.pane);
+  }, true);
+  const role = document.getElementById("user-role");
+  const presetNode = document.getElementById("role-access");
+  if (!role || !presetNode || form.dataset.saved === "1") return;
+  const presets = JSON.parse(presetNode.textContent || "{}");
+  const apply = () => {
+    const marks = new Set(presets[role.value] || []);
+    form.querySelectorAll("input[name=screen]").forEach((box) => { box.checked = marks.has(box.value); });
+  };
+  {% if not item %}
+  apply();
+  role.addEventListener("change", apply);
+  {% endif %}
+})();
+</script>
 {% endblock %}

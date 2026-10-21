@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Сотрудники{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Сотрудники</h1>
+    <a class="btn slim" href="/staff/new">Добавить</a>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<p class="hint">Вход на ТСД: постоянный токен бейджа или короткий код. В веб-интерфейс сотрудник не входит.</p>
+<table class="sheet">
+  <tr><th>ФИО</th><th>Должность</th><th>Права</th><th>Код</th><th>Активен</th><th></th></tr>
+  {% for item in staff %}
+  <tr data-href="/staff/{{ item.id }}">
+    <td>{{ item.name }}</td>
+    <td>{% if item.position %}{{ item.position.name }}{% else %}—{% endif %}</td>
+    <td>{% if item.position %}{{ item.position.rights_title }}{% else %}{{ item.access_title }}{% endif %}</td>
+    <td>{% if item.tsd_code %}{{ item.tsd_code }}{% else %}—{% endif %}</td>
+    <td>{% if item.active %}да{% else %}нет{% endif %}</td>
+    <td><a href="/staff/{{ item.id }}">Изменить</a> · <a href="/users/{{ item.id }}/badge">Бейдж</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Сотрудников пока нет.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

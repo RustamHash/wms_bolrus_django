@@ -3,7 +3,7 @@ from apps.common.http import done, guarded, roles_required
 from apps.picking.services import pick_pallet
 
 
-@roles_required("warehouse")
+@roles_required("warehouse", tsd=("pick",))
 def task_pick(request, task_id):
     form = request.POST
     back = text(form, "next") or f"/tasks/{task_id}"
