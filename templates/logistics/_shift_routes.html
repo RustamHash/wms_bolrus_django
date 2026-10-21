@@ -1,0 +1,56 @@
+{% load wms %}
+<section class="shift-pane routes" data-part="routes">
+  {% include "logistics/_shift_tools.html" with heading="Маршруты" part="routes" %}
+  <div class="shift-scroll">
+    <table class="sheet">
+      <tr>
+        {% if ranged %}<th>Дата</th>{% endif %}
+        <th>Название</th><th>Водитель</th><th>Авто</th><th>План</th><th>Заказов</th><th>Вес, кг</th><th>Статус</th><th>Прибыл</th><th>Постановка</th><th>Отгрузка</th><th>Убыл</th><th></th>
+      </tr>
+      {% for route in routes %}
+      <tr>
+        {% if ranged %}<td>{{ route.route_date|date:"d.m.Y" }}</td>{% endif %}
+        <td>{{ route.name|default:route.id }}</td>
+        <td>{% if route.driver %}{{ route.driver.full_name }}{% else %}—{% endif %}</td>
+        <td>{{ route.vehicle_text|default:"—" }}</td>
+        <td>{% if route.planned_load_at %}{% if route.planned_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.planned_load_at|date:"d.m" }} {% endif %}{{ route.planned_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+        <td>{{ route.order_count }}</td>
+        <td>{{ route.weight|kg }}</td>
+        <td>{{ route.get_status_display }}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=route.arrived_at kind="routes" item_id=route.id action="arrive" label="Прибыл" %}</td>
+        <td>{% if route.docked_at %}{{ route.docked_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+        <td>{% if route.actual_load_at %}{{ route.actual_load_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=route.departed_at kind="routes" item_id=route.id action="depart" label="Убыл" %}</td>
+        <td class="fit">
+          {% if route.status == 'draft' or route.status == 'planned' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/dock" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Поставлено к отгрузке</button>
+          </form>
+          {% elif route.status == 'docked' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/ship" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Отгружен</button>
+          </form>
+          <form method="post" action="/shift/routes/{{ route.id }}/revert" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Вернуть</button>
+          </form>
+          {% elif route.status == 'completed' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/revert" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Вернуть к погрузке</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if ranged %}13{% else %}12{% endif %}">Нет маршрутов за выбранный период</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>

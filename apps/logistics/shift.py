@@ -86,6 +86,7 @@ def shift_orders(start: date, end: date) -> list[dict]:
         names = [link.route.name or f"Маршрут {link.route_id}" for link in order.route_orders.all()]
         rows.append(
             {
+                "id": order.id,
                 "date": order.ship_date,
                 "number": order.number or order.external_number or f"#{order.pk}",
                 "consignee": order.consignee.name if order.consignee_id else "",

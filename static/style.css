@@ -393,7 +393,15 @@ body:has(.shift-page) main { flex: 1; min-width: 0; width: 100%; min-height: 0; 
 .shift-board { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 8px; }
 .shift-pane { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; }
 .shift-pane.routes { flex: 1.25; }
-.shift-pane h2 { margin: 0 0 4px; font-size: 15px; }
+.shift-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; flex: 0 0 auto; }
+.shift-head h2 { margin: 0; font-size: 15px; }
+.shift-head .actions { display: flex; align-items: center; gap: 6px; }
+.shift-head .icon-btn { position: relative; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--green); }
+.shift-head .icon-btn svg { width: 16px; height: 16px; }
+.shift-head .icon-btn:hover { background: #e7f0ea; }
+.shift-head .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 30; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.shift-head .icon-btn[data-tip]:hover::after, .shift-head .icon-btn[data-tip]:focus-visible::after { opacity: 1; }
+td.comment { max-width: 360px; white-space: normal; }
 .shift-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; background: #fff; }
 .shift-scroll table.sheet { width: 100%; min-width: max(100%, max-content); border-collapse: separate; border-spacing: 0; }
 .shift-scroll table.sheet tr:first-child th { position: sticky; top: 0; z-index: 2; background: #eef2ee; }

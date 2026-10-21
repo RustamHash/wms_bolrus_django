@@ -2,7 +2,7 @@ import json
 from datetime import date, timedelta
 
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -662,36 +662,108 @@ def _shift_back(request) -> str:
     return "/shift"
 
 
-@roles_required("shift")
-def shift_board(request):
+_SHIFT_PARTS = {
+    "orders": "logistics/_shift_orders.html",
+    "incoming": "logistics/_shift_incoming.html",
+    "routes": "logistics/_shift_routes.html",
+}
+
+
+def _shift_context(start, end, preset, part=""):
+    today = _today()
+    context = {
+        "title": "Смена",
+        "date_from": start,
+        "date_to": end,
+        "preset": preset,
+        "ranged": start != end,
+        "yesterday": today - timedelta(days=1),
+        "today": today,
+        "tomorrow": today + timedelta(days=1),
+    }
+    if part in ("", "orders"):
+        context["orders"] = shift_orders(start, end)
+    if part in ("", "incoming"):
+        context["incoming"] = shift_incoming(start, end)
+    if part in ("", "routes"):
+        context["routes"] = shift_routes(start, end)
+    return context
+
+
+def _shift_bounds(request):
     today = _today()
     try:
-        start, end, preset = parse_shift_period(
+        return parse_shift_period(
             request.GET.get("date_from") or "",
             request.GET.get("date_to") or "",
             request.GET.get("date") or "",
         )
     except WarehouseError as exc:
         messages.error(request, str(exc))
-        start = end = today
-        preset = "today"
-    return render(
-        request,
-        "logistics/shift.html",
-        {
-            "title": "Смена",
-            "date_from": start,
-            "date_to": end,
-            "preset": preset,
-            "ranged": start != end,
-            "yesterday": today - timedelta(days=1),
-            "today": today,
-            "tomorrow": today + timedelta(days=1),
-            "orders": shift_orders(start, end),
-            "incoming": shift_incoming(start, end),
-            "routes": shift_routes(start, end),
-        },
-    )
+        return today, today, "today"
+
+
+@roles_required("shift")
+def shift_board(request):
+    start, end, preset = _shift_bounds(request)
+    part = request.GET.get("part") or ""
+    if part not in _SHIFT_PARTS:
+        part = ""
+    context = _shift_context(start, end, preset, part)
+    if part:
+        return render(request, _SHIFT_PARTS[part], context)
+    return render(request, "logistics/shift.html", context)
+
+
+def _print_task_ids(order_ids, *, field: str, kind: str) -> list[int]:
+    from apps.planning.models import Task
+
+    if not order_ids:
+        return []
+    attr = f"{field}_id"
+    grouped: dict[int, list[int]] = {}
+    query = Task.objects.filter(**{f"{field}_id__in": order_ids, "kind": kind}).order_by("id")
+    for task in query:
+        grouped.setdefault(getattr(task, attr), []).append(task.id)
+    return [task_id for order_id in order_ids for task_id in grouped.get(order_id, [])]
+
+
+def _shift_tasks_pdf(request, *, source: str, kind: str, empty: str):
+    from apps.printing.views import load_print_tasks, task_sheet_response
+
+    start, end, _preset = _shift_bounds(request)
+    if source == "orders":
+        order_ids = [row["id"] for row in shift_orders(start, end)]
+        field = "order"
+    else:
+        order_ids = [row["id"] for row in shift_incoming(start, end)]
+        field = "purchase_order"
+    tasks = load_print_tasks(_print_task_ids(order_ids, field=field, kind=kind))
+    if not tasks:
+        return HttpResponse(empty)
+    return task_sheet_response(tasks)
+
+
+@roles_required("shift")
+def shift_orders_print(request):
+    return _shift_tasks_pdf(request, source="orders", kind="pick", empty="Нет заданий на отбор за выбранный период")
+
+
+@roles_required("shift")
+def shift_incoming_print(request):
+    return _shift_tasks_pdf(request, source="incoming", kind="receive", empty="Нет заданий на приёмку за выбранный период")
+
+
+@roles_required("shift")
+def shift_routes_print(request):
+    from apps.printing.views import load_print_routes, route_sheet_response
+
+    start, end, _preset = _shift_bounds(request)
+    routes = shift_routes(start, end)
+    sheets = load_print_routes([route.id for route in routes])
+    if not sheets:
+        return HttpResponse("Нет маршрутов за выбранный период")
+    return route_sheet_response(sheets)
 
 
 def _shift_action(request, route_id, fn, message):

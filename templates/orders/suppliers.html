@@ -83,7 +83,7 @@
   </div>
 </div>
 <table class="sheet" {% if user.is_office %}data-bulk="suppliers-bulk"{% endif %}>
-  <tr><th>Номер</th><th>Номер 1С</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th></tr>
+  <tr><th>Номер</th><th>Номер 1С</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th><th>Комментарий</th></tr>
   {% for row in rows %}
   <tr data-href="/orders/suppliers/{{ row.order.id }}" data-id="{{ row.order.id }}">
     <td><a href="/orders/suppliers/{{ row.order.id }}">{{ row.order.number }}</a></td>
@@ -94,9 +94,10 @@
     <td>{% if row.order.receipt_date %}{{ row.order.receipt_date|date:"d.m.Y" }}{% endif %}</td>
     <td class="num">{{ row.kg|kg }}</td>
     <td>{{ PURCHASE_STATUS|label:row.order.status }}</td>
+    <td class="comment">{{ row.order.comment|default:"—" }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="8">Заказов нет</td></tr>
+  <tr><td colspan="9">Заказов нет</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

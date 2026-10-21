@@ -1,0 +1,28 @@
+{% load wms %}
+<section class="shift-pane" data-part="orders">
+  {% include "logistics/_shift_tools.html" with heading="Заказы" part="orders" %}
+  <div class="shift-scroll">
+    <table class="sheet">
+      <tr>
+        {% if ranged %}<th>Дата</th>{% endif %}
+        <th>Заказ</th><th>Грузополучатель</th><th>Зона доставки</th><th>Вес, кг</th><th>План погрузки</th><th>Маршрут</th><th>Отбор</th>
+      </tr>
+      {% for order in orders %}
+      <tr>
+        {% if ranged %}<td>{{ order.date|date:"d.m.Y" }}</td>{% endif %}
+        <td>{{ order.number }}</td>
+        <td>{{ order.consignee|default:"—" }}</td>
+        <td>{{ order.zone|default:"Без зоны" }}</td>
+        <td>{{ order.weight|kg }}</td>
+        <td>
+          {% for plan in order.plans %}{% if plan|date:"Y-m-d" != order.date|date:"Y-m-d" %}{{ plan|date:"d.m" }} {% endif %}{{ plan|date:"H:i" }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+        </td>
+        <td>{{ order.route|default:"без маршрута" }}</td>
+        <td>{{ order.pick }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if ranged %}8{% else %}7{% endif %}">Нет заказов за выбранный период</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
