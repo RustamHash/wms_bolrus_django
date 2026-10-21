@@ -10,8 +10,8 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
 fi
 
 mkdir -p "$APP_DIR"
+# Runner и приложение — один пользователь (wms). acme.json не трогаем.
 rsync -a --delete \
-  --no-owner --no-group \
   --exclude '.git/' \
   --exclude '.venv/' \
   --exclude '.env' \

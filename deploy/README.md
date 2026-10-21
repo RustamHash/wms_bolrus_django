@@ -190,16 +190,21 @@ curl -I https://wms.bolrus.ru
 
 ---
 
-## 9. (Позже) автодеплой GitHub Actions
+## 9. Автодеплой GitHub Actions
 
-Self-hosted runner на этом сервере, workflow уже зовёт [`update.sh`](update.sh).
+Один пользователь **`wms`**: gunicorn (`/opt/wms`) + self-hosted runner (`/home/wms/actions-runner`).  
+Runner **не** кладём внутрь `/opt/wms` — иначе `rsync --delete` сотрёт его.
 
-Runner-пользователю нужен passwordless sudo только на:
+Workflow: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) → [`update.sh`](update.sh).
+
+Passwordless sudo только для `wms`:
 
 ```
-systemctl restart wms
-systemctl is-active wms
+wms ALL=(root) NOPASSWD: /bin/systemctl restart wms, /bin/systemctl is-active wms
 ```
+
+Если runner уже стоял от другого пользователя — один раз:  
+`sudo bash deploy/migrate-runner-to-wms.sh` (см. скрипт в репозитории).
 
 Файл `/opt/wms/.env` деплоем **не** перезаписывается.
 
