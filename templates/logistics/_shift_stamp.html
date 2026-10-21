@@ -1,0 +1,7 @@
+{% if when %}{{ when|date:"d.m.Y H:i" }}{% else %}
+<form method="post" action="/shift/{{ kind }}/{{ item_id }}/{{ action }}" class="inline-form">{% csrf_token %}
+  <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+  <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+  <button class="slim" type="submit">{{ label }}</button>
+</form>
+{% endif %}

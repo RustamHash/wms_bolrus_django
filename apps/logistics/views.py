@@ -1,6 +1,8 @@
+import json
 from datetime import date, timedelta
 
 from django.contrib import messages
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -9,6 +11,7 @@ from apps.common.forms import optional_int, text
 from apps.common.http import back_url, done, guarded, roles_required
 from apps.logistics.dirs import apply_driver, apply_vehicle
 from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
+from apps.planning.models import PurchaseOrder
 from apps.logistics.queries import unassigned_orders_queryset
 from apps.logistics.routes import (
     add_orders_to_route,
@@ -18,6 +21,7 @@ from apps.logistics.routes import (
     parse_load_date,
     parse_load_datetime,
     remove_order_from_route,
+    reorder_route_orders,
     route_weight,
     set_planned_load_at,
     ship_tasks_for_orders,
@@ -25,13 +29,33 @@ from apps.logistics.routes import (
 )
 from apps.logistics.routing import (
     add_assigned_orders_to_route,
-    assignment_zone_ids_for_route,
     clear_session_assignments,
+    clear_session_order_assignments,
+    consumed_for_create,
+    consumed_for_route,
     create_routes_from_zone_assignments,
+    driver_load_summary,
     routing_rows,
     set_session_assignment,
+    set_session_order_assignment,
 )
 from apps.logistics.schedule import schedule_context
+from apps.logistics.shift import (
+    arrive_incoming,
+    arrive_route,
+    depart_incoming,
+    depart_route,
+    dock_route,
+    finish_incoming,
+    gate_incoming,
+    parse_shift_period,
+    revert_route,
+    set_incoming_comment,
+    shift_incoming,
+    shift_orders,
+    shift_routes,
+    ship_route,
+)
 
 
 def _today() -> date:
@@ -46,6 +70,19 @@ def _ship_date(request) -> date:
         return date.fromisoformat(raw)
     except ValueError as exc:
         raise WarehouseError("Некорректная дата") from exc
+
+
+def _posted_driver_id(request) -> int | None:
+    raw_driver = text(request.POST, "driver_id")
+    if raw_driver == "":
+        return None
+    try:
+        driver_id = int(raw_driver)
+    except ValueError as exc:
+        raise WarehouseError("Некорректный водитель") from exc
+    if driver_id < 0:
+        raise WarehouseError("Некорректный водитель")
+    return driver_id
 
 
 @roles_required("office")
@@ -202,6 +239,7 @@ def routing(request):
             "rows": rows,
             "assignments": assignments,
             "drivers": drivers,
+            "driver_loads": driver_load_summary(rows, drivers),
             "existing_routes": existing,
             "total_weight": total_weight,
             "total_orders": sum(row["order_count"] for row in rows),
@@ -216,17 +254,25 @@ def routing_assign(request):
         zone_id = optional_int(request.POST, "zone_id")
         if zone_id is None:
             raise WarehouseError("Выберите зону")
-        raw_driver = text(request.POST, "driver_id")
-        if raw_driver == "":
-            driver_id = None
-        else:
-            try:
-                driver_id = int(raw_driver)
-            except ValueError as exc:
-                raise WarehouseError("Некорректный водитель") from exc
-            if driver_id < 0:
-                raise WarehouseError("Некорректный водитель")
-        set_session_assignment(request.session, ship_date, zone_id, driver_id)
+        set_session_assignment(request.session, ship_date, zone_id, _posted_driver_id(request))
+        return ship_date
+
+    result, response = guarded(request, "/logistics/routing", action)
+    if response:
+        return response
+    return redirect(f"/logistics/routing?date={result.isoformat()}")
+
+
+@roles_required("office")
+def routing_assign_order(request):
+    def action():
+        ship_date = _ship_date(request)
+        order_id = optional_int(request.POST, "order_id")
+        if order_id is None:
+            raise WarehouseError("Выберите заказ")
+        if not unassigned_orders_queryset(ship_date).filter(pk=order_id).exists():
+            raise WarehouseError("Заказ не найден среди свободных")
+        set_session_order_assignment(request.session, ship_date, order_id, _posted_driver_id(request))
         return ship_date
 
     result, response = guarded(request, "/logistics/routing", action)
@@ -240,12 +286,12 @@ def routing_create(request):
     def action():
         ship_date = _ship_date(request)
         rows, assignments, _total = routing_rows(ship_date, request.session)
-        created = create_routes_from_zone_assignments(
-            ship_date=ship_date,
-            assignments=assignments,
-            zone_rows=rows,
-        )
-        clear_session_assignments(request.session, ship_date, list(assignments.keys()))
+        created = create_routes_from_zone_assignments(ship_date=ship_date, zone_rows=rows)
+        order_ids, zone_ids = consumed_for_create(rows)
+        present = {row["zone_id"] for row in rows}
+        stale_zones = [zone_id for zone_id in assignments if zone_id not in present]
+        clear_session_assignments(request.session, ship_date, list(zone_ids) + stale_zones)
+        clear_session_order_assignments(request.session, ship_date, order_ids)
         return ship_date, created
 
     result, response = guarded(request, "/logistics/routing", action)
@@ -266,14 +312,12 @@ def routing_add_to_route(request):
         route = Route.objects.filter(pk=route_id).first()
         if route is None:
             raise WarehouseError("Маршрут не найден")
-        rows, assignments, _total = routing_rows(ship_date, request.session)
-        added = add_assigned_orders_to_route(route=route, assignments=assignments, zone_rows=rows)
+        rows, _assignments, _total = routing_rows(ship_date, request.session)
+        added = add_assigned_orders_to_route(route=route, zone_rows=rows)
         if added:
-            clear_session_assignments(
-                request.session,
-                ship_date,
-                assignment_zone_ids_for_route(route, assignments, rows),
-            )
+            order_ids, zone_ids = consumed_for_route(route, rows)
+            clear_session_assignments(request.session, ship_date, zone_ids)
+            clear_session_order_assignments(request.session, ship_date, order_ids)
         return route, added
 
     result, response = guarded(request, "/logistics/routing", action)
@@ -512,6 +556,23 @@ def route_move_order(request, route_id, order_id):
     return redirect(f"/logistics/routes/{result.id}")
 
 
+@roles_required("office")
+def route_reorder(request, route_id):
+    route = Route.objects.filter(pk=route_id).first()
+    if route is None:
+        return JsonResponse({"ok": False, "error": "Маршрут не найден"}, status=404)
+    try:
+        payload = json.loads(request.body.decode() or "{}")
+        order_ids = [int(item) for item in payload.get("order_ids") or []]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"ok": False, "error": "Некорректный порядок"}, status=400)
+    try:
+        reorder_route_orders(route, order_ids)
+    except WarehouseError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True})
+
+
 # --- Schedule ---
 
 
@@ -553,3 +614,133 @@ def schedule_set_time(request):
         messages.success(request, "Время погрузки сохранено")
     schedule_day = day_raw or route.route_date.isoformat()
     return redirect(f"/logistics/schedule?date={schedule_day}")
+
+
+# --- Shift ---
+
+
+def _shift_back(request) -> str:
+    start = (request.POST.get("date_from") or request.POST.get("date") or "").strip()
+    end = (request.POST.get("date_to") or start).strip()
+    if start and end:
+        return f"/shift?date_from={start}&date_to={end}"
+    return "/shift"
+
+
+@roles_required("shift")
+def shift_board(request):
+    today = _today()
+    try:
+        start, end, preset = parse_shift_period(
+            request.GET.get("date_from") or "",
+            request.GET.get("date_to") or "",
+            request.GET.get("date") or "",
+        )
+    except WarehouseError as exc:
+        messages.error(request, str(exc))
+        start = end = today
+        preset = "today"
+    return render(
+        request,
+        "logistics/shift.html",
+        {
+            "title": "Смена",
+            "date_from": start,
+            "date_to": end,
+            "preset": preset,
+            "ranged": start != end,
+            "yesterday": today - timedelta(days=1),
+            "today": today,
+            "tomorrow": today + timedelta(days=1),
+            "orders": shift_orders(start, end),
+            "incoming": shift_incoming(start, end),
+            "routes": shift_routes(start, end),
+        },
+    )
+
+
+def _shift_action(request, route_id, fn, message):
+    def action():
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        fn(route)
+        return route
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), message)
+
+
+@roles_required("shift")
+def shift_dock(request, route_id):
+    return _shift_action(request, route_id, dock_route, "Маршрут поставлен к отгрузке")
+
+
+@roles_required("shift")
+def shift_ship(request, route_id):
+    return _shift_action(request, route_id, ship_route, "Маршрут отгружен")
+
+
+@roles_required("shift")
+def shift_revert(request, route_id):
+    return _shift_action(request, route_id, revert_route, "Статус маршрута возвращён")
+
+
+@roles_required("shift")
+def shift_arrive(request, route_id):
+    return _shift_action(request, route_id, arrive_route, "Прибытие зафиксировано")
+
+
+@roles_required("shift")
+def shift_depart(request, route_id):
+    return _shift_action(request, route_id, depart_route, "Убытие зафиксировано")
+
+
+def _incoming_action(request, order_id, fn, message):
+    def action():
+        order = PurchaseOrder.objects.filter(pk=order_id).first()
+        if order is None:
+            raise WarehouseError("Входящий заказ не найден")
+        fn(order)
+        return order
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), message)
+
+
+@roles_required("shift")
+def shift_incoming_comment(request, order_id):
+    def action():
+        order = PurchaseOrder.objects.filter(pk=order_id).first()
+        if order is None:
+            raise WarehouseError("Входящий заказ не найден")
+        return set_incoming_comment(order, text(request.POST, "comment"))
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), "Комментарий сохранён")
+
+
+@roles_required("shift")
+def shift_incoming_arrive(request, order_id):
+    return _incoming_action(request, order_id, arrive_incoming, "Прибытие зафиксировано")
+
+
+@roles_required("shift")
+def shift_incoming_gate(request, order_id):
+    return _incoming_action(request, order_id, gate_incoming, "Постановка на ворота зафиксирована")
+
+
+@roles_required("shift")
+def shift_incoming_finish(request, order_id):
+    return _incoming_action(request, order_id, finish_incoming, "Окончание приёмки зафиксировано")
+
+
+@roles_required("shift")
+def shift_incoming_depart(request, order_id):
+    return _incoming_action(request, order_id, depart_incoming, "Убытие зафиксировано")

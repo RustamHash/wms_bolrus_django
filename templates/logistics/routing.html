@@ -16,13 +16,13 @@
     </form>
   </div>
 </div>
-<p class="hint">Свободные заказы по зонам. Назначьте водителя или «Без водителя», затем создайте маршрут или добавьте заказы в существующий.</p>
+<p class="hint">Свободные заказы по зонам, внутри зоны — в очередности доставки точек. Назначьте водителя на зону. Если заказы не помещаются, раскройте зону и отдайте отдельные заказы другому водителю. Затем создайте маршрут или добавьте заказы в существующий.</p>
 
-<table class="sheet">
+<table class="sheet" id="routing-sheet">
   <tr><th>Зона</th><th>Заказов</th><th>ТТ</th><th>Вес, кг</th><th>Водитель</th></tr>
   {% for row in rows %}
-  <tr>
-    <td>{{ row.zone_name }}</td>
+  <tr class="group zone-row" data-open="0" data-zone="{{ row.zone_id }}">
+    <td class="zone-name"><span class="fold">+</span> {{ row.zone_name }}{% if row.override_count %} <span class="muted">· {{ row.override_count }} отдельно</span>{% endif %}</td>
     <td>{{ row.order_count }}</td>
     <td>{{ row.tt_count }}</td>
     <td>{{ row.weight|kg }}</td>
@@ -40,6 +40,27 @@
       </form>
     </td>
   </tr>
+  {% for order in row.orders %}
+  <tr class="order-row folded" data-zone="{{ row.zone_id }}">
+    <td class="zone-name" style="padding-left: 22px">{% if order.delivery_order %}{{ order.delivery_order }}. {% endif %}{{ order.number }} · {{ order.party }}</td>
+    <td></td>
+    <td>{{ order.address }}</td>
+    <td>{{ order.weight|kg }}</td>
+    <td>
+      <form method="post" action="/logistics/routing/assign-order" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+        <input type="hidden" name="order_id" value="{{ order.id }}">
+        <select name="driver_id" onchange="this.form.submit()">
+          <option value="" {% if not order.assigned %}selected{% endif %}>Как у зоны</option>
+          <option value="0" {% if order.driver_id == 0 %}selected{% endif %}>Без водителя</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if order.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
   {% empty %}
   <tr><td colspan="5">Нет свободных заказов на эту дату</td></tr>
   {% endfor %}
@@ -53,6 +74,14 @@
   </tr>
   {% endif %}
 </table>
+
+{% if driver_loads %}
+<p class="hint">По водителям:
+  {% for item in driver_loads %}
+  <span class="{% if item.over %}short{% endif %}">{{ item.name }} — {{ item.weight|kg }}{% if item.capacity %} из {{ item.capacity }}{% endif %} кг{% if item.over %} · перегруз{% endif %}</span>{% if not forloop.last %}, {% endif %}
+  {% endfor %}
+</p>
+{% endif %}
 
 {% if rows %}
 <div class="actions" style="margin-top:16px">
@@ -75,4 +104,24 @@
   {% endif %}
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const table = document.getElementById("routing-sheet");
+  if (table) {
+    table.querySelectorAll("tr.zone-row").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("form, select, option, a, button, input, label")) return;
+        const open = row.dataset.open === "1";
+        row.dataset.open = open ? "0" : "1";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = open ? "+" : "−";
+        const zone = row.dataset.zone;
+        table.querySelectorAll("tr.order-row").forEach((next) => {
+          if (next.dataset.zone === zone) next.classList.toggle("folded", open);
+        });
+      });
+    });
+  }
+</script>
 {% endblock %}

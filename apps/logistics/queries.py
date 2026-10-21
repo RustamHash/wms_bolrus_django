@@ -14,7 +14,7 @@ def active_route_order_exists():
     return Exists(
         RouteOrder.objects.filter(
             order_id=OuterRef("pk"),
-            route__status__in=[Route.Status.DRAFT, Route.Status.PLANNED, Route.Status.COMPLETED],
+            route__status__in=Route.ASSIGNED_STATUSES,
         )
     )
 
@@ -45,6 +45,42 @@ def order_weights(orders) -> dict[int, Decimal]:
     return {row["order_id"]: row["total"] or Decimal("0") for row in rows}
 
 
+def delivery_rank(order) -> tuple:
+    """Зона, затем очередность точки. Ноль — без очереди, такие точки в конце зоны."""
+    consignee = order.consignee if order.consignee_id else None
+    zone_name = ""
+    seq = 0
+    party = ""
+    if consignee is not None:
+        party = consignee.name or ""
+        seq = consignee.delivery_order or 0
+        if consignee.zone_id and consignee.zone is not None:
+            zone_name = consignee.zone.name or ""
+    elif order.client_id:
+        party = order.client.name or ""
+    return (zone_name.lower(), seq <= 0, seq, party.lower(), order.id)
+
+
+def _order_brief(order, weight: Decimal) -> dict:
+    consignee = order.consignee if order.consignee_id else None
+    if consignee is not None:
+        party = consignee.name
+        address = (consignee.address or "").strip()
+        delivery_order = consignee.delivery_order or 0
+    else:
+        party = order.client.name
+        address = ""
+        delivery_order = 0
+    return {
+        "id": order.id,
+        "number": order.number or order.external_number or f"#{order.pk}",
+        "party": party,
+        "address": address,
+        "weight": weight,
+        "delivery_order": delivery_order,
+    }
+
+
 def group_orders_by_zone(orders, weights: dict[int, Decimal] | None = None) -> list[dict]:
     weights = weights or {}
     by_zone: dict[int, list] = defaultdict(list)
@@ -64,14 +100,17 @@ def group_orders_by_zone(orders, weights: dict[int, Decimal] | None = None) -> l
             for order in zone_orders
         }
         addresses.discard("")
+        zone_orders.sort(key=delivery_rank)
+        order_rows = [_order_brief(order, weights.get(order.id) or Decimal("0")) for order in zone_orders]
         rows.append(
             {
                 "zone_id": zone_id,
                 "zone_name": zone_name,
                 "order_count": len(zone_orders),
                 "tt_count": len(addresses) or len(zone_orders),
-                "weight": sum((weights.get(order.id) or Decimal("0")) for order in zone_orders),
-                "order_ids": [order.id for order in zone_orders],
+                "weight": sum(item["weight"] for item in order_rows),
+                "order_ids": [item["id"] for item in order_rows],
+                "orders": order_rows,
             }
         )
     rows.sort(key=lambda row: (row["zone_name"] == "Без зоны", row["zone_name"].lower(), row["zone_id"]))

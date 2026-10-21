@@ -37,17 +37,25 @@
   <label>Факт: дата <input type="date" name="actual_load_date" value="{{ actual_date }}"></label>
   <label>Факт: время отгрузки <input type="time" name="actual_load_time" value="{{ actual_time }}" step="60"></label>
   <label class="wide">Комментарий <textarea name="notes">{{ route.notes }}</textarea></label>
-  <p class="hint wide">План погрузки может быть накануне рейса ({{ route.route_date|date:"d.m.Y" }}). Факт — фактическое время отгрузки. Авто: {{ route.vehicle_text|default:"—" }} · Всего {{ stops|length }} ост. · {{ total_kg|kg }} кг</p>
+  <p class="hint wide">План погрузки может быть накануне рейса ({{ route.route_date|date:"d.m.Y" }}). Постановка к отгрузке: {% if route.docked_at %}{{ route.docked_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}. Факт — фактическое время отгрузки. Авто: {{ route.vehicle_text|default:"—" }} · Всего {{ stops|length }} ост. · {{ total_kg|kg }} кг. Очередность точки задаёт порядок при сборке маршрута. Перетаскивание строки меняет порядок только этого рейса.</p>
   <div class="actions wide"><button type="submit">Сохранить</button></div>
 </form>
 
 <h2>Остановки</h2>
 {% if stops %}
-<table class="sheet">
-  <tr><th>№</th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th></tr>
+<table class="sheet" id="route-stops" data-reorder="{% if route.status == 'draft' or route.status == 'planned' %}/logistics/routes/{{ route.id }}/reorder{% endif %}">
+  <thead>
+    <tr>
+      {% if route.status == 'draft' or route.status == 'planned' %}<th class="grip"></th>{% endif %}
+      <th>№</th><th>Очередь</th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
   {% for stop in stops %}
-  <tr>
-    <td>{{ stop.position }}</td>
+  <tr class="route-stop" data-order-id="{{ stop.order_id }}" {% if route.status == 'draft' or route.status == 'planned' %}draggable="true"{% endif %}>
+    {% if route.status == 'draft' or route.status == 'planned' %}<td class="grip" role="button" aria-label="Перетащить" title="Перетащите, чтобы изменить порядок доставки">↕</td>{% endif %}
+    <td class="pos">{{ stop.position }}</td>
+    <td>{% if stop.order.consignee and stop.order.consignee.delivery_order %}{{ stop.order.consignee.delivery_order }}{% else %}—{% endif %}</td>
     <td><a href="/orders/{{ stop.order_id }}">{{ stop.order.number|default:stop.order_id }}</a></td>
     <td>{{ stop.order.client.name }}</td>
     <td>{% if stop.order.consignee %}{{ stop.order.consignee.name }}{% endif %}</td>
@@ -76,6 +84,7 @@
     </td>
   </tr>
   {% endfor %}
+  </tbody>
 </table>
 {% else %}
 <p class="hint">В маршруте пока нет заказов.</p>
@@ -99,4 +108,80 @@
   <div class="actions"><button type="submit">Добавить выбранные</button></div>
 </form>
 {% endif %}{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if route.status == 'draft' or route.status == 'planned' %}
+<script>
+(function () {
+  const table = document.getElementById("route-stops");
+  if (!table || !table.dataset.reorder) return;
+  const tbody = table.querySelector("tbody");
+  const tokenInput = document.querySelector("[name=csrfmiddlewaretoken]");
+  let dragged = null;
+  let moved = false;
+
+  function saveOrder() {
+    const orderIds = Array.from(tbody.querySelectorAll("tr[data-order-id]")).map((row) => Number(row.dataset.orderId));
+    fetch(table.dataset.reorder, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": tokenInput ? tokenInput.value : "",
+      },
+      body: JSON.stringify({ order_ids: orderIds }),
+    })
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || !data.ok) {
+          window.alert((data && data.error) || "Не удалось сохранить порядок");
+          window.location.reload();
+          return;
+        }
+        tbody.querySelectorAll("tr[data-order-id] .pos").forEach((cell, index) => {
+          cell.textContent = String(index + 1);
+        });
+      })
+      .catch(() => {
+        window.alert("Не удалось сохранить порядок");
+        window.location.reload();
+      });
+  }
+
+  tbody.addEventListener("dragstart", (event) => {
+    const row = event.target.closest("tr[data-order-id]");
+    if (!row || event.target.closest("a, button, input, select, textarea")) {
+      event.preventDefault();
+      return;
+    }
+    dragged = row;
+    moved = false;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.dataset.orderId);
+  });
+  tbody.addEventListener("dragend", () => {
+    if (dragged) dragged.classList.remove("dragging");
+    dragged = null;
+    if (moved) saveOrder();
+    moved = false;
+  });
+  tbody.addEventListener("dragover", (event) => {
+    if (!dragged) return;
+    event.preventDefault();
+    const row = event.target.closest("tr[data-order-id]");
+    if (!row || row === dragged) return;
+    const rows = Array.from(tbody.querySelectorAll("tr[data-order-id]"));
+    const from = rows.indexOf(dragged);
+    const to = rows.indexOf(row);
+    if (from < 0 || to < 0 || from === to) return;
+    moved = true;
+    if (from < to) tbody.insertBefore(dragged, row.nextSibling);
+    else tbody.insertBefore(dragged, row);
+  });
+  tbody.addEventListener("drop", (event) => {
+    event.preventDefault();
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

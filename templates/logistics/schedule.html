@@ -20,54 +20,38 @@
   </div>
 </div>
 
-<p class="hint">График по дате доставки (рейса). Все маршруты на {{ day|date:"d.m.Y" }}, в том числе с погрузкой накануне.</p>
+<p class="hint">Кто во сколько грузится {{ day|date:"d.m.Y" }}, в том числе с погрузкой накануне.</p>
 
-{% if untimed %}
-<div class="card">
-  <h2>Без времени погрузки</h2>
-  <p class="hint">Укажите план погрузки (дата может быть накануне).</p>
-  <ul class="schedule-untimed">
-    {% for card in untimed %}
-    <li>
-      <a href="/logistics/routes/{{ card.id }}">{{ card.name }}</a>
-      · рейс {{ card.route_date|date:"d.m" }}
-      · {{ card.order_count }} ост. · {{ card.weight|kg }} кг
+<table class="sheet">
+  <tr>
+    <th>Дата и время</th>
+    <th>Водитель</th>
+    <th>Маршрут</th>
+    <th>Ост.</th>
+    <th>Вес, кг</th>
+  </tr>
+  {% for item in items %}
+  <tr>
+    <td>
+      {% if item.timed %}
+      {{ item.when }}
+      {% else %}
       <form method="post" action="/logistics/schedule" class="inline-form">{% csrf_token %}
         <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
-        <input type="hidden" name="route_id" value="{{ card.id }}">
+        <input type="hidden" name="route_id" value="{{ item.id }}">
         <input type="date" name="planned_load_date" value="{{ day|date:'Y-m-d' }}" required>
         <input type="time" name="planned_load_time" step="1800" required>
         <button class="slim" type="submit">Назначить</button>
       </form>
-    </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
-<div class="schedule-wrap">
-  <table class="sheet schedule-grid">
-    <tr>
-      <th class="schedule-driver">Водитель</th>
-      {% for slot in slots %}<th>{{ slot }}</th>{% endfor %}
-    </tr>
-    {% for row in rows %}
-    <tr>
-      <td class="schedule-driver">{{ row.driver.full_name }}</td>
-      {% for cell in row.cells %}
-      <td class="schedule-cell">
-        {% for card in cell %}
-        <a class="schedule-card" href="/logistics/routes/{{ card.id }}" title="{{ card.status }}">
-          <b>{{ card.name }}</b>
-          <span>{{ card.order_count }} · {{ card.weight|kg }} кг{% if card.load_hint %} · {{ card.load_hint }}{% endif %}</span>
-        </a>
-        {% endfor %}
-      </td>
-      {% endfor %}
-    </tr>
-    {% empty %}
-    <tr><td colspan="{{ slots|length|add:1 }}">Нет водителей</td></tr>
-    {% endfor %}
-  </table>
-</div>
+      {% endif %}
+    </td>
+    <td>{{ item.driver }}</td>
+    <td><a href="/logistics/routes/{{ item.id }}">{{ item.name }}</a></td>
+    <td>{{ item.order_count }}</td>
+    <td>{{ item.weight|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Нет маршрутов на эту дату</td></tr>
+  {% endfor %}
+</table>
 {% endblock %}

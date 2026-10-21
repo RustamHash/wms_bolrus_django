@@ -2,12 +2,12 @@ from datetime import date, datetime, time
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.common.exceptions import WarehouseError
 from apps.logistics.models import Driver, Route, RouteOrder
-from apps.logistics.queries import unassigned_orders_queryset
+from apps.logistics.queries import delivery_rank, unassigned_orders_queryset
 from apps.planning.models import Order, OrderLine, Task
 
 
@@ -28,18 +28,18 @@ def create_route_with_orders(
     name: str = "",
     status: str = Route.Status.DRAFT,
 ) -> Route:
-    orders = list(Order.objects.filter(pk__in=order_ids, status="open").order_by("id"))
-    found = {order.id for order in orders}
-    missing = [oid for oid in order_ids if oid not in found]
+    wanted = list(dict.fromkeys(order_ids))
+    found = {order.id: order for order in Order.objects.filter(pk__in=wanted, status="open")}
+    missing = [oid for oid in wanted if oid not in found]
     if missing:
         raise WarehouseError("Некоторые заказы не найдены или закрыты")
     taken = set(
         RouteOrder.objects.filter(
-            order_id__in=order_ids,
-            route__status__in=[Route.Status.DRAFT, Route.Status.PLANNED, Route.Status.COMPLETED],
+            order_id__in=wanted,
+            route__status__in=Route.ASSIGNED_STATUSES,
         ).values_list("order_id", flat=True)
     )
-    free = [order for order in orders if order.id not in taken]
+    free = [found[oid] for oid in wanted if oid not in taken]
     if not free:
         raise WarehouseError("Выбранные заказы уже в маршрутах")
 
@@ -63,29 +63,54 @@ def create_route_with_orders(
 def add_orders_to_route(route: Route, order_ids: list[int]) -> int:
     if route.status == Route.Status.CANCELLED:
         raise WarehouseError("Нельзя менять отменённый маршрут")
-    if route.status == Route.Status.COMPLETED:
-        raise WarehouseError("Нельзя менять выполненный маршрут")
-    orders = list(Order.objects.filter(pk__in=order_ids, status="open").order_by("id"))
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Нельзя менять маршрут, который уже поставлен к отгрузке или отгружен")
+    wanted = list(dict.fromkeys(order_ids))
+    found = list(
+        Order.objects.filter(pk__in=wanted, status="open").select_related(
+            "client", "consignee", "consignee__zone"
+        )
+    )
     taken = set(
         RouteOrder.objects.filter(
-            order_id__in=order_ids,
-            route__status__in=[Route.Status.DRAFT, Route.Status.PLANNED, Route.Status.COMPLETED],
+            order_id__in=wanted,
+            route__status__in=Route.ASSIGNED_STATUSES,
         ).values_list("order_id", flat=True)
     )
-    free = [order for order in orders if order.id not in taken]
+    free = [order for order in found if order.id not in taken]
     if not free:
         return 0
+    free.sort(key=delivery_rank)
     with transaction.atomic():
-        start = (
-            RouteOrder.objects.filter(route=route).aggregate(m=Max("position")).get("m") or 0
+        rows = list(
+            RouteOrder.objects.filter(route=route)
+            .select_related("order__client", "order__consignee", "order__consignee__zone")
+            .order_by("position", "id")
         )
-        RouteOrder.objects.bulk_create(
-            [
-                RouteOrder(route=route, order=order, position=start + index)
-                for index, order in enumerate(free, start=1)
-            ]
-        )
+        sequence = [row.order for row in rows]
+        for order in free:
+            sequence.insert(_delivery_slot(sequence, order), order)
+        by_order = {row.order_id: row for row in rows}
+        fresh = []
+        for position, order in enumerate(sequence, start=1):
+            row = by_order.get(order.id)
+            if row is None:
+                fresh.append(RouteOrder(route=route, order=order, position=position))
+            elif row.position != position:
+                row.position = position
+                row.save(update_fields=["position"])
+        if fresh:
+            RouteOrder.objects.bulk_create(fresh)
     return len(free)
+
+
+def _delivery_slot(sequence: list, order) -> int:
+    key = delivery_rank(order)
+    last = None
+    for index, current in enumerate(sequence):
+        if delivery_rank(current) <= key:
+            last = index
+    return 0 if last is None else last + 1
 
 
 def remove_order_from_route(route: Route, order_id: int) -> None:
@@ -247,6 +272,12 @@ def update_route_header(
     warning = None
     route.planned_load_at = planned_load_at
     route.actual_load_at = actual_load_at
+    if status in Route.LIVE_STATUSES:
+        route.docked_at = None
+    elif status == Route.Status.DOCKED and route.docked_at is None:
+        route.docked_at = timezone.now()
+    elif status == Route.Status.COMPLETED and route.actual_load_at is None:
+        route.actual_load_at = timezone.now()
     if planned_load_at and route.driver_id:
         local = load_local(planned_load_at)
         bucket = slot_bucket(planned_load_at)

@@ -1,26 +1,12 @@
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date
 from decimal import Decimal
 
 from django.db.models import Count, Prefetch, Sum
-from django.utils import timezone
 
-from apps.logistics.models import Driver, Route, RouteOrder
+from apps.logistics.models import Route, RouteOrder
 from apps.logistics.queries import order_weights
-from apps.logistics.routes import load_local, slot_bucket
-
-SLOT_STEP = timedelta(minutes=30)
-
-
-def build_slots() -> list[str]:
-    """Сетка на сутки: 00:00 … 23:30 с шагом 30 мин."""
-    slots = []
-    current = datetime.combine(date.today(), time(0, 0))
-    end = current + timedelta(days=1)
-    while current < end:
-        slots.append(current.strftime("%H:%M"))
-        current += SLOT_STEP
-    return slots
+from apps.logistics.routes import load_local
 
 
 def _routes_for_delivery_day(day: date):
@@ -33,76 +19,31 @@ def _routes_for_delivery_day(day: date):
 
 
 def schedule_context(day: date) -> dict:
-    """График по дате доставки (рейса). В сетке — по времени плана погрузки."""
-    slots = build_slots()
+    """График по дате доставки: список, кто во сколько грузится."""
     routes = list(
-        _routes_for_delivery_day(day)
-        .annotate(
+        _routes_for_delivery_day(day).annotate(
             order_count=Count("route_orders", distinct=True),
             weight=Sum("route_orders__order__lines__qty_kg"),
         )
-        .order_by("planned_load_at", "id")
     )
-
-    driver_ids = {route.driver_id for route in routes if route.driver_id}
-    drivers = list(Driver.objects.filter(is_active=True).order_by("full_name"))
-    seen = {driver.id for driver in drivers}
-    for driver in Driver.objects.filter(pk__in=driver_ids).exclude(pk__in=seen).order_by("full_name"):
-        drivers.append(driver)
-        seen.add(driver.id)
-
-    untimed = []
-    grid: dict[int, dict[str, list]] = {driver.id: {slot: [] for slot in slots} for driver in drivers}
-    grid[0] = {slot: [] for slot in slots}
-
-    def card_for(route: Route) -> dict:
-        hint = ""
-        if route.planned_load_at:
-            local = load_local(route.planned_load_at)
-            if local.date() != day:
-                hint = f"погрузка {local:%d.%m}"
-        return {
-            "id": route.id,
-            "name": route.name or f"Маршрут {route.id}",
-            "order_count": route.order_count or 0,
-            "weight": route.weight or Decimal("0"),
-            "status": route.get_status_display(),
-            "driver_id": route.driver_id or 0,
-            "route_date": route.route_date,
-            "load_hint": hint,
-        }
-
-    timed = []
+    items = []
     for route in routes:
-        card = card_for(route)
-        if not route.planned_load_at:
-            untimed.append(card)
-            continue
-        timed.append(route)
-        bucket = slot_bucket(route.planned_load_at)
-        driver_id = route.driver_id or 0
-        if driver_id not in grid:
-            grid[driver_id] = {slot: [] for slot in slots}
-        if bucket not in grid[driver_id]:
-            bucket = slots[0] if bucket < slots[0] else slots[-1]
-        grid[driver_id][bucket].append(card)
-
-    rows = []
-    for driver in drivers:
-        rows.append(
+        items.append(
             {
-                "driver": driver,
-                "cells": [grid.get(driver.id, {}).get(slot, []) for slot in slots],
+                "id": route.id,
+                "name": route.name or f"Маршрут {route.id}",
+                "driver": route.driver.full_name if route.driver_id else "Без водителя",
+                "when": _load_stamp(route.planned_load_at),
+                "timed": bool(route.planned_load_at),
+                "order_count": route.order_count or 0,
+                "weight": route.weight or Decimal("0"),
+                "sort": (_sort_key_plan(route.planned_load_at), route.id),
             }
         )
-
-    return {
-        "day": day,
-        "slots": slots,
-        "rows": rows,
-        "untimed": untimed,
-        "routes": timed,
-    }
+    items.sort(key=lambda item: item["sort"])
+    for item in items:
+        del item["sort"]
+    return {"day": day, "items": items}
 
 
 def _tt_key(order) -> str:
@@ -119,6 +60,14 @@ def _clock(value) -> str:
         return ""
     local = load_local(value)
     return f"{local.hour:02d}:{local.minute:02d}"
+
+
+def _load_stamp(value) -> str:
+    """Дата и время плана погрузки, всегда вместе."""
+    if not value:
+        return ""
+    local = load_local(value)
+    return f"{local:%d.%m.%Y} {local.hour:02d}:{local.minute:02d}"
 
 
 def _plan_label(value, delivery_day: date) -> str:

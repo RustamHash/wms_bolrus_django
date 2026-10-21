@@ -57,10 +57,12 @@ class Route(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Черновик"
         PLANNED = "planned", "Запланирован"
-        COMPLETED = "completed", "Выполнен"
+        DOCKED = "docked", "Поставлено к отгрузке"
+        COMPLETED = "completed", "Отгружен"
         CANCELLED = "cancelled", "Отменён"
 
     LIVE_STATUSES = (Status.DRAFT, Status.PLANNED)
+    ASSIGNED_STATUSES = (Status.DRAFT, Status.PLANNED, Status.DOCKED, Status.COMPLETED)
 
     route_date = models.DateField("Дата маршрута", db_index=True)
     name = models.CharField("Название", max_length=255, blank=True, default="")
@@ -81,7 +83,10 @@ class Route(models.Model):
         db_index=True,
     )
     planned_load_at = models.DateTimeField("План погрузки", null=True, blank=True)
+    arrived_at = models.DateTimeField("Прибыл", null=True, blank=True)
+    docked_at = models.DateTimeField("Поставлено к отгрузке", null=True, blank=True)
     actual_load_at = models.DateTimeField("Факт отгрузки", null=True, blank=True)
+    departed_at = models.DateTimeField("Убыл", null=True, blank=True)
     notes = models.TextField("Комментарий", blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
