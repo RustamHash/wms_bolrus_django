@@ -1,7 +1,9 @@
+import ctypes
 import os
 import socket
 import subprocess
 import tempfile
+from ctypes import wintypes
 from pathlib import Path
 
 from apps.common.exceptions import PrintError
@@ -11,28 +13,25 @@ from apps.printing.models import Printer
 
 
 def apply_printer(item: Printer, form) -> None:
-    from apps.common.forms import optional_int, text
+    from apps.common.forms import text
+    from apps.printing.installed import list_installed
 
     name = text(form, "name")
     if not name:
         raise PrintError("Укажите название")
-    printer_type = text(form, "printer_type")
-    if printer_type not in ("tsc", "network"):
-        raise PrintError("Выберите тип принтера")
+    queue = text(form, "queue_name")
+    installed = {row["name"] for row in list_installed()}
+    if queue not in installed:
+        raise PrintError("Выберите принтер, установленный на сервере")
     item.name = name
-    item.printer_type = printer_type
-    item.host = text(form, "host")
-    item.port = optional_int(form, "port") or 9100
-    item.queue_name = text(form, "queue_name")
-    item.label_width_mm = optional_int(form, "label_width_mm") or 58
-    item.label_height_mm = optional_int(form, "label_height_mm") or 40
-    item.gap_mm = optional_int(form, "gap_mm") or 2
-    item.dpi = optional_int(form, "dpi") or 203
-    item.density = optional_int(form, "density") or 8
+    item.printer_type = "tsc" if "tsc" in queue.lower() else "network"
+    item.port = 9100
+    item.queue_name = queue
+    item.host = ""
     item.is_default = form.get("is_default") == "1"
     item.save()
     if item.is_default:
-        Printer.objects.filter(printer_type=printer_type).exclude(pk=item.pk).update(is_default=False)
+        Printer.objects.filter(printer_type=item.printer_type).exclude(pk=item.pk).update(is_default=False)
 
 
 def default_printer(printer_type: str) -> Printer:
@@ -57,13 +56,104 @@ def send_raw(host: str, port: int, payload: bytes) -> None:
 
 
 def send_tspl(printer: Printer, payload: bytes) -> str:
+    if printer.queue_name:
+        from apps.printing.installed import print_target
+
+        target = print_target(printer.queue_name)
+        _print_raw_queue(target, payload, f"tsc-{printer.id}")
+        return f"Этикетка отправлена в очередь «{printer.queue_name}»"
     send_raw(printer.host, printer.port or 9100, payload)
     return f"Этикетка отправлена на TSC «{printer.name}»"
 
 
+class _DocInfo(ctypes.Structure):
+    _fields_ = [
+        ("pDocName", wintypes.LPWSTR),
+        ("pOutputFile", wintypes.LPWSTR),
+        ("pDatatype", wintypes.LPWSTR),
+    ]
+
+
+def _print_raw_queue(queue: str, payload: bytes, job_name: str) -> None:
+    if os.name == "nt":
+        _print_raw_windows(queue, payload, job_name)
+        return
+    _print_raw_cups(queue, payload, job_name)
+
+
+def _print_raw_windows(queue: str, payload: bytes, job_name: str) -> None:
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), wintypes.LPVOID]
+    winspool.OpenPrinterW.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
+    winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(_DocInfo)]
+    winspool.StartDocPrinterW.restype = wintypes.DWORD
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.WritePrinter.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    winspool.WritePrinter.restype = wintypes.BOOL
+
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        raise PrintError(f"Принтер «{queue}» не найден среди принтеров Windows")
+    try:
+        info = _DocInfo(job_name, None, "RAW")
+        if not winspool.StartDocPrinterW(handle, 1, ctypes.byref(info)):
+            raise PrintError(_windows_print_error(queue))
+        try:
+            if not winspool.StartPagePrinter(handle):
+                raise PrintError(_windows_print_error(queue))
+            written = wintypes.DWORD()
+            buffer = ctypes.create_string_buffer(payload)
+            if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
+                raise PrintError(_windows_print_error(queue))
+            if written.value != len(payload):
+                raise PrintError(f"В очередь «{queue}» ушло {written.value} байт из {len(payload)}")
+            if not winspool.EndPagePrinter(handle):
+                raise PrintError(_windows_print_error(queue))
+        finally:
+            winspool.EndDocPrinter(handle)
+    finally:
+        winspool.ClosePrinter(handle)
+
+
+def _windows_print_error(queue: str) -> str:
+    error = ctypes.WinError(ctypes.get_last_error())
+    detail = str(error).strip()
+    if detail:
+        return f"Очередь «{queue}» не приняла этикетку: {detail}"
+    return f"Очередь «{queue}» не приняла этикетку"
+
+
+def _print_raw_cups(queue: str, payload: bytes, job_name: str) -> None:
+    try:
+        result = subprocess.run(
+            ["lp", "-d", queue, "-o", "raw", "-t", job_name],
+            input=payload,
+            capture_output=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PrintError(f"Очередь «{queue}» не приняла этикетку") from exc
+    except OSError as exc:
+        raise PrintError(f"Не удалось отправить этикетку в очередь «{queue}»") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+        if detail:
+            raise PrintError(detail)
+        raise PrintError(f"Очередь «{queue}» не приняла этикетку")
+
+
 def send_pdf(printer: Printer, payload: bytes, job_name: str) -> str:
     if printer.queue_name:
-        return _print_windows_queue(printer.queue_name, payload, job_name)
+        from apps.printing.installed import print_target
+
+        return _print_windows_queue(print_target(printer.queue_name), payload, job_name)
     if printer.host:
         send_raw(printer.host, printer.port or 9100, payload)
         return f"PDF отправлен на {printer.host}:{printer.port or 9100}"

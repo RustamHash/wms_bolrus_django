@@ -1,99 +1,113 @@
 from decimal import Decimal
 
-from PIL import Image, ImageDraw, ImageFont
-
-from apps.common.fonts import find_font
 from apps.common.present import format_kg, group_units, unit_lines
+
+# Встроенный шрифт TSC «3»: 16×24 точки до увеличения.
+FONT = "3"
+FONT_WIDTH = 16
+FONT_HEIGHT = 24
+
+# Ширина, высота и зазор, мм. Свой размер у каждого документа.
+# Зазор 0: длина берётся из высоты этого задания, датчик зазора не переключается.
+LABEL_MM = {
+    "unit": (58, 40, 0),
+    "pallet": (100, 70, 0),
+    "shipment": (100, 70, 0),
+    "test": (100, 70, 0),
+}
 
 
 def mm_to_dots(mm: int, dpi: int) -> int:
     return max(1, int(round(mm / 25.4 * dpi)))
 
 
-def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> list[str]:
-    words = str(text).split()
-    if not words:
-        return [""]
+def _clean(value: str) -> str:
+    return str(value).replace('"', "'").replace("\r", " ").replace("\n", " ").strip()
+
+
+def _wrap(text: str, max_chars: int) -> list[str]:
+    text = _clean(text)
+    if not text:
+        return []
+    max_chars = max(1, max_chars)
     lines: list[str] = []
-    current = words[0]
-    for word in words[1:]:
-        trial = f"{current} {word}"
-        if draw.textlength(trial, font=font) <= max_width:
+    current = ""
+    for word in text.split():
+        while len(word) > max_chars:
+            if current:
+                lines.append(current)
+                current = ""
+            lines.append(word[:max_chars])
+            word = word[max_chars:]
+        trial = word if not current else f"{current} {word}"
+        if len(trial) <= max_chars:
             current = trial
         else:
-            lines.append(current)
+            if current:
+                lines.append(current)
             current = word
-    lines.append(current)
+    if current:
+        lines.append(current)
     return lines
 
 
-def render_text(lines: list[str], width: int, height: int) -> Image.Image:
-    image = Image.new("1", (width, height), 1)
-    draw = ImageDraw.Draw(image)
-    font = None
+def _label(lines: list[str], barcode: str, label_w: int, label_h: int) -> str:
+    barcode_h = 64
+    text_bottom = label_h - barcode_h - 28
+    if text_bottom < FONT_HEIGHT + 16:
+        text_bottom = max(FONT_HEIGHT + 16, label_h - 8)
+        barcode_y = None
+    else:
+        barcode_y = text_bottom + 6
+
+    scale = 2
+    step = FONT_HEIGHT * scale + 4
+    max_chars = max(1, (label_w - 40) // (FONT_WIDTH * scale))
     wrapped: list[str] = []
-    size = 16
-    for size in (30, 26, 22, 18, 16, 14):
-        font = ImageFont.truetype(find_font(), size)
+    for line in lines:
+        wrapped.extend(_wrap(line, max_chars))
+    if not wrapped:
+        wrapped = [""]
+    if 16 + len(wrapped) * step > text_bottom:
+        scale = 1
+        step = FONT_HEIGHT + 4
+        max_chars = max(1, (label_w - 40) // FONT_WIDTH)
         wrapped = []
         for line in lines:
-            wrapped.extend(_wrap(draw, line, font, width - 12))
-        if len(wrapped) * (size + 4) <= height - 6:
-            break
-    y = 4
+            wrapped.extend(_wrap(line, max_chars))
+        if not wrapped:
+            wrapped = [""]
+
+    commands = ["CLS\r\n", "CODEPAGE 1251\r\n"]
+    y = 16
     for line in wrapped:
-        if y + size > height:
+        if y + FONT_HEIGHT * scale > text_bottom:
             break
-        draw.text((6, y), line, fill=0, font=font)
-        y += size + 4
-    return image
+        commands.append(f'TEXT 20,{y},"{FONT}",0,{scale},{scale},"{line}"\r\n')
+        y += step
+    if barcode_y is not None and barcode:
+        commands.append(f'BARCODE 16,{barcode_y},"128",{barcode_h},1,0,2,2,"{_clean(barcode)}"\r\n')
+    commands.append("PRINT 1,1\r\n")
+    return "".join(commands)
 
 
-def bitmap_bytes(image: Image.Image) -> tuple[int, int, bytes]:
-    image = image.convert("1")
-    width, height = image.size
-    width_bytes = (width + 7) // 8
-    padded = Image.new("1", (width_bytes * 8, height), 1)
-    padded.paste(image, (0, 0))
-    pixels = padded.load()
-    data = bytearray()
-    for y in range(height):
-        for xb in range(width_bytes):
-            byte = 0
-            for bit in range(8):
-                x = xb * 8 + bit
-                if pixels[x, y] == 0:
-                    byte |= 1 << (7 - bit)
-            data.append(byte)
-    return width_bytes, height, bytes(data)
-
-
-def _job(printer, labels: list[tuple[Image.Image, str]]) -> bytes:
+def _job(printer, kind: str, labels: list[tuple[list[str], str]]) -> bytes:
+    width_mm, height_mm, gap_mm = LABEL_MM[kind]
+    dpi = int(printer.dpi or 203)
+    label_w = mm_to_dots(width_mm, dpi)
+    label_h = mm_to_dots(height_mm, dpi)
     parts = [
-        f"SIZE {printer.label_width_mm} mm,{printer.label_height_mm} mm\r\n".encode("ascii"),
-        f"GAP {printer.gap_mm} mm,0 mm\r\n".encode("ascii"),
-        f"DENSITY {int(printer.density)}\r\n".encode("ascii"),
-        b"DIRECTION 1\r\n",
+        f"SIZE {width_mm} mm,{height_mm} mm\r\n",
+        f"GAP {gap_mm} mm,0 mm\r\n",
+        "DIRECTION 1\r\n",
     ]
-    for image, barcode in labels:
-        width_bytes, height, data = bitmap_bytes(image)
-        parts.append(b"CLS\r\n")
-        parts.append(f"BITMAP 0,0,{width_bytes},{height},0,".encode("ascii") + data + b"\r\n")
-        parts.append(
-            f'BARCODE 16,{height + 6},"128",64,1,0,2,2,"{barcode}"\r\n'.encode("ascii")
-        )
-        parts.append(b"PRINT 1\r\n")
-    return b"".join(parts)
-
-
-def _text_image(printer, lines: list[str]) -> Image.Image:
-    width = mm_to_dots(printer.label_width_mm, printer.dpi)
-    height = max(40, mm_to_dots(printer.label_height_mm, printer.dpi) - 90)
-    return render_text(lines, width, height)
+    for lines, barcode in labels:
+        parts.append(_label(lines, barcode, label_w, label_h))
+    return "".join(parts).encode("cp1251", errors="replace")
 
 
 def unit_label(printer, unit) -> bytes:
-    return _job(printer, [(_text_image(printer, unit_lines(unit)), unit.barcode)])
+    return _job(printer, "unit", [(unit_lines(unit), unit.barcode)])
 
 
 def pallet_labels(printer, pallet) -> bytes:
@@ -118,7 +132,7 @@ def pallet_labels(printer, pallet) -> bytes:
         lines.append("Пусто")
     capacity = 8
     chunks = [lines[i : i + capacity] for i in range(0, len(lines), capacity)] or [lines]
-    return _job(printer, [(_text_image(printer, chunk), pallet.barcode) for chunk in chunks])
+    return _job(printer, "pallet", [(chunk, pallet.barcode) for chunk in chunks])
 
 
 def shipment_sticker(printer, shipment, groups) -> bytes:
@@ -131,8 +145,8 @@ def shipment_sticker(printer, shipment, groups) -> bytes:
     ]
     for group in groups[:6]:
         lines.append(f"{group.product} {group.caliber} {format_kg(group.kg)}кг")
-    return _job(printer, [(_text_image(printer, lines), f"SH{shipment.id:06d}")])
+    return _job(printer, "shipment", [(lines, f"SH{shipment.id:06d}")])
 
 
 def test_label(printer) -> bytes:
-    return _job(printer, [(_text_image(printer, ["WMS", "Проверка печати TSC"]), "TEST1234")])
+    return _job(printer, "test", [(["WMS OK", "Проверка"], "")])

@@ -102,23 +102,43 @@
   <label>Реквизиты для стикера <textarea name="requisites">{% if item %}{{ item.requisites }}{% else %}{% endif %}</textarea></label>
   {% endif %}
   {% if kind == 'printers' %}
+  <label>Поиск <input type="search" id="printer-search" placeholder="Имя принтера на сервере"></label>
+  {% if installed_error %}
+  <p class="hint">{{ installed_error }}</p>
+  {% elif not installed_printers %}
+  <p class="hint">На сервере нет установленных принтеров.</p>
+  {% else %}
+  <div class="printer-list">
+    {% for printer in installed_printers %}
+    <label data-name="{{ printer.name }}">
+      <input type="radio" name="queue_name" value="{{ printer.name }}" {% if item and item.queue_name == printer.name %}checked{% endif %} required>
+      {{ printer.name }}
+    </label>
+    {% endfor %}
+  </div>
+  {% endif %}
   <label>Название <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
-  <label>Тип
-    <select name="printer_type">
-      <option value="tsc" {% if not item or item.printer_type == 'tsc' %}selected{% endif %}>Термопринтер TSC</option>
-      <option value="network" {% if item and item.printer_type == 'network' %}selected{% endif %}>Сетевой принтер PDF</option>
-    </select>
-  </label>
-  <label>Адрес <input name="host" value="{% if item %}{{ item.host }}{% else %}{% endif %}" placeholder="192.168.1.50"></label>
-  <label>Порт <input name="port" value="{% if item %}{{ item.port }}{% else %}{{ 9100 }}{% endif %}"></label>
-  <label>Очередь Windows <input name="queue_name" value="{% if item %}{{ item.queue_name }}{% else %}{% endif %}" placeholder="Для PDF с ТСД"></label>
-  <label>Ширина, мм <input name="label_width_mm" value="{% if item %}{{ item.label_width_mm }}{% else %}{{ 58 }}{% endif %}"></label>
-  <label>Высота, мм <input name="label_height_mm" value="{% if item %}{{ item.label_height_mm }}{% else %}{{ 40 }}{% endif %}"></label>
-  <label>Зазор, мм <input name="gap_mm" value="{% if item %}{{ item.gap_mm }}{% else %}{{ 2 }}{% endif %}"></label>
-  <label>Плотность, dpi <input name="dpi" value="{% if item %}{{ item.dpi }}{% else %}{{ 203 }}{% endif %}"></label>
-  <label>Яркость TSC <input name="density" value="{% if item %}{{ item.density }}{% else %}{{ 8 }}{% endif %}"></label>
   <label>По умолчанию <input type="checkbox" name="is_default" value="1" {% if item and item.is_default %}checked{% endif %}></label>
-  <p class="hint">TSC печатает TSPL2 на порт 9100. Кириллица уходит картинкой, штрихкод — командой Code 128. Паспорт по умолчанию — PDF.</p>
+  <p class="hint">Подключается только принтер, установленный на сервере. Размер этикетки от вида документа: товар 58×40 мм, паллета и отгрузка 100×70 мм.</p>
+  <script>
+    var search = document.getElementById("printer-search");
+    var nameInput = document.querySelector("input[name=name]");
+    if (nameInput && nameInput.value) nameInput.dataset.touched = "1";
+    if (search) {
+      search.addEventListener("input", function () {
+        var query = search.value.trim().toLowerCase();
+        document.querySelectorAll(".printer-list label").forEach(function (row) {
+          row.hidden = query && row.dataset.name.toLowerCase().indexOf(query) < 0;
+        });
+      });
+    }
+    document.querySelectorAll("input[name=queue_name]").forEach(function (radio) {
+      radio.addEventListener("change", function () {
+        if (nameInput && !nameInput.dataset.touched) nameInput.value = radio.value;
+      });
+    });
+    if (nameInput) nameInput.addEventListener("input", function () { nameInput.dataset.touched = "1"; });
+  </script>
   {% endif %}
   <button>Сохранить</button>
 </form>

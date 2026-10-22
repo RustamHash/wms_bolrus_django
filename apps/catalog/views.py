@@ -104,7 +104,7 @@ def master_list(request, kind):
 
 
 def _form_context(kind, item, *, external_product_id=None):
-    return {
+    data = {
         "kind": kind,
         "title": TITLES[kind],
         "item": item,
@@ -116,7 +116,17 @@ def _form_context(kind, item, *, external_product_id=None):
         "grades": list(Grade.objects.order_by("sort_order", "name")),
         "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
         "external_product_id": external_product_id,
+        "installed_printers": [],
+        "installed_error": "",
     }
+    if kind == "printers":
+        from apps.printing.installed import list_installed
+
+        try:
+            data["installed_printers"] = list_installed()
+        except Exception as exc:
+            data["installed_error"] = str(exc)
+    return data
 
 
 def _category_locked(request, kind):
