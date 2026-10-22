@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Переработка</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform/new?kind=rework">Переборка</a>
+      <a class="btn slim" href="/transform/new?kind=workshop">Цех</a>
+    </div>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Вид</th><th>Статус</th><th>Вход</th><th>Выход</th></tr>
+  {% for document in documents %}
+  <tr data-href="/transform/{{ document.id }}">
+    <td><a href="/transform/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_kind_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{{ document.input_count }}</td>
+    <td>{{ document.output_count }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -38,8 +38,24 @@ def _apply(row: Balance, free_delta: Decimal, picked_delta: Decimal, reserved_de
     row.save(update_fields=["free_kg", "reserved_kg", "picked_kg"])
 
 
+GONE_KINDS = (
+    Movement.Kind.PICK,
+    Movement.Kind.OUT,
+    Movement.Kind.TRANSFORM_OUT,
+    Movement.Kind.WASTE,
+)
+
+
+def consumed_pallet_ids():
+    return Movement.objects.filter(kind__in=GONE_KINDS).values("pallet_id")
+
+
+def reworked_pallet_ids():
+    return Movement.objects.filter(kind__in=(Movement.Kind.TRANSFORM_OUT, Movement.Kind.WASTE)).values("pallet_id")
+
+
 def has_downstream(movement) -> bool:
-    return Movement.objects.filter(pallet_id=movement.pallet_id, kind__in=("pick", "out")).exists()
+    return Movement.objects.filter(pallet_id=movement.pallet_id, kind__in=GONE_KINDS).exists()
 
 
 def inbound_for_pallet(pallet_id: int):
@@ -96,7 +112,7 @@ def update_in(movement, *, lot, qty_kg: Decimal) -> Movement:
     if movement.kind != "in":
         raise WarehouseError("Правится только приход")
     if has_downstream(movement):
-        raise WarehouseError("По паллете уже есть отбор или отгрузка")
+        raise WarehouseError("По паллете уже есть отбор, отгрузка или переработка")
     qty = as_kg(qty_kg)
     if qty <= 0:
         raise WarehouseError("Вес паллеты должен быть больше нуля")
@@ -121,7 +137,7 @@ def remove_in(movement) -> None:
     if movement.kind != "in":
         raise WarehouseError("Удаляется только приход")
     if has_downstream(movement):
-        raise WarehouseError("По паллете уже есть отбор или отгрузка")
+        raise WarehouseError("По паллете уже есть отбор, отгрузка или переработка")
     qty = as_kg(movement.qty_kg)
     if inbound_is_reserved(movement):
         _apply(_lock_balance(movement.lot_id), Decimal("0"), Decimal("0"), -qty)
@@ -135,7 +151,7 @@ def post_pick(*, task, task_line, pallet, source: Movement, user) -> Movement:
     if source.kind != "in" or source.pallet_id != pallet.id:
         raise WarehouseError("Отбирать можно только принятую паллету")
     if has_downstream(source):
-        raise WarehouseError("Паллета уже отобрана или отгружена")
+        raise WarehouseError("Паллета уже отобрана, отгружена или списана в переработку")
     qty = as_kg(source.qty_kg)
     movement = Movement.objects.create(
         task=task,
@@ -175,6 +191,74 @@ def post_out(*, task, task_line, pallet, source: Movement, user) -> Movement:
     return movement
 
 
+def lock_balances(lot_ids) -> None:
+    for lot_id in sorted(set(lot_ids)):
+        _lock_balance(lot_id)
+
+
+def _release_kg(lot_id: int, qty: Decimal, reserved: bool) -> None:
+    qty = as_kg(qty)
+    if qty <= 0:
+        raise WarehouseError("Вес списания должен быть больше нуля")
+    if reserved:
+        _apply(_lock_balance(lot_id), Decimal("0"), Decimal("0"), -qty)
+    else:
+        _apply(_lock_balance(lot_id), -qty, Decimal("0"))
+
+
+@transaction.atomic
+def post_transform_out(*, pallet, lot, qty_kg: Decimal, user, document, reserved: bool, source: Movement) -> Movement:
+    qty = as_kg(qty_kg)
+    if qty <= 0:
+        raise WarehouseError("Вес списания должен быть больше нуля")
+    movement = Movement.objects.create(
+        pallet=pallet,
+        kind=Movement.Kind.TRANSFORM_OUT,
+        lot=lot,
+        qty_kg=qty,
+        source=source,
+        created_by=user,
+        transform_document=document,
+    )
+    _release_kg(lot.id, qty, reserved)
+    return movement
+
+
+@transaction.atomic
+def post_waste(*, pallet, lot, qty_kg: Decimal, user, document, reserved: bool, source: Movement) -> Movement:
+    qty = as_kg(qty_kg)
+    if qty <= 0:
+        raise WarehouseError("Вес отхода должен быть больше нуля")
+    movement = Movement.objects.create(
+        pallet=pallet,
+        kind=Movement.Kind.WASTE,
+        lot=lot,
+        qty_kg=qty,
+        source=source,
+        created_by=user,
+        transform_document=document,
+    )
+    _release_kg(lot.id, qty, reserved)
+    return movement
+
+
+@transaction.atomic
+def post_transform_in(*, pallet, lot, qty_kg: Decimal, user, document) -> Movement:
+    qty = as_kg(qty_kg)
+    if qty <= 0:
+        raise WarehouseError("Вес выхода должен быть больше нуля")
+    movement = Movement.objects.create(
+        pallet=pallet,
+        kind=Movement.Kind.IN,
+        lot=lot,
+        qty_kg=qty,
+        created_by=user,
+        transform_document=document,
+    )
+    _apply(_lock_balance(lot.id), qty, Decimal("0"))
+    return movement
+
+
 def stock_rows() -> list[dict]:
     rows = Balance.objects.select_related(
         "lot__product", "lot__caliber", "lot__grade", "lot__supplier", "lot__receipt"
@@ -184,12 +268,18 @@ def stock_rows() -> list[dict]:
         if as_kg(row.free_kg) == 0 and as_kg(row.reserved_kg) == 0 and as_kg(row.picked_kg) == 0:
             continue
         lot = row.lot
+        source = lot.get_source_display()
+        if lot.is_opening:
+            source = f"{source} · начальный"
         result.append(
             {
+                "lot_id": lot.id,
+                "number": lot.number or "",
                 "product": lot.product.name,
                 "caliber": lot.caliber.name,
                 "grade": lot.grade.name,
                 "supplier": lot.supplier.name,
+                "source": source,
                 "receipt": lot.receipt.number or "",
                 "free_kg": as_kg(row.free_kg),
                 "reserved_kg": as_kg(row.reserved_kg),

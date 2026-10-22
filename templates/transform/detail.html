@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.get_kind_display }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform">К списку</a>
+      {% if open %}
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести документ и изменить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить документ?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }}. Вход {{ input_kg|kg }} кг, выход {{ output_kg|kg }} кг, отход {{ waste_kg|kg }} кг, расхождение {{ gap_kg|kg }} кг, допуск {{ tolerance_kg|kg }} кг.{% if inputs %} {% if fits %}Масса сходится.{% else %}Масса не сходится, проводка остановится.{% endif %}{% endif %}</p>
+{% if document.ledger_waste_kg != None %}
+<p class="hint">В движениях списан отход {{ document.ledger_waste_kg|kg }} кг. Отдельная партия отхода не создаётся. Резерв с исходных паллет снят, выход встал свободным остатком.</p>
+{% endif %}
+{% if document.notes and not open %}<p class="hint">{{ document.notes }}</p>{% endif %}
+
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}" class="card grid">{% csrf_token %}
+  <input type="hidden" name="action" value="save">
+  <label>Дата <input type="date" name="doc_date" value="{{ document.doc_date|date:'Y-m-d' }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="{{ document.tolerance_kg|kg }}" inputmode="decimal"></label>
+  <label>Примечание <textarea name="notes">{{ document.notes }}</textarea></label>
+  <div class="actions"><button class="slim" type="submit">Сохранить шапку</button></div>
+</form>
+<p class="hint">Паллета списывается целиком. Часть веса уходит в дочерние партии, остаток — в отход. Исходную паллету в другую партию не переносят. Дата и допуск берутся из сохранённой шапки.</p>
+{% endif %}
+
+<h2>Вход</h2>
+{% if inputs %}
+<table class="sheet">
+  <tr><th>Паллета</th><th>Партия</th><th>Товар</th><th class="num">Кг</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in inputs %}
+  <tr>
+    <td><a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a></td>
+    <td><a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a></td>
+    <td>{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/inputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Вход пуст.</p>
+{% endif %}
+{% if open %}
+{% if choices %}
+<form method="post" action="/transform/{{ document.id }}/inputs" class="card grid">{% csrf_token %}
+  <label>Паллета на складе
+    <select name="pallet_id" required>
+      <option value=""></option>
+      {% for choice in choices %}
+      <option value="{{ choice.id }}">{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% else %}
+<p class="hint">Свободных паллет на складе нет.</p>
+{% endif %}
+{% endif %}
+
+<h2>Выход</h2>
+<p class="hint">Каждая строка становится дочерней партией и новой паллетой. Сорт берётся из справочника.</p>
+{% if outputs %}
+<table class="sheet">
+  <tr><th>Товар</th><th>Срок</th><th class="num">Кг</th><th>Партия</th><th>Паллета</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in outputs %}
+  <tr>
+    <td>{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}</td>
+    <td>{% if line.expires_on %}{{ line.expires_on|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{% if line.lot_id %}<a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a>{% else %}после проводки{% endif %}</td>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a>{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/outputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Выхода нет. Весь вход можно списать в отход.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/outputs" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Срок годности <input type="date" name="expires_on"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+
+<h2>Отход</h2>
+<p class="hint">Отход — списание с исходной партии, а не новая партия. Если строка чуть не сходится с весом паллет, в движения уходит разница входа и выхода, пока она внутри допуска.</p>
+{% if wastes %}
+<table class="sheet">
+  <tr><th class="num">Кг</th><th>Причина</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in wastes %}
+  <tr>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{{ line.reason|default:"—" }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/waste/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif not open %}
+<p class="hint">Отхода в строках нет.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/waste" class="card grid">{% csrf_token %}
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Причина <input name="reason" maxlength="200"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}

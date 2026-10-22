@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ lot.number }}</h1>
+    <a class="btn slim" href="/stock?run=1">К остаткам</a>
+  </div>
+</div>
+<div class="card">
+  <p>{{ lot.get_source_display }}{% if lot.is_opening %} · начальный остаток{% endif %}</p>
+  <p>{{ lot.product.name }}, калибр {{ lot.caliber.name }}, сортность {{ lot.grade.name }}</p>
+  <p>Поставщик в учёте {{ lot.supplier.name }}. Приход {{ lot.receipt.number|default:"—" }}, {{ lot.received_on|date:"d.m.Y" }}.</p>
+  {% if lot.parent_id %}
+  <p>Родитель <a href="/lots/{{ lot.parent_id }}">{{ lot.parent.number }}</a>.</p>
+  {% endif %}
+  {% if balance %}
+  <p>Свободно {{ balance.free_kg|kg }}, резерв {{ balance.reserved_kg|kg }}, отобрано {{ balance.picked_kg|kg }} кг.</p>
+  {% else %}
+  <p class="hint">Остатка по партии ещё нет.</p>
+  {% endif %}
+  {% for item in made %}
+  <p>Создана документом <a href="/transform/{{ item.document_id }}">{{ item.document.number }}</a>.</p>
+  {% endfor %}
+</div>
+{% if children %}
+<h2>Дочерние партии</h2>
+<table class="sheet">
+  <tr><th>Номер</th><th>Источник</th><th>Товар</th><th>Сорт</th></tr>
+  {% for child in children %}
+  <tr>
+    <td><a href="/lots/{{ child.id }}">{{ child.number }}</a></td>
+    <td>{{ child.get_source_display }}</td>
+    <td>{{ child.product.name }}</td>
+    <td>{{ child.grade.name }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if spent %}
+<h2>Списана в переработку</h2>
+<table class="sheet">
+  <tr><th>Документ</th><th>Паллета</th><th class="num">Кг</th></tr>
+  {% for item in spent %}
+  <tr>
+    <td><a href="/transform/{{ item.document_id }}">{{ item.document.number }}</a></td>
+    <td><a href="/pallets/{{ item.pallet_id }}">{{ item.pallet.number }}</a></td>
+    <td class="num">{{ item.qty_kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+<form method="post" action="/lots/{{ lot.id }}" class="card grid">{% csrf_token %}
+  <h2>Паспорт</h2>
+  <label>Срок годности
+    <input type="date" name="expires_on" value="{{ lot.expires_on|date:'Y-m-d' }}">
+  </label>
+  <label>Сорт с паспорта
+    <input name="passport_grade" value="{{ lot.passport_grade }}" maxlength="120">
+  </label>
+  <label>Поставщик с паспорта
+    <input name="passport_supplier" value="{{ lot.passport_supplier }}" maxlength="200">
+  </label>
+  <p class="hint">Сорт и поставщик в учёте остаются справочными. Сюда пишется текст с бумажного паспорта, если он отличается.</p>
+  <button type="submit">Сохранить</button>
+</form>
+{% endblock %}

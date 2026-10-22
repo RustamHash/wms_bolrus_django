@@ -41,7 +41,17 @@ def pallet_create(request):
 def pallet_detail(request, pallet_id):
     pallet = get_object_or_404(Pallet.objects.select_related("order__client", "reserved_client"), pk=pallet_id)
     units = list(pallet.units.select_related("lot__product", "lot__caliber", "lot__supplier", "grade", "packaging").order_by("id"))
-    return render(request, "pallets/detail.html", {"pallet": pallet, "units": units, "groups": group_units(units)})
+    spent = (
+        pallet.movements.filter(kind__in=("transform_out", "waste"))
+        .select_related("transform_document")
+        .order_by("id")
+        .first()
+    )
+    return render(
+        request,
+        "pallets/detail.html",
+        {"pallet": pallet, "units": units, "groups": group_units(units), "spent": spent},
+    )
 
 
 @roles_required("receiver", "warehouse")

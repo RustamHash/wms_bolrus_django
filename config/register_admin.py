@@ -4,10 +4,10 @@ from apps.accounts.access import ACTIONS
 
 from apps.accounts.models import AdminRoleGrant, AdminUserGrant, Position, User
 from apps.catalog.models import Caliber, Client, Grade, Packaging, Product, ProductGroup, Seller, Supplier
-from apps.inventory.models import Balance, Movement
+from apps.inventory.models import Balance, Movement, TransformDocument
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine, Task, TaskLine
 from apps.printing.models import Printer
-from apps.receiving.models import Receipt
+from apps.receiving.models import Lot, Receipt
 from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
 from apps.shipping.models import Shipment
 from apps.storage.models import HandlingUnit, Pallet
@@ -92,6 +92,7 @@ for model, fields in (
     (Task, ("number", "kind", "status")),
     (TaskLine, ("task", "product", "qty_kg")),
     (Receipt, ("number", "supplier", "doc_date", "status")),
+    (Lot, ("number", "source", "product", "supplier", "received_on", "expires_on", "parent", "is_opening")),
     (Shipment, ("number", "client_name", "order")),
     (Pallet, ("number", "kind", "status")),
     (HandlingUnit, ("barcode", "status", "net_kg")),
@@ -103,4 +104,8 @@ for model, fields in (
     _show(model, fields)
 
 wms_admin.register(Movement, type("MovementAdmin", (ReadAdmin,), {"list_display": ("pallet", "kind", "lot", "qty_kg")}))
+wms_admin.register(
+    TransformDocument,
+    type("TransformDocumentAdmin", (ReadAdmin,), {"list_display": ("number", "kind", "status", "doc_date")}),
+)
 wms_admin.register(Balance, type("BalanceAdmin", (ReadAdmin,), {"list_display": ("lot", "free_kg", "reserved_kg", "picked_kg")}))

@@ -48,18 +48,28 @@ def _ensure_receipt(task: Task, user) -> Receipt:
 
 def _lot(receipt: Receipt, product_id, caliber_id, grade_id) -> Lot:
     lot = Lot.objects.filter(
-        receipt=receipt, product_id=product_id, caliber_id=caliber_id, grade_id=grade_id
+        receipt=receipt,
+        product_id=product_id,
+        caliber_id=caliber_id,
+        grade_id=grade_id,
+        source=Lot.Source.SUPPLY,
+        parent__isnull=True,
+        is_opening=False,
     ).first()
     if lot is not None:
         return lot
-    return Lot.objects.create(
+    lot = Lot.objects.create(
         receipt=receipt,
         supplier_id=receipt.supplier_id,
         product_id=product_id,
         caliber_id=caliber_id,
         grade_id=grade_id,
         received_on=receipt.doc_date,
+        source=Lot.Source.SUPPLY,
     )
+    lot.number = document_number("ПТ", lot.id)
+    lot.save(update_fields=["number"])
+    return lot
 
 
 def _parts(total: Decimal, count: int) -> list[Decimal]:
@@ -226,7 +236,9 @@ def _editable(movement_id: int):
     if movement.kind != "in":
         raise WarehouseError("Правится только приход")
     if has_downstream(movement):
-        raise WarehouseError("По паллете уже есть отбор или отгрузка")
+        raise WarehouseError("По паллете уже есть отбор, отгрузка или переработка")
+    if movement.task_line_id is None:
+        raise WarehouseError("Этот приход проведён документом переработки")
     pallet = movement.pallet
     if pallet.kind == "loose":
         return movement, pallet, movement.lot.receipt
@@ -273,7 +285,9 @@ def edit_inbound(
 def pallet_defaults(task: Task) -> dict[int, dict]:
     from apps.inventory.models import Movement
 
-    query = Movement.objects.filter(kind="in").select_related("pallet", "lot").prefetch_related("pallet__units")
+    query = Movement.objects.filter(kind="in", task__isnull=False).select_related("pallet", "lot").prefetch_related(
+        "pallet__units"
+    )
     if task.purchase_order_id:
         query = query.filter(task__purchase_order_id=task.purchase_order_id)
     else:

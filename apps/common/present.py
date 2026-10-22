@@ -47,7 +47,7 @@ def group_units(units) -> list[UnitGroup]:
     order: list[tuple] = []
     buckets: dict[tuple, UnitGroup] = {}
     for unit in units:
-        if unit.status == "rejected":
+        if unit.status in ("rejected", "transformed"):
             continue
         key = (unit.lot.product.name, unit.lot.caliber.name, unit.grade.name)
         if key not in buckets:

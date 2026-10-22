@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая переработка</h1>
+    <a class="btn slim" href="/transform">К списку</a>
+  </div>
+</div>
+<form method="post" action="/transform" class="card">{% csrf_token %}
+  <label>Вид
+    <select name="kind">
+      <option value="rework" {% if kind == "rework" %}selected{% endif %}>Переборка</option>
+      <option value="workshop" {% if kind == "workshop" %}selected{% endif %}>Цех</option>
+    </select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="0" inputmode="decimal"></label>
+  <p class="hint">Проводка сверяет вход с суммой выхода и отхода. Расхождение больше допуска документ не проводит. Ноль — массы должны сойтись точно. Отход списывается и не становится партией.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}

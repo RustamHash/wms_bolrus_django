@@ -7,6 +7,7 @@
   <p>{{ unit.lot.product.name }}, калибр {{ unit.lot.caliber.name }}, сортность {{ unit.grade.name }}, {{ unit.packaging.name }}</p>
   <p>Брутто {{ unit.gross_kg|kg }} кг, тара {{ unit.packaging.tare_kg|kg }} кг, нетто {{ unit.net_kg|kg }} кг</p>
   <p>Поставщик {{ unit.lot.supplier.name }}, приход {{ unit.receipt.number }}, {{ unit.lot.received_on|date:"d.m.Y" }}</p>
+  <p>Партия <a href="/lots/{{ unit.lot_id }}">{{ unit.lot.number }}</a>, {{ unit.lot.get_source_display }}</p>
   <p>Статус: {{ UNIT_STATUS|label:unit.status }}{% if unit.pallet %}, паллета <a href="/pallets/{{ unit.pallet.id }}">{{ unit.pallet.number }}</a>{% endif %}</p>
   {% with alloc=unit|allocation %}
   {% if alloc %}
@@ -20,10 +21,10 @@
     <form method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Сетевой принтер</button></form>
   </div>
 </div>
-{% if unit.pallet %}
+{% if unit.pallet and unit.status != "transformed" %}
 <form method="post" action="/units/{{ unit.id }}/detach">{% csrf_token %}<button>Снять с паллеты</button></form>
 {% endif %}
-{% if unit.status != "shipped" and unit.status != "rejected" %}
+{% if unit.status != "shipped" and unit.status != "rejected" and unit.status != "transformed" %}
 <form method="post" action="/units/{{ unit.id }}/quality" class="card grid">{% csrf_token %}
   <h2>Сортность</h2>
   <label>Сортность

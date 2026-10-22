@@ -20,6 +20,7 @@ UNIT_STATUS = {
     "allocated": "Под заказ",
     "shipped": "Отгружено",
     "rejected": "Брак",
+    "transformed": "Переработано",
 }
 
 DOC_STATUS = {

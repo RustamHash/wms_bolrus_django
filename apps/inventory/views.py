@@ -91,6 +91,7 @@ def reports_home(request):
                 {"href": "/demand", "title": "Потребность"},
                 {"href": "/orders/customers/revisions", "title": "Расхождения заказов"},
                 {"href": "/pallets", "title": "Паллеты"},
+                {"href": "/transform", "title": "Переработка"},
             ],
         },
     )

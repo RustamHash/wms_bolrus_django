@@ -8,12 +8,24 @@ class Movement(models.Model):
         IN = "in", "Приход"
         PICK = "pick", "Отбор"
         OUT = "out", "Отгрузка"
+        TRANSFORM_OUT = "transform_out", "В переработку"
+        WASTE = "waste", "Отход"
 
     task = models.ForeignKey(
-        "planning.Task", on_delete=models.PROTECT, related_name="movements", verbose_name="Задание"
+        "planning.Task",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="movements",
+        verbose_name="Задание",
     )
     task_line = models.ForeignKey(
-        "planning.TaskLine", on_delete=models.PROTECT, related_name="movements", verbose_name="Строка задания"
+        "planning.TaskLine",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="movements",
+        verbose_name="Строка задания",
     )
     pallet = models.ForeignKey(
         "storage.Pallet", on_delete=models.PROTECT, related_name="movements", verbose_name="Паллета"
@@ -26,6 +38,14 @@ class Movement(models.Model):
     source = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="derived", verbose_name="Источник"
     )
+    transform_document = models.ForeignKey(
+        "inventory.TransformDocument",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="movements",
+        verbose_name="Переработка",
+    )
     created_by = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="movements_created", verbose_name="Создал"
     )
@@ -35,7 +55,18 @@ class Movement(models.Model):
         db_table = "movements"
         verbose_name = "Движение"
         verbose_name_plural = "Движения"
-        constraints = [models.UniqueConstraint(fields=["pallet", "kind"], name="movement_pallet_kind")]
+        constraints = [
+            models.UniqueConstraint(fields=["pallet", "kind"], name="movement_pallet_kind"),
+            models.CheckConstraint(
+                condition=models.Q(task__isnull=False, task_line__isnull=False)
+                | models.Q(transform_document__isnull=False),
+                name="movement_task_or_transform",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(kind__in=["transform_out", "waste"]) | models.Q(transform_document__isnull=False),
+                name="movement_rework_has_document",
+            ),
+        ]
 
     def __str__(self):
         pallet = self.pallet.number or self.pallet_id
@@ -187,3 +218,136 @@ class InventoryLine(models.Model):
         if self.fact_kg is None:
             return None
         return self.fact_kg - self.book_kg
+
+
+class TransformDocument(models.Model):
+    class Kind(models.TextChoices):
+        REWORK = "rework", "Переборка"
+        WORKSHOP = "workshop", "Цех"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Черновик"
+        POSTED = "posted", "Проведён"
+        CANCELLED = "cancelled", "Отменён"
+
+    number = models.CharField("Номер", max_length=32, unique=True, null=True)
+    kind = models.CharField("Вид", max_length=16, choices=Kind.choices)
+    doc_date = models.DateField("Дата", db_index=True)
+    status = models.CharField(
+        "Статус", max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True
+    )
+    tolerance_kg = models.DecimalField("Допуск, кг", max_digits=12, decimal_places=3, default=0)
+    ledger_waste_kg = models.DecimalField("Отход в движениях, кг", max_digits=12, decimal_places=3, null=True, blank=True)
+    notes = models.TextField("Примечание", blank=True, default="")
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.PROTECT, related_name="transform_documents_created", verbose_name="Создал"
+    )
+    posted_by = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="transform_documents_posted",
+        verbose_name="Провёл",
+    )
+    posted_at = models.DateTimeField("Проведено", null=True, blank=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+
+    class Meta:
+        db_table = "transform_documents"
+        verbose_name = "Переработка"
+        verbose_name_plural = "Переработка"
+        ordering = ["-doc_date", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(tolerance_kg__gte=0),
+                name="transform_tolerance_nonnegative",
+            )
+        ]
+
+    def __str__(self):
+        return self.number or f"#{self.pk}"
+
+
+class TransformInput(models.Model):
+    document = models.ForeignKey(
+        TransformDocument, on_delete=models.CASCADE, related_name="inputs", verbose_name="Документ"
+    )
+    pallet = models.ForeignKey(
+        "storage.Pallet", on_delete=models.PROTECT, related_name="transform_inputs", verbose_name="Паллета"
+    )
+    lot = models.ForeignKey(
+        "receiving.Lot", on_delete=models.PROTECT, related_name="transform_inputs", verbose_name="Партия"
+    )
+    qty_kg = models.DecimalField("Кг", max_digits=12, decimal_places=3)
+
+    class Meta:
+        db_table = "transform_inputs"
+        verbose_name = "Вход переработки"
+        verbose_name_plural = "Вход переработки"
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["document", "pallet"], name="transform_input_document_pallet"),
+        ]
+
+    def __str__(self):
+        return f"{self.document} · {self.pallet}"
+
+
+class TransformOutput(models.Model):
+    document = models.ForeignKey(
+        TransformDocument, on_delete=models.CASCADE, related_name="outputs", verbose_name="Документ"
+    )
+    product = models.ForeignKey(
+        "catalog.Product", on_delete=models.PROTECT, related_name="transform_outputs", verbose_name="Товар"
+    )
+    caliber = models.ForeignKey(
+        "catalog.Caliber", on_delete=models.PROTECT, related_name="transform_outputs", verbose_name="Калибр"
+    )
+    grade = models.ForeignKey(
+        "catalog.Grade", on_delete=models.PROTECT, related_name="transform_outputs", verbose_name="Сорт"
+    )
+    qty_kg = models.DecimalField("Кг", max_digits=12, decimal_places=3)
+    expires_on = models.DateField("Срок годности", null=True, blank=True)
+    pallet = models.ForeignKey(
+        "storage.Pallet",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="transform_outputs",
+        verbose_name="Паллета",
+    )
+    lot = models.ForeignKey(
+        "receiving.Lot",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="transform_outputs",
+        verbose_name="Партия",
+    )
+
+    class Meta:
+        db_table = "transform_outputs"
+        verbose_name = "Выход переработки"
+        verbose_name_plural = "Выход переработки"
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.document} · {self.product}"
+
+
+class TransformWaste(models.Model):
+    document = models.ForeignKey(
+        TransformDocument, on_delete=models.CASCADE, related_name="wastes", verbose_name="Документ"
+    )
+    qty_kg = models.DecimalField("Кг", max_digits=12, decimal_places=3)
+    reason = models.CharField("Причина", max_length=200, blank=True, default="")
+
+    class Meta:
+        db_table = "transform_wastes"
+        verbose_name = "Отход переработки"
+        verbose_name_plural = "Отход переработки"
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.document} · {self.qty_kg}"

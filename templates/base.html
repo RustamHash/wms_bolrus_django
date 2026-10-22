@@ -26,13 +26,14 @@
     {% endif %}
     {% if user.is_authenticated and user|screen:"web_reports" %}
     <div class="menu-group">
-      <a href="/reports" class="{% if request.path|startswith:'/reports' or request.path|startswith:'/stock' or request.path|startswith:'/demand' or request.path|startswith:'/pallets' or request.path|startswith:'/units' or request.path|startswith:'/inventory' %}active{% endif %}">Отчеты</a>
+      <a href="/reports" class="{% if request.path|startswith:'/reports' or request.path|startswith:'/stock' or request.path|startswith:'/demand' or request.path|startswith:'/pallets' or request.path|startswith:'/units' or request.path|startswith:'/inventory' or request.path|startswith:'/transform' or request.path|startswith:'/lots' %}active{% endif %}">Отчеты</a>
       <div>
         <a href="/stock">Остатки</a>
         <a href="/demand">Потребность</a>
         <a href="/orders/customers/revisions">Расхождения заказов</a>
         <a href="/pallets">Паллеты</a>
         <a href="/inventory">Инвентаризация</a>
+        <a href="/transform">Переработка</a>
       </div>
     </div>
     {% endif %}

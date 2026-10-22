@@ -1,8 +1,10 @@
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.common.exceptions import WarehouseError
-from apps.common.forms import optional_int, parse_kg, require_int, text
+from apps.common.forms import optional_int, parse_date, parse_kg, require_int, text
 from apps.common.http import done, guarded, roles_required
+from apps.inventory.models import Balance
+from apps.receiving.models import Lot
 from apps.receiving.services import accept_loose, accept_pallet, delete_inbound, edit_inbound
 
 
@@ -91,3 +93,54 @@ def movement_delete(request, movement_id):
     if response:
         return response
     return done(request, back, "Ошибочный приход удалён, остаток возвращён")
+
+
+def _lot_page(lot: Lot) -> dict:
+    balance = Balance.objects.filter(lot=lot).first()
+    children = list(lot.children.select_related("product", "grade").order_by("id"))
+    made = list(lot.transform_outputs.select_related("document").order_by("id"))
+    spent = list(lot.transform_inputs.select_related("document", "pallet").order_by("id"))
+    return {
+        "title": lot.number or "Партия",
+        "lot": lot,
+        "balance": balance,
+        "children": children,
+        "made": made,
+        "spent": spent,
+    }
+
+
+@roles_required("receiver", "warehouse")
+def lot_passport(request, lot_id):
+    lot = get_object_or_404(
+        Lot.objects.select_related(
+            "product", "caliber", "grade", "supplier", "receipt", "parent"
+        ),
+        pk=lot_id,
+    )
+    return render(request, "lots/passport.html", _lot_page(lot))
+
+
+@roles_required("receiver", "warehouse")
+def lot_passport_save(request, lot_id):
+    lot = get_object_or_404(Lot, pk=lot_id)
+    back = f"/lots/{lot.id}"
+
+    def action():
+        raw = text(request.POST, "expires_on")
+        grade = text(request.POST, "passport_grade")
+        supplier = text(request.POST, "passport_supplier")
+        if len(grade) > 120:
+            raise WarehouseError("Сорт с паспорта длиннее 120 символов")
+        if len(supplier) > 200:
+            raise WarehouseError("Поставщик с паспорта длиннее 200 символов")
+        lot.expires_on = parse_date(raw, "Срок годности") if raw else None
+        lot.passport_grade = grade
+        lot.passport_supplier = supplier
+        lot.save(update_fields=["expires_on", "passport_grade", "passport_supplier"])
+        return None
+
+    _, response = guarded(request, back, action)
+    if response:
+        return response
+    return done(request, back, "Паспорт партии сохранён")

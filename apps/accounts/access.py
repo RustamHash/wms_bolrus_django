@@ -43,8 +43,18 @@ WEB_SCREENS = (
     {
         "key": "web_reports",
         "title": "Отчеты",
-        "hint": "Остатки, потребность, паллеты, инвентаризация",
-        "models": _models("inventory", "balance", "movement", "inventorydocument", "inventoryline")
+        "hint": "Остатки, потребность, паллеты, инвентаризация, переработка",
+        "models": _models(
+            "inventory",
+            "balance",
+            "movement",
+            "inventorydocument",
+            "inventoryline",
+            "transformdocument",
+            "transforminput",
+            "transformoutput",
+            "transformwaste",
+        )
         + _models("storage", "pallet", "handlingunit"),
     },
     {
@@ -300,6 +310,8 @@ def screens_for_path(path: str) -> list[str]:
         ("/pallets", "web_reports"),
         ("/units", "web_reports"),
         ("/inventory", "web_reports"),
+        ("/transform", "web_reports"),
+        ("/lots", "web_reports"),
         ("/shipments", "web_shipments"),
         ("/receipts", "web_shipments"),
         ("/movements", "web_shipments"),

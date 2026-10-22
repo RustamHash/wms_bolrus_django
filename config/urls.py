@@ -4,7 +4,7 @@ from django.urls import path
 from apps.common.http import accept
 from apps.accounts import views as accounts
 from apps.catalog import views as catalog
-from apps.inventory import count_views, views as inventory
+from apps.inventory import count_views, transform_views, views as inventory
 from apps.picking import views as picking
 from apps.planning import views as planning
 from apps.printing import views as printing
@@ -83,6 +83,16 @@ urlpatterns = [
     path("inventory/<int:doc_id>/found", accept(post=count_views.inventory_add_found)),
     path("inventory/<int:doc_id>/line", accept(post=count_views.inventory_save_line)),
     path("inventory/<int:doc_id>", accept(count_views.inventory_detail, count_views.inventory_action)),
+    path("transform", accept(transform_views.transform_list, transform_views.transform_create)),
+    path("transform/new", transform_views.transform_new),
+    path("transform/<int:doc_id>/inputs/<int:line_id>/delete", accept(post=transform_views.transform_delete_input)),
+    path("transform/<int:doc_id>/outputs/<int:line_id>/delete", accept(post=transform_views.transform_delete_output)),
+    path("transform/<int:doc_id>/waste/<int:line_id>/delete", accept(post=transform_views.transform_delete_waste)),
+    path("transform/<int:doc_id>/inputs", accept(post=transform_views.transform_add_input)),
+    path("transform/<int:doc_id>/outputs", accept(post=transform_views.transform_add_output)),
+    path("transform/<int:doc_id>/waste", accept(post=transform_views.transform_add_waste)),
+    path("transform/<int:doc_id>", accept(transform_views.transform_detail, transform_views.transform_action)),
+    path("lots/<int:lot_id>", accept(receiving.lot_passport, receiving.lot_passport_save)),
     path("stock", inventory.stock),
     path("demand", inventory.demand),
     path("pallets", accept(storage.pallet_list, storage.pallet_create)),

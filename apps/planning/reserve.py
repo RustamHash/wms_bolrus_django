@@ -4,6 +4,7 @@ from django.db.models import Sum
 
 from apps.common.kg import as_kg
 from apps.inventory.models import Movement
+from apps.inventory.services import reworked_pallet_ids
 
 
 def plan_kg(line) -> Decimal:
@@ -17,7 +18,9 @@ def _picked_pallets():
 
 
 def assigned_by_order_line(line_ids=None) -> dict[int, Decimal]:
-    query = Movement.objects.filter(kind="in", pallet__reserved_line_id__isnull=False)
+    query = Movement.objects.filter(kind="in", pallet__reserved_line_id__isnull=False).exclude(
+        pallet_id__in=reworked_pallet_ids()
+    )
     if line_ids is not None:
         query = query.filter(pallet__reserved_line_id__in=list(line_ids))
     rows = query.values("pallet__reserved_line_id").annotate(total=Sum("qty_kg"))
@@ -28,6 +31,7 @@ def holding_by_grade(line_ids=None) -> dict[int, list[tuple[int, Decimal]]]:
     query = (
         Movement.objects.filter(kind="in", pallet__reserved_line_id__isnull=False)
         .exclude(pallet_id__in=_picked_pallets())
+        .exclude(pallet_id__in=reworked_pallet_ids())
     )
     if line_ids is not None:
         query = query.filter(pallet__reserved_line_id__in=list(line_ids))
@@ -44,6 +48,7 @@ def holding_by_order_line(line_ids=None) -> dict[int, Decimal]:
     query = (
         Movement.objects.filter(kind="in", pallet__reserved_line_id__isnull=False)
         .exclude(pallet_id__in=_picked_pallets())
+        .exclude(pallet_id__in=reworked_pallet_ids())
     )
     if line_ids is not None:
         query = query.filter(pallet__reserved_line_id__in=list(line_ids))
@@ -60,6 +65,7 @@ def client_reserved_pools() -> dict[int, list[dict]]:
             pallet__order_id__isnull=True,
         )
         .exclude(pallet_id__in=_picked_pallets())
+        .exclude(pallet_id__in=reworked_pallet_ids())
         .select_related("lot__caliber", "pallet")
     )
     pools: dict[int, list[dict]] = {}
@@ -80,6 +86,7 @@ def legacy_reserved_pools() -> dict[int, list[dict]]:
     rows = (
         Movement.objects.filter(kind="in", pallet__order_id__isnull=False, pallet__reserved_line_id__isnull=True)
         .exclude(pallet_id__in=_picked_pallets())
+        .exclude(pallet_id__in=reworked_pallet_ids())
         .select_related("lot__caliber", "pallet")
     )
     pools: dict[int, list[dict]] = {}

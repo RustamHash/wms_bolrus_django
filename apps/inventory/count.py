@@ -9,7 +9,7 @@ from apps.common.forms import get_row
 from apps.common.kg import as_kg
 from apps.common.numbers import barcode, document_number
 from apps.inventory.models import InventoryDocument, InventoryLine, Movement
-from apps.inventory.services import has_downstream, post_in, remove_in, update_in
+from apps.inventory.services import consumed_pallet_ids, has_downstream, post_in, remove_in, update_in
 from apps.planning.models import Task, TaskLine
 from apps.receiving.models import Lot, Receipt
 from apps.storage.models import Pallet
@@ -30,9 +30,8 @@ def parse_fact_kg(raw: str) -> Decimal:
 
 
 def stock_inbounds(product_ids: list[int] | None = None):
-    """Приходы паллет, которые ещё на складе: без отбора и отгрузки."""
-    taken = Movement.objects.filter(kind__in=(Movement.Kind.PICK, Movement.Kind.OUT)).values("pallet_id")
-    rows = Movement.objects.filter(kind=Movement.Kind.IN).exclude(pallet_id__in=taken)
+    """Приходы паллет, которые ещё на складе: без отбора, отгрузки и переработки."""
+    rows = Movement.objects.filter(kind=Movement.Kind.IN).exclude(pallet_id__in=consumed_pallet_ids())
     if product_ids is not None:
         rows = rows.filter(lot__product_id__in=product_ids)
     return rows.select_related("pallet", "lot", "lot__supplier").order_by("lot__product__name", "pallet__number", "id")
@@ -171,6 +170,10 @@ def _lot_for_supplier(source: Lot, supplier_id: int) -> Lot:
             caliber_id=source.caliber_id,
             grade_id=source.grade_id,
             received_on=source.received_on,
+            receipt_id=source.receipt_id,
+            source=source.source,
+            parent_id=source.parent_id,
+            is_opening=source.is_opening,
         )
         .order_by("id")
         .first()
@@ -184,6 +187,12 @@ def _lot_for_supplier(source: Lot, supplier_id: int) -> Lot:
         caliber_id=source.caliber_id,
         grade_id=source.grade_id,
         received_on=source.received_on,
+        source=source.source,
+        parent_id=source.parent_id,
+        expires_on=source.expires_on,
+        passport_grade=source.passport_grade,
+        passport_supplier=source.passport_supplier,
+        is_opening=source.is_opening,
     )
 
 
@@ -220,7 +229,13 @@ def _opening_task(document: InventoryDocument, supplier: Supplier, user):
 
 def _lot_on_receipt(receipt: Receipt, product_id: int, caliber_id: int, grade_id: int) -> Lot:
     found = Lot.objects.filter(
-        receipt=receipt, product_id=product_id, caliber_id=caliber_id, grade_id=grade_id
+        receipt=receipt,
+        product_id=product_id,
+        caliber_id=caliber_id,
+        grade_id=grade_id,
+        source=Lot.Source.INVENTORY,
+        parent__isnull=True,
+        is_opening=True,
     ).first()
     if found is not None:
         return found
@@ -231,6 +246,8 @@ def _lot_on_receipt(receipt: Receipt, product_id: int, caliber_id: int, grade_id
         caliber_id=caliber_id,
         grade_id=grade_id,
         received_on=receipt.doc_date,
+        source=Lot.Source.INVENTORY,
+        is_opening=True,
     )
 
 
@@ -281,7 +298,7 @@ def _post_line(line: InventoryLine, user) -> None:
     if movement is None:
         raise WarehouseError(f"Нет прихода по паллете {label}")
     if has_downstream(movement):
-        raise WarehouseError(f"По паллете {label} уже есть отбор или отгрузка")
+        raise WarehouseError(f"По паллете {label} уже есть отбор, отгрузка или переработка")
     fact = as_kg(line.fact_kg)
     if fact == 0:
         remove_in(movement)
