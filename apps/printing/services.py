@@ -1,5 +1,6 @@
 import ctypes
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -151,13 +152,16 @@ def _print_raw_cups(queue: str, payload: bytes, job_name: str) -> None:
 
 def send_pdf(printer: Printer, payload: bytes, job_name: str) -> str:
     if printer.queue_name:
-        from apps.printing.installed import print_target
+        if os.name == "nt":
+            from apps.printing.installed import print_target
 
-        return _print_windows_queue(print_target(printer.queue_name), payload, job_name)
+            return _print_windows_queue(print_target(printer.queue_name), payload, job_name)
+        _print_cups_pdf(printer.queue_name, payload, job_name)
+        return f"PDF отправлен в очередь «{printer.queue_name}»"
     if printer.host:
         send_raw(printer.host, printer.port or 9100, payload)
         return f"PDF отправлен на {printer.host}:{printer.port or 9100}"
-    raise PrintError("У сетевого принтера не заданы очередь Windows или адрес")
+    raise PrintError("У сетевого принтера не заданы очередь или адрес")
 
 
 def _print_windows_queue(queue: str, payload: bytes, job_name: str) -> str:
@@ -185,6 +189,28 @@ def _print_windows_queue(queue: str, payload: bytes, job_name: str) -> str:
         detail = _ps_text(result.stderr) or _ps_text(result.stdout)
         raise PrintError(_print_failure(queue, detail))
     return f"PDF отправлен в очередь «{queue}»"
+
+
+def _print_cups_pdf(queue: str, payload: bytes, job_name: str) -> None:
+    folder = Path(tempfile.mkdtemp(prefix="wms-print-"))
+    path = folder / f"{job_name}.pdf"
+    try:
+        path.write_bytes(payload)
+        try:
+            result = subprocess.run(
+                ["lp", "-d", queue, "-t", job_name, str(path)],
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PrintError(f"Очередь «{queue}» не приняла PDF") from exc
+        except OSError as exc:
+            raise PrintError(f"Не удалось отправить PDF в очередь «{queue}»") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+            raise PrintError(detail or f"Очередь «{queue}» не приняла PDF")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _ps_text(data: bytes | None) -> str:

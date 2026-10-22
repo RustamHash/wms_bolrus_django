@@ -113,6 +113,13 @@ def _fill_docx(docx_path: Path, png: Path, context: dict) -> None:
 
 
 def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
+    if os.name == "nt":
+        _docx_to_pdf_word(docx_path, pdf_path)
+        return
+    _docx_to_pdf_office(docx_path, pdf_path)
+
+
+def _docx_to_pdf_word(docx_path: Path, pdf_path: Path) -> None:
     script = Path(__file__).with_name("word_pdf.ps1")
     env = os.environ.copy()
     env["WMS_DOCX"] = str(docx_path)
@@ -131,6 +138,55 @@ def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
             raise PrintError(f"Не удалось вызвать Word: {exc}") from exc
     if result.returncode != 0 or not pdf_path.exists():
         detail = _ps_text(result.stderr) or _ps_text(result.stdout) or "Word не собрал PDF"
+        raise PrintError(detail)
+
+
+def _office_bin() -> str:
+    for name in ("libreoffice", "soffice"):
+        found = shutil.which(name)
+        if found:
+            return found
+    raise PrintError(
+        "На сервере не установлен LibreOffice. "
+        "От root: bash /opt/wms/deploy/install-print.sh"
+    )
+
+
+def _docx_to_pdf_office(docx_path: Path, pdf_path: Path) -> None:
+    binary = _office_bin()
+    outdir = docx_path.parent
+    profile = (outdir / "lo-profile").resolve().as_uri()
+    env = os.environ.copy()
+    env["HOME"] = str(outdir)
+    try:
+        result = subprocess.run(
+            [
+                binary,
+                f"-env:UserInstallation={profile}",
+                "--headless",
+                "--norestore",
+                "--nologo",
+                "--nolockcheck",
+                "--convert-to",
+                "pdf:writer_pdf_Export",
+                "--outdir",
+                str(outdir),
+                str(docx_path),
+            ],
+            env=env,
+            capture_output=True,
+            timeout=45,
+            cwd=str(outdir),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PrintError("LibreOffice не собрал паспорт за отведённое время") from exc
+    except OSError as exc:
+        raise PrintError(f"Не удалось вызвать LibreOffice: {exc}") from exc
+    produced = pdf_path if pdf_path.exists() else next(outdir.glob("*.pdf"), None)
+    if produced is not None and produced != pdf_path:
+        produced.replace(pdf_path)
+    if result.returncode != 0 or not pdf_path.exists():
+        detail = _ps_text(result.stderr) or _ps_text(result.stdout) or "LibreOffice не собрал PDF"
         raise PrintError(detail)
 
 

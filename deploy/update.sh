@@ -37,5 +37,9 @@ if [[ ! -f /etc/systemd/system/wms.service ]]; then
   exit 1
 fi
 
+if ! command -v libreoffice >/dev/null && ! command -v soffice >/dev/null; then
+  echo "Нет LibreOffice: паспорт паллеты не соберётся. От root: bash $APP_DIR/deploy/install-print.sh" >&2
+fi
+
 sudo -n systemctl restart wms
 sudo -n systemctl is-active --quiet wms

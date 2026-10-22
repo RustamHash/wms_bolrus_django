@@ -27,7 +27,10 @@ sudo apt install -y \
   python3 python3-venv python3-pip \
   postgresql postgresql-contrib \
   docker.io docker-compose-v2 \
-  rsync ufw
+  rsync ufw \
+  libreoffice-writer \
+  fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
+  cups-client
 
 sudo systemctl enable --now postgresql docker
 ```

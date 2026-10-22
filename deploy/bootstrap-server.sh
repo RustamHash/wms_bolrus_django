@@ -25,9 +25,14 @@ apt-get install -y \
   git curl ca-certificates rsync ufw \
   python3 python3-venv python3-pip \
   postgresql postgresql-contrib \
-  docker.io docker-compose-v2
+  docker.io docker-compose-v2 \
+  libreoffice-writer \
+  fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
+  cups-client
 
 systemctl enable --now postgresql docker
+install -m 644 "$SRC_DIR/deploy/99-wms-fonts.conf" /etc/fonts/conf.d/99-wms-fonts.conf
+fc-cache -f || true
 
 echo "==> Firewall"
 ufw allow OpenSSH
