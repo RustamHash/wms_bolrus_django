@@ -2,31 +2,34 @@
 {% load wms %}
 {% block title %}Накладные{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Накладные</h1>
-  </div>
-  <div class="page-tools">
-    <form class="doc-filter" method="get" action="/shipments">
-      <div class="filter-row">
-        <label>Период
-          <span class="dates">
-            <input type="date" name="date_from" value="{{ date_from }}">
-            <span class="sep">—</span>
-            <input type="date" name="date_to" value="{{ date_to }}">
-          </span>
-        </label>
-        <label>Клиент / продавец
-          <input name="party" value="{{ party }}" placeholder="Имя">
-        </label>
-        <label>Номер
-          <input name="number" value="{{ number }}">
-        </label>
-        <button class="slim">Найти</button>
-      </div>
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/shipments">
+      <div class="journal-title">Накладные <span class="journal-count">{{ shipments|length }}</span></div>
+      <label>Период
+        <span class="dates">
+          <input type="date" name="date_from" value="{{ date_from }}">
+          <span class="sep">—</span>
+          <input type="date" name="date_to" value="{{ date_to }}">
+        </span>
+      </label>
+      <label>Клиент / продавец
+        <input name="party" value="{{ party }}" placeholder="Имя">
+      </label>
+      <label>Номер
+        <input name="number" value="{{ number }}">
+      </label>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/shipments" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+      </span>
     </form>
   </div>
-</div>
+  <div class="journal-table">
 <table class="sheet">
   <tr><th>Номер</th><th>Заказ</th><th>Клиент</th><th>Продавец</th><th>Когда</th></tr>
   {% for shipment in shipments %}
@@ -41,4 +44,6 @@
   <tr><td colspan="5">Отгрузок нет</td></tr>
   {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}

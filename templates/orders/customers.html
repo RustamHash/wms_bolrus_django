@@ -3,8 +3,8 @@
 {% block title %}Заказы покупателей{% endblock %}
 {% block content %}
 <div class="journal">
-  <div class="journal-tools">
-    <form class="journal-bar" method="get" action="/orders/customers" id="customers-filter">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/customers" id="customers-filter">
       <div class="journal-title">Заказы покупателей <span class="journal-count">{{ rows|length }}</span></div>
       {% include "orders/_period.html" with prefix="ship" label="Дата отгрузки" bound=ship_range tomorrow=1 %}
       <div class="field-grid">

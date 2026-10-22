@@ -2,18 +2,22 @@
 {% load wms %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>{{ title }}</h1>
-    {% if can_change %}<a class="btn slim" href="/masters/{{ kind }}/new">Добавить</a>{% endif %}
-  </div>
-  <div class="page-tools">
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">{{ title }} <span class="journal-count">{{ rows|length }}</span></div>
+      {% if can_change %}
+      <a class="icon-btn" href="/masters/{{ kind }}/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+      {% endif %}
+    </div>
     {% include "masters/nav.html" %}
   </div>
-</div>
-{% if kind == 'categories' %}
-<p class="hint">Категория грузополучателя задаёт сортность в заказе. В самом заказе сорт можно сменить. Добавлять и переименовывать категории может только администратор.</p>
-{% endif %}
+  {% if kind == 'categories' %}
+  <p class="hint">Категория грузополучателя задаёт сортность в заказе. В самом заказе сорт можно сменить. Добавлять и переименовывать категории может только администратор.</p>
+  {% endif %}
+  <div class="journal-table">
 <table class="sheet">
   <tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}<th></th></tr>
   {% for row in rows %}
@@ -25,4 +29,6 @@
   <tr><td colspan="{{ headers|length|add:1 }}">Пока пусто</td></tr>
   {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}

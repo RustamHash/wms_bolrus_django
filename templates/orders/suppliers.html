@@ -2,46 +2,51 @@
 {% load wms %}
 {% block title %}Заказы поставщикам{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Заказы поставщикам</h1>
-    {% if user.is_office %}<a class="btn slim" href="/orders/suppliers/new">Создать</a>{% endif %}
-  </div>
-  <div class="page-tools">
-    <form class="doc-filter" method="get" action="/orders/suppliers">{% csrf_token %}
-      <div class="filter-row">
-        <label>Период
-          <span class="dates">
-            <input type="date" name="date_from" value="{{ date_from }}">
-            <span class="sep">—</span>
-            <input type="date" name="date_to" value="{{ date_to }}">
-          </span>
-        </label>
-        <label>Поставщик
-          <select name="supplier_id">
-            <option value=""></option>
-            {% for item in suppliers %}
-            <option value="{{ item.id }}" {% if supplier_id == item.id %}selected{% endif %}>{{ item.name }}</option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
-      <div class="filter-row">
-        <label>Статус
-          <select name="status">
-            <option value="" {% if status == "" %}selected{% endif %}>Кроме закрытых</option>
-            <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
-            {% for key, label in PURCHASE_STATUS.items %}
-            <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button class="slim">Найти</button>
-      </div>
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/suppliers">
+      <div class="journal-title">Заказы поставщикам <span class="journal-count">{{ rows|length }}</span></div>
+      <label>Период
+        <span class="dates">
+          <input type="date" name="date_from" value="{{ date_from }}">
+          <span class="sep">—</span>
+          <input type="date" name="date_to" value="{{ date_to }}">
+        </span>
+      </label>
+      <label>Поставщик
+        <select name="supplier_id">
+          <option value=""></option>
+          {% for item in suppliers %}
+          <option value="{{ item.id }}" {% if supplier_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Статус
+        <select name="status">
+          <option value="" {% if status == "" %}selected{% endif %}>Кроме закрытых</option>
+          <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
+          {% for key, label in PURCHASE_STATUS.items %}
+          <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/suppliers" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+        {% if user.is_office %}
+        <a class="icon-btn" href="/orders/suppliers/new" data-tip="Создать" aria-label="Создать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
+        {% endif %}
+      </span>
     </form>
     {% if user.is_office %}
-    <form class="doc-filter" method="post" action="/orders/suppliers/import" data-onec-import data-onec-title="Импорт заказов поставщикам из 1С">{% csrf_token %}
-      <div class="filter-row">
+    <form class="journal-bar" method="post" action="/orders/suppliers/import" data-onec-import data-onec-title="Импорт заказов поставщикам из 1С">{% csrf_token %}
+      <div class="journal-fields">
         <label>Поступление из 1С
           <span class="dates">
             <input type="date" name="date_from" value="{{ import_from }}" data-period required>
@@ -49,15 +54,16 @@
             <input type="date" name="date_to" value="{{ import_to }}" data-period required>
           </span>
         </label>
-        <label class="check">
-          <input type="checkbox" name="by_number" value="1" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
-          По номеру
-        </label>
         <label>Номер 1С
           <input name="order_number" placeholder="НФНФ-000000" disabled>
         </label>
-        <label class="check"><input type="checkbox" name="update" value="1"> Обновить</label>
-        <button class="slim">Импорт</button>
+        <span class="import-flags">
+          <input type="checkbox" name="by_number" value="1" title="По номеру" aria-label="По номеру" data-tip="По номеру" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          <input type="checkbox" name="update" value="1" title="Обновить" aria-label="Обновить" data-tip="Обновить">
+        </span>
+        <button class="icon-btn" type="submit" data-tip="Импорт" aria-label="Импорт">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>
+        </button>
       </div>
     </form>
     {% endif %}
@@ -67,8 +73,8 @@
       </a>
     </div>
     {% if user.is_office %}
-    <form id="suppliers-bulk" class="doc-filter" method="post" action="/orders/suppliers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
-      <div class="filter-row">
+    <form id="suppliers-bulk" class="journal-bar" method="post" action="/orders/suppliers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
+      <div class="journal-fields">
         <span class="bulk-count" data-bulk-count="suppliers-bulk">Выбрано: 0</span>
         <label>Действие
           <select name="action">
@@ -76,12 +82,14 @@
             {% if user.role == "admin" %}<option value="delete">Удалить</option>{% endif %}
           </select>
         </label>
-        <button class="slim">Выполнить</button>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
       </div>
     </form>
     {% endif %}
   </div>
-</div>
+  <div class="journal-table">
 <table class="sheet" {% if user.is_office %}data-bulk="suppliers-bulk"{% endif %}>
   <tr><th>Номер</th><th>Номер 1С</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th><th>Комментарий</th></tr>
   {% for row in rows %}
@@ -100,4 +108,6 @@
   <tr><td colspan="9">Заказов нет</td></tr>
   {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}

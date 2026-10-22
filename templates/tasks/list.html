@@ -2,32 +2,33 @@
 {% load wms %}
 {% block title %}{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %}{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %}</h1>
-  </div>
-  <div class="page-tools">
-    <form class="doc-filter" method="get" action="/tasks">
-      <div class="filter-row">
-        <label>Вид
-          <select name="kind">
-            <option value="all" {% if not kind %}selected{% endif %}>Все</option>
-            {% for key, label in TASK_KIND.items %}
-            <option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        {% if kind != "receive" %}
-        <label class="check">
-          <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()" aria-label="Разбить по группам" title="Разбить по группам">
-        </label>
-        {% endif %}
-        <button class="slim">Найти</button>
-      </div>
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/tasks">
+      <div class="journal-title">{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %} <span class="journal-count">{{ tasks|length }}</span></div>
+      <label>Вид
+        <select name="kind">
+          <option value="all" {% if not kind %}selected{% endif %}>Все</option>
+          {% for key, label in TASK_KIND.items %}
+          <option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if kind != "receive" %}
+      <label class="check">
+        <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()">
+        По группам
+      </label>
+      {% endif %}
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+      </span>
     </form>
-    <form id="tasks-bulk" class="doc-filter" method="post" action="/tasks" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить отмеченные задания?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
+    <form id="tasks-bulk" class="journal-bar" method="post" action="/tasks" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить отмеченные задания?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
       <input type="hidden" name="kind" value="{{ kind|default:'all' }}">
-      <div class="filter-row">
+      <div class="journal-fields">
         <span class="bulk-count" data-bulk-count="tasks-bulk">Выбрано: 0</span>
         <label>Действие
           <select name="action">
@@ -39,11 +40,13 @@
           <input type="checkbox" name="print_groups" value="1">
           Печать по группам
         </label>
-        <button class="slim">Выполнить</button>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
       </div>
     </form>
   </div>
-</div>
+  <div class="journal-table">
 <table class="sheet" data-bulk="tasks-bulk" {% if grouped %}id="tasks-grouped"{% endif %}>
   <tr>
     <th>Номер</th><th>Вид</th><th>Заказ</th>
@@ -95,6 +98,8 @@
   {% endfor %}
   {% endif %}
 </table>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 {% if grouped %}

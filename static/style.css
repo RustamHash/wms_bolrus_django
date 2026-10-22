@@ -113,6 +113,8 @@ body.tsd label { font-size: 18px; }
 body.tsd form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
 .hint { font-size: 14px; color: #5d6b61; }
+.printer-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.printer-list label { display: flex; gap: 8px; align-items: center; }
 .import-log {
   display: block;
   width: 100%;
@@ -318,7 +320,18 @@ body:has(.journal) { height: 100dvh; overflow: hidden; display: flex; flex-direc
 body:has(.journal) main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 6px; overflow: hidden; }
 body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0; padding: 0 8px; font-size: 0.7rem; }
 .journal { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
-.journal-tools { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; }
+.journal-tools { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; padding-top: 28px; margin-top: -28px; }
+.journal-tools.band { flex-wrap: nowrap; overflow-x: auto; }
+.journal-tools.band > .journal-bar:not(.journal-filter) { flex: 0 0 auto; align-items: center; flex-wrap: nowrap; }
+.journal-tools.band > .journal-bar:not(.journal-filter) .journal-fields { flex-wrap: nowrap; align-items: center; }
+.journal-tools.band > .journal-bar:not(.journal-filter) .icon-btn,
+.journal-tools.band > .journal-bar:not(.journal-filter) .bulk-count,
+.journal-tools.band > .journal-bar:not(.journal-filter) .import-flags,
+.journal-tools.band > .journal-bar:not(.journal-filter) label.check { align-self: center; }
+.journal-bar.journal-filter { width: auto; flex: 0 0 auto; align-items: center; }
+.journal-bar.journal-filter label.check { align-self: center; }
+.journal .filter-actions { display: flex; align-items: center; gap: 4px; align-self: center; }
+.journal .filter-actions .icon-btn { align-self: center; }
 .journal-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0; padding: 0.3rem 0.5rem; background: #f5f7fa; border: 1px solid #e1e8ed; border-radius: 3px; }
 .journal-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .journal-title { align-self: center; font-size: 0.7rem; font-weight: 500; color: #2c3e50; line-height: 1.2; white-space: nowrap; }
@@ -328,7 +341,7 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 .journal .icon-btn { position: relative; align-self: flex-end; width: 20px; height: 20px; margin: 0; padding: 0; border: 1px solid #c5d0c6; border-radius: 3px; background: #fff; color: var(--green); }
 .journal .icon-btn svg { width: 14px; height: 14px; display: block; }
 .journal .icon-btn:hover { background: #e7f0ea; }
-.journal .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); z-index: 30; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.journal .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; left: 50%; top: auto; bottom: calc(100% + 6px); transform: translateX(-50%); z-index: 40; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
 .journal .icon-btn[data-tip]:hover::after, .journal .icon-btn[data-tip]:focus-visible::after { opacity: 1; }
 .journal .import-flags { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-self: flex-end; width: 14px; height: 20px; }
 .journal .import-flags input { width: 12px; height: 12px; margin: 0; padding: 0; }
@@ -339,11 +352,6 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 .journal .tool-box .icon-btn { width: 18px; height: 18px; }
 .journal .tool-box .icon-btn svg { width: 12px; height: 12px; }
 .journal .dates { display: flex; align-items: center; gap: 0.25rem; font-size: 0.65rem; }
-.journal:has(#customers-filter) .journal-tools { flex-wrap: nowrap; align-items: stretch; overflow-x: auto; }
-.journal:has(#customers-filter) .journal-tools > .journal-bar:not(#customers-filter) { flex: 0 0 auto; align-items: center; flex-wrap: nowrap; }
-.journal:has(#customers-filter) .journal-tools > .journal-bar:not(#customers-filter) .journal-fields { flex-wrap: nowrap; align-items: center; }
-.journal:has(#customers-filter) .journal-tools > .journal-bar:not(#customers-filter) .icon-btn,
-.journal:has(#customers-filter) .journal-tools > .journal-bar:not(#customers-filter) .bulk-count { align-self: center; }
 #customers-filter { display: grid; grid-template-columns: auto auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
 #customers-filter .journal-title,
 #customers-filter .period-grid,
@@ -360,8 +368,6 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 #customers-filter .to-date { grid-column: 4; grid-row: 2; }
 #customers-filter .field-grid { display: grid; grid-template-columns: auto 160px; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
 #customers-filter .field-grid input, #customers-filter .field-grid select { width: 100%; min-width: 0; }
-#customers-filter .filter-actions { display: flex; align-items: center; gap: 4px; align-self: center; }
-#customers-filter .filter-actions .icon-btn { align-self: center; }
 .journal input:not([type="checkbox"]):not([type="file"]),
 .journal select,
 .journal button.slim,
@@ -369,12 +375,27 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 .journal button.slim, .journal a.slim { display: inline-flex; align-items: center; background: var(--green); color: #fff; border-color: var(--green); }
 .journal select.period-type { width: 188px; }
 .journal input[type="search"] { width: 200px; }
-.journal select[name="driver"] { width: 160px; }
+.journal select[name="driver"],
+.journal select[name="kind"],
+.journal select[name="action"] { width: 160px; }
+.journal select[name="supplier_id"] { width: 220px; }
+.journal select[name="status"] { width: 170px; }
+.journal input[name="party"] { width: 180px; }
+.journal input[name="number"],
+.journal input[name="order_number"] { width: 140px; }
 .journal input[type="date"] { width: 118px; }
+.journal > .hint { margin: 0; padding: 0 2px; font-size: 0.7rem; line-height: 1.3; }
+.journal .catalog-nav { flex: 1 1 100%; margin: 0; padding: 0.3rem 0.5rem; background: #f5f7fa; border: 1px solid #e1e8ed; border-radius: 3px; gap: 4px; }
+.journal .catalog-by-groups { font-size: 0.7rem; }
+.journal .catalog-nav a,
+.journal .catalog-nav.by-groups .catalog-toggle { height: 20px; padding: 0 0.4rem; border-radius: 3px; font-size: 0.7rem; line-height: 18px; }
 .journal-table { flex: 1; min-height: 0; overflow: auto; background: #fff; border: 1px solid #e1e8ed; }
 .journal-table table.sheet { width: 100%; min-width: 100%; border: 0; border-collapse: separate; border-spacing: 0; font-size: 0.7rem; }
 .journal-table table.sheet tr:first-child th { position: sticky; top: 0; z-index: 3; height: 22px; padding: 0.15rem 1.15rem 0.15rem 0.25rem; background: #2c3e50; color: #fff; border: 1px solid #3d566e; font-size: 0.7rem; font-weight: 500; line-height: 1.1; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.12); overflow: hidden; text-overflow: ellipsis; }
 .journal-table table.sheet td { height: 20px; padding: 0.15rem 0.25rem; border: 1px solid #ddd; font-size: 0.7rem; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal-table table.sheet td.comment { height: auto; white-space: normal; max-width: 360px; }
+.journal-table table.sheet td:has(input, select, textarea, button) { height: auto; overflow: visible; }
+.journal-table table.sheet tr.group td { height: auto; background: #e7f0ea; color: var(--ink); font-weight: 700; overflow: visible; }
 .journal-table .col-resize { position: absolute; top: 0; right: -4px; z-index: 5; width: 6px; height: 100%; cursor: col-resize; }
 .journal-table .col-resize:hover { background: rgba(255, 255, 255, .45); }
 body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }

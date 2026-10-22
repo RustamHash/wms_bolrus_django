@@ -2,15 +2,17 @@
 {% load wms %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Пользователи</h1>
-    <a class="btn slim" href="/users/new">Добавить</a>
-  </div>
-  <div class="page-tools">
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">Пользователи <span class="journal-count">{{ users|length }}</span></div>
+      <a class="icon-btn" href="/users/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </div>
     {% include "masters/nav.html" %}
   </div>
-</div>
+  <div class="journal-table">
 <table class="sheet">
   <tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Должность</th><th>Активен</th><th></th></tr>
   {% for item in users %}
@@ -24,4 +26,6 @@
   </tr>
   {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}

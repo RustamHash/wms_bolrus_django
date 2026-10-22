@@ -1,22 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Расхождения заказов{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Расхождения заказов</h1>
-    <a class="btn slim" href="/orders/customers">К заказам</a>
-  </div>
-  <div class="page-tools">
-    <form class="doc-filter" method="get" action="/orders/customers/revisions">
-      <div class="filter-row">
-        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
-      </div>
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/customers/revisions">
+      <div class="journal-title">Расхождения заказов {% if built %}<span class="journal-count">{{ rows|length }}</span>{% endif %}</div>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" name="run" value="1" data-tip="Сформировать" aria-label="Сформировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M18 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6"/><path d="M6 21v-5h5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/customers" data-tip="К заказам" aria-label="К заказам">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </a>
+      </span>
     </form>
   </div>
-</div>
-{% if not built %}
-<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
-{% else %}
+  {% if not built %}
+  <p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+  {% else %}
+  <div class="journal-table">
 <table class="sheet">
   <tr><th>Когда</th><th>Заказ</th><th>Номер 1С</th><th>Грузополучатель</th><th>Версия</th><th>Что изменилось</th></tr>
   {% for row in rows %}
@@ -32,5 +34,7 @@
   <tr><td colspan="6">Расхождений нет</td></tr>
   {% endfor %}
 </table>
-{% endif %}
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

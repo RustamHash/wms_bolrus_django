@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Сотрудники{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>Сотрудники</h1>
-    <a class="btn slim" href="/staff/new">Добавить</a>
-  </div>
-  <div class="page-tools">
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">Сотрудники <span class="journal-count">{{ staff|length }}</span></div>
+      <a class="icon-btn" href="/staff/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </div>
     {% include "masters/nav.html" %}
   </div>
-</div>
-<p class="hint">Вход на ТСД: постоянный токен бейджа или короткий код. В веб-интерфейс сотрудник не входит.</p>
+  <p class="hint">Вход на ТСД: постоянный токен бейджа или короткий код. В веб-интерфейс сотрудник не входит.</p>
+  <div class="journal-table">
 <table class="sheet">
   <tr><th>ФИО</th><th>Должность</th><th>Права</th><th>Код</th><th>Активен</th><th></th></tr>
   {% for item in staff %}
@@ -26,4 +28,6 @@
   <tr><td colspan="6">Сотрудников пока нет.</td></tr>
   {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}

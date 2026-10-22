@@ -1,24 +1,20 @@
 {% extends "base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="page-bar">
-  <div class="page-bar-row">
-    <h1>{{ title }}</h1>
-  </div>
-  <div class="page-tools">
-    {% include "masters/nav.html" %}
-    <form class="doc-filter" data-zone-filter onsubmit="return false">
-      <div class="filter-row">
-        <label>Найти
-          <input type="search" placeholder="Код, название или адрес">
-        </label>
-      </div>
+<div class="journal">
+  <div class="journal-tools">
+    <form class="journal-bar" data-zone-filter onsubmit="return false">
+      <div class="journal-title">{{ title }} <span class="journal-count">{{ consignees|length }}</span></div>
+      <label>Найти
+        <input type="search" placeholder="Код, название или адрес">
+      </label>
     </form>
+    {% include "masters/nav.html" %}
   </div>
-</div>
-<p class="hint">Выберите зону из списка или введите новую. Пустое поле снимает зону. Кнопка сохраняет только эту строку.</p>
-<form hidden>{% csrf_token %}</form>
-{{ zones|json_script:"zone-names" }}
+  <p class="hint">Выберите зону из списка или введите новую. Пустое поле снимает зону. Кнопка сохраняет только эту строку.</p>
+  <form hidden>{% csrf_token %}</form>
+  {{ zones|json_script:"zone-names" }}
+  <div class="journal-table">
 <table class="sheet" data-zone-map>
     <tr>
       <th>Код</th>
@@ -44,6 +40,8 @@
     <tr><td colspan="5">Пока пусто</td></tr>
     {% endfor %}
 </table>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
