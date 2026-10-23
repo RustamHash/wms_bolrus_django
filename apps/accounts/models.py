@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -57,7 +56,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     first_name = models.CharField("Имя", max_length=80, blank=True, default="")
     middle_name = models.CharField("Отчество", max_length=80, blank=True, default="")
     login = models.CharField("Логин", max_length=80, unique=True)
-    pin_hash = models.CharField(max_length=200, blank=True, default="")
     tsd_code = models.CharField("Короткий код", max_length=8, unique=True, null=True, blank=True)
     badge_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     role = models.CharField("Роль", max_length=32)
@@ -196,24 +194,6 @@ class AdminUserGrant(models.Model):
 
     def __str__(self):
         return self.user.name
-
-
-def hash_secret(secret: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, 120_000)
-    return salt.hex() + "$" + digest.hex()
-
-
-def verify_secret(secret: str, stored: str | None) -> bool:
-    if not stored or "$" not in stored:
-        return False
-    salt_hex, digest_hex = stored.split("$", 1)
-    try:
-        salt = bytes.fromhex(salt_hex)
-    except ValueError:
-        return False
-    digest = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, 120_000)
-    return secrets.compare_digest(digest.hex(), digest_hex)
 
 
 def new_badge_token() -> str:

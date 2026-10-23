@@ -39,7 +39,6 @@
       </select>
     </label>
     <label>Короткий код ТСД <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
-    <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
     <p class="hint wide">Один человек — одна карточка. Роль подставляет экраны веба и ТСД, их можно поправить на соседних вкладках. «Без доступа» — человек числится, например грузчик или переборка, и в программу не входит. Должность только называет работу и сама доступ не открывает.</p>
     {% if can_grant %}
     <label>Доступ в админку
@@ -62,7 +61,7 @@
 {% if item %}
 <div class="card">
   <h2>Бейдж ТСД</h2>
-  <p>Личный QR-код для входа на терминале. PIN задаётся выше и тоже только у этого пользователя.</p>
+  <p>Личный QR-код для входа на терминале. Короткий код задаётся выше и тоже только у этого пользователя.</p>
   <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="220" height="220"></p>
   <p><a class="btn" href="/users/{{ item.id }}/badge" target="_blank">Печать бейджа</a></p>
   <form method="post" action="/users/{{ item.id }}/badge" onsubmit="return confirm('Старый QR перестанет открывать вход. Выпустить новый?')">{% csrf_token %}

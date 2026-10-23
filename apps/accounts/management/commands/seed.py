@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from apps.accounts.models import User, hash_secret, new_badge_token
+from apps.accounts.models import User, new_badge_token
 from apps.catalog.models import Caliber, Grade, Packaging, Seller
 
 
@@ -14,11 +14,11 @@ class Command(BaseCommand):
                 ("Приёмка", "receiver", "receiver", "1111", "receiver"),
                 ("Склад", "warehouse", "warehouse", "2222", "warehouse"),
             ]
-            for name, login_name, password, pin, role in rows:
+            for name, login_name, password, code, role in rows:
                 user = User(
                     name=name,
                     login=login_name,
-                    pin_hash=hash_secret(pin),
+                    tsd_code=code,
                     badge_token=new_badge_token(),
                     role=role,
                     is_active=True,

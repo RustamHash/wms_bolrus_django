@@ -19,7 +19,7 @@ from apps.accounts.access import (
     screen_rows,
     sync_user_screens,
 )
-from apps.accounts.models import Position, User, hash_secret, new_badge_token, verify_secret
+from apps.accounts.models import Position, User, new_badge_token
 from apps.accounts.services import (
     assign_position,
     assignable_roles,
@@ -38,13 +38,6 @@ from apps.common.notices import mark_notices_seen
 from apps.common.kg import as_kg
 from apps.inventory.models import Balance
 from apps.planning.models import Order, Task
-
-
-def _pin_taken(pin: str, user_id: int | None) -> bool:
-    for user in User.objects.exclude(pin_hash=""):
-        if user.id != user_id and verify_secret(pin, user.pin_hash):
-            return True
-    return False
 
 
 def _issue_missing_badges(users) -> None:
@@ -73,12 +66,7 @@ def find_user_for_tsd(code: str):
         return None, "Этот код задан нескольким сотрудникам"
     if len(by_code) == 1:
         return by_code[0], None
-    matches = [user for user in User.objects.filter(is_active=True).exclude(pin_hash="") if verify_secret(raw, user.pin_hash)]
-    if not matches:
-        return None, "Неверный код"
-    if len(matches) > 1:
-        return None, "Этот PIN задан нескольким пользователям"
-    return matches[0], None
+    return None, "Неверный код"
 
 
 def login_form(request):
@@ -121,7 +109,7 @@ def tsd_login_form(request):
 def tsd_login_submit(request):
     user, error = find_user_for_tsd(text(request.POST, "code"))
     if user is None:
-        messages.error(request, error or "Неверный PIN")
+        messages.error(request, error or "Неверный код")
         return redirect("/tsd/login")
     if not opens_tsd(user):
         messages.error(request, "У пользователя нет доступа на ТСД")
@@ -222,7 +210,7 @@ def _person_code(form, user_id: int | None) -> str | None:
         return None
     if not code.isdigit() or not 4 <= len(code) <= 6:
         raise WarehouseError("Короткий код — от 4 до 6 цифр")
-    if User.objects.filter(tsd_code=code).exclude(pk=user_id).exists() or _pin_taken(code, user_id):
+    if User.objects.filter(tsd_code=code).exclude(pk=user_id).exists():
         raise WarehouseError("Этот код уже используется")
     return code
 
@@ -235,17 +223,13 @@ def users_create(request):
         last_name, first_name, middle_name = _person_fio(form)
         login_name = text(form, "login")
         password = form.get("password") or ""
-        pin = text(form, "pin")
         role = text(form, "role") or "none"
         if not login_name:
             raise WarehouseError("Укажите логин")
         if role not in assignable_roles(request.user):
             raise WarehouseError("Выберите роль")
-        if pin and _pin_taken(pin, None):
-            raise WarehouseError("Этот PIN уже используется")
         item = User(
             login=login_name,
-            pin_hash=hash_secret(pin) if pin else "",
             tsd_code=_person_code(form, None),
             badge_token=new_badge_token(),
             role=role,
@@ -297,9 +281,6 @@ def users_update(request, user_id):
             raise WarehouseError("Этого пользователя меняет администратор")
         if role not in assignable_roles(request.user):
             raise WarehouseError("Выберите роль")
-        pin = text(form, "pin")
-        if pin and _pin_taken(pin, item.id):
-            raise WarehouseError("Этот PIN уже используется")
         item.apply_fio(last_name, first_name, middle_name)
         item.login = login_name
         item.role = role
@@ -309,8 +290,6 @@ def users_update(request, user_id):
         password = form.get("password") or ""
         if password:
             item.set_password(password)
-        if pin:
-            item.pin_hash = hash_secret(pin)
         if not item.badge_token:
             item.badge_token = new_badge_token()
         ensure_keeper(item)
