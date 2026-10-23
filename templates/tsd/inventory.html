@@ -3,7 +3,10 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 <h1>{{ document.number }}</h1>
-<p class="hint">{{ document.doc_date|date:"d.m.Y" }}. Паспорт не обязателен: откройте паллету в списке по товару и месту. Скан — если паспорт на месте.</p>
+<p class="hint">{{ document.doc_date|date:"d.m.Y" }}. Состав паллеты тот же, что при приёмке: вид паллета, упаковка, число мест и грязный вес. Чистый считается сам и после проводки попадает в движение, остаток и паспорт.</p>
+{% if document.scope == "products" %}
+<p class="hint">Считаем только выбранную номенклатуру. Другой товар в этот документ не добавляется.</p>
+{% endif %}
 <form method="get" action="/tsd/inventory/{{ document.id }}">
   <label>Паллета
     <input name="barcode" value="{{ barcode }}" autofocus placeholder="Номер или штрихкод">
@@ -12,12 +15,10 @@
 </form>
 {% if line %}
 <p>{% if line.pallet_id %}{{ line.pallet.number|default:line.pallet_id }}{% else %}Новая паллета{% endif %} · {% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</p>
-<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.place %} · {{ line.place }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
-<form method="post" action="/tsd/inventory/{{ document.id }}">{% csrf_token %}
+<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.place %} · {{ line.place }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}{% if line.measure.places %} Сейчас {{ line.measure.places }} уп.{% if line.measure.packaging_name %} · {{ line.measure.packaging_name }}{% endif %} · грязный {{ line.measure.gross|kg }} · чистый {{ line.measure.net|kg }} кг.{% endif %}</p>
+<form method="post" action="/tsd/inventory/{{ document.id }}" data-compact>{% csrf_token %}
   <input type="hidden" name="line_id" value="{{ line.id }}">
-  <label>Факт, кг
-    <input name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal" required>
-  </label>
+  {% include "partials/pallet_measure.html" with measure=line.measure %}
   <label>Поставщик
     <select name="supplier_id" required>
       {% for supplier in suppliers %}
@@ -25,7 +26,9 @@
       {% endfor %}
     </select>
   </label>
-  <p class="hint">Ноль — паллеты нет на складе.</p>
+  {% if line.pallet_id %}
+  <label class="check"><input type="checkbox" name="missing" value="1" data-missing {% if line.fact_kg == 0 %}checked{% endif %}> Паллеты нет на складе</label>
+  {% endif %}
   <button class="btn menu" type="submit">Сохранить</button>
 </form>
 {% elif missing %}
@@ -35,14 +38,14 @@
 <nav class="digit-menu">
   {% for item in lines %}
   <a class="btn menu" href="/tsd/inventory/{{ document.id }}?line={{ item.id }}">
-    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.place %} · {{ item.place }}{% endif %}</span>
+    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }}{% if item.measure.places %} · {{ item.measure.places }} уп.{% endif %} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.place %} · {{ item.place }}{% endif %}</span>
   </a>
   {% empty %}
   <p>В снимке нет паллет. Добавьте те, что стоят на складе.</p>
   {% endfor %}
 </nav>
 <h2>Нет в учёте</h2>
-<form method="post" action="/tsd/inventory/{{ document.id }}/found">{% csrf_token %}
+<form method="post" action="/tsd/inventory/{{ document.id }}/found" data-compact>{% csrf_token %}
   <label>Товар
     <select name="product_id" required>
       <option value=""></option>
@@ -59,7 +62,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>Сорт
+  <label>Сортность
     <select name="grade_id" required>
       <option value=""></option>
       {% for grade in grades %}
@@ -76,7 +79,7 @@
     </select>
   </label>
   {% include "partials/cell_pick.html" %}
-  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  {% include "partials/pallet_measure.html" %}
   <button class="btn menu" type="submit">Добавить на остаток</button>
 </form>
 {% else %}

@@ -191,6 +191,17 @@ class InventoryLine(models.Model):
         related_name="inventory_lines",
         verbose_name="Ячейка",
     )
+    packaging = models.ForeignKey(
+        "catalog.Packaging",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="inventory_lines",
+        verbose_name="Упаковка",
+    )
+    pallet_type = models.CharField("Вид паллета", max_length=8, blank=True, default="")
+    places = models.PositiveIntegerField("Упаковок", null=True, blank=True)
+    gross_kg = models.DecimalField("Грязный вес, кг", max_digits=12, decimal_places=3, null=True, blank=True)
     book_kg = models.DecimalField("Учёт, кг", max_digits=12, decimal_places=3)
     fact_kg = models.DecimalField("Факт, кг", max_digits=12, decimal_places=3, null=True, blank=True)
     counted_by = models.ForeignKey(

@@ -3,9 +3,10 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 
-from apps.catalog.models import Caliber, Grade, Product, Supplier
+from apps.catalog.models import Caliber, Grade, Packaging, Product, Supplier
+from apps.common.constants import PALLET_TARE
 from apps.common.exceptions import WarehouseError
-from apps.common.forms import get_row
+from apps.common.forms import get_row, parse_kg, require_int, text
 from apps.common.kg import as_kg
 from apps.common.numbers import barcode, document_number
 from apps.inventory.models import InventoryDocument, InventoryLine, Movement
@@ -27,6 +28,87 @@ def parse_fact_kg(raw: str) -> Decimal:
     if value < 0:
         raise WarehouseError("Вес не может быть отрицательным")
     return value
+
+
+def scoped_products(document: InventoryDocument):
+    if document.scope == InventoryDocument.Scope.PRODUCTS:
+        return document.products.order_by("name")
+    return Product.objects.order_by("name")
+
+
+def read_measure(form) -> dict:
+    from apps.receiving.services import _resolve_weight
+
+    packaging = get_row(Packaging, require_int(form, "packaging_id", "Упаковка"), "тара")
+    places = require_int(form, "places", "Количество упаковок")
+    pallet_type = text(form, "pallet_type")
+    manual = form.get("net_manual") == "1"
+    gross_kg = parse_kg(form.get("gross"), "Грязный вес")
+    net_kg = parse_kg(form.get("net"), "Чистый вес") if manual else None
+    gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, manual)
+    return {
+        "packaging": packaging,
+        "places": places,
+        "pallet_type": pallet_type,
+        "gross_kg": gross,
+        "net_kg": net,
+    }
+
+
+def _has_measure(line: InventoryLine) -> bool:
+    return bool(line.packaging_id and line.places and line.pallet_type and line.gross_kg is not None)
+
+
+def describe_measure(line: InventoryLine) -> dict:
+    from apps.receiving.services import expected_net
+
+    if _has_measure(line):
+        packaging = line.packaging
+        manual = False
+        if packaging is not None and line.fact_kg is not None and line.pallet_type in PALLET_TARE:
+            manual = as_kg(line.fact_kg) != expected_net(line.gross_kg, line.places, line.pallet_type, packaging.tare_kg)
+        return {
+            "pallet_type": line.pallet_type,
+            "packaging_id": line.packaging_id,
+            "packaging_name": packaging.name if packaging is not None else "",
+            "places": line.places,
+            "gross": line.gross_kg,
+            "net": line.fact_kg,
+            "manual": manual,
+        }
+    pallet = line.pallet if line.pallet_id else None
+    if pallet is None:
+        return {}
+    units = list(pallet.units.all())
+    if not units:
+        return {}
+    packaging_ids = {unit.packaging_id for unit in units}
+    packaging = units[0].packaging if len(packaging_ids) == 1 else None
+    gross = sum((as_kg(unit.gross_kg) for unit in units), Decimal("0.000"))
+    net = sum((as_kg(unit.net_kg) for unit in units), Decimal("0.000"))
+    pallet_type = pallet.pallet_type or ""
+    manual = False
+    if packaging is not None and pallet_type in PALLET_TARE:
+        manual = net != expected_net(gross, len(units), pallet_type, packaging.tare_kg)
+    if line.fact_kg is not None and as_kg(line.fact_kg) > 0 and as_kg(line.fact_kg) != net:
+        net = as_kg(line.fact_kg)
+        manual = True
+    return {
+        "pallet_type": pallet_type,
+        "packaging_id": packaging.id if packaging is not None else "",
+        "packaging_name": packaging.name if packaging is not None else "разные",
+        "places": len(units),
+        "gross": gross,
+        "net": net,
+        "manual": manual,
+    }
+
+
+def with_measure(rows):
+    for row in rows:
+        row.measure = describe_measure(row)
+        row.saved_measure = _has_measure(row)
+    return rows
 
 
 def stock_inbounds(product_ids: list[int] | None = None):
@@ -92,7 +174,15 @@ def _open_line(line: InventoryLine) -> InventoryLine:
 
 
 @transaction.atomic
-def save_count(line: InventoryLine, *, fact_kg: Decimal | None, supplier_id: int, user, fact_given: bool) -> InventoryLine:
+def save_count(
+    line: InventoryLine,
+    *,
+    fact_kg: Decimal | None,
+    supplier_id: int,
+    user,
+    fact_given: bool,
+    measure: dict | None = None,
+) -> InventoryLine:
     line = InventoryLine.objects.select_for_update().select_related("document").get(pk=line.pk)
     _open_line(line)
     supplier = Supplier.objects.filter(pk=supplier_id).first()
@@ -100,10 +190,28 @@ def save_count(line: InventoryLine, *, fact_kg: Decimal | None, supplier_id: int
         raise WarehouseError("Поставщик не найден")
     line.supplier = supplier
     fields = ["supplier"]
-    if fact_given:
+    if measure is not None:
+        fact = as_kg(measure["net_kg"])
+        if line.pallet_id is None and fact <= 0:
+            raise WarehouseError("У новой паллеты вес должен быть больше нуля")
+        line.packaging = measure["packaging"]
+        line.places = measure["places"]
+        line.pallet_type = measure["pallet_type"]
+        line.gross_kg = measure["gross_kg"]
+        line.fact_kg = fact
+        line.counted_by = user
+        line.counted_at = timezone.now()
+        fields += ["packaging", "places", "pallet_type", "gross_kg", "fact_kg", "counted_by", "counted_at"]
+    elif fact_given:
         fact = as_kg(fact_kg)
         if line.pallet_id is None and fact <= 0:
             raise WarehouseError("У новой паллеты вес должен быть больше нуля")
+        if fact == 0 or (line.gross_kg is not None and (line.fact_kg is None or as_kg(line.fact_kg) != fact)):
+            line.packaging = None
+            line.places = None
+            line.pallet_type = ""
+            line.gross_kg = None
+            fields += ["packaging", "places", "pallet_type", "gross_kg"]
         line.fact_kg = fact
         line.counted_by = user
         line.counted_at = timezone.now()
@@ -121,13 +229,13 @@ def add_found(
     grade_id: int,
     supplier_id: int,
     cell,
-    qty_kg: Decimal,
+    measure: dict,
     user,
 ) -> InventoryLine:
     document = InventoryDocument.objects.select_for_update().get(pk=document.pk)
     if document.status != InventoryDocument.Status.COUNTING:
         raise WarehouseError("Добавлять паллету можно только во время подсчёта")
-    qty = as_kg(qty_kg)
+    qty = as_kg(measure["net_kg"])
     if qty <= 0:
         raise WarehouseError("Укажите вес больше нуля")
     product = get_row(Product, product_id, "товар")
@@ -146,6 +254,10 @@ def add_found(
         supplier=supplier,
         cell=cell,
         location=cell.label(),
+        packaging=measure["packaging"],
+        pallet_type=measure["pallet_type"],
+        places=measure["places"],
+        gross_kg=measure["gross_kg"],
         book_kg=Decimal("0.000"),
         fact_kg=qty,
         counted_by=user,
@@ -251,12 +363,49 @@ def _lot_on_receipt(receipt: Receipt, product_id: int, caliber_id: int, grade_id
     )
 
 
+def _apply_measure(line: InventoryLine, pallet: Pallet, lot) -> None:
+    from apps.receiving.services import replace_units
+
+    if pallet.kind == "loose":
+        pallet.kind = "inbound"
+        pallet.save(update_fields=["kind"])
+    replace_units(
+        pallet=pallet,
+        receipt=lot.receipt,
+        lot=lot,
+        packaging=line.packaging,
+        places=line.places,
+        pallet_type=line.pallet_type,
+        gross_kg=as_kg(line.gross_kg),
+        net_kg=as_kg(line.fact_kg),
+        grade_id=lot.grade_id,
+    )
+
+
+def _needs_units(line: InventoryLine, pallet: Pallet, lot) -> bool:
+    if not _has_measure(line):
+        return False
+    units = list(pallet.units.all())
+    if len(units) != line.places or (pallet.pallet_type or "") != line.pallet_type:
+        return True
+    gross = Decimal("0.000")
+    net = Decimal("0.000")
+    for unit in units:
+        if unit.packaging_id != line.packaging_id or unit.lot_id != lot.id or unit.grade_id != lot.grade_id:
+            return True
+        gross += as_kg(unit.gross_kg)
+        net += as_kg(unit.net_kg)
+    return gross != as_kg(line.gross_kg) or net != as_kg(line.fact_kg)
+
+
 def _post_found(line: InventoryLine, user) -> None:
     fact = as_kg(line.fact_kg)
     if fact <= 0:
         raise WarehouseError("У новой паллеты вес должен быть больше нуля")
     if not line.product_id or not line.caliber_id or not line.grade_id:
         raise WarehouseError("У новой паллеты не указан товар, калибр или сорт")
+    if not _has_measure(line):
+        raise WarehouseError("Укажите вид паллета, упаковку, число мест и грязный вес — как при приёмке")
     task, receipt = _opening_task(line.document, line.supplier, user)
     lot = _lot_on_receipt(receipt, line.product_id, line.caliber_id, line.grade_id)
     task_line = TaskLine.objects.create(
@@ -270,6 +419,7 @@ def _post_found(line: InventoryLine, user) -> None:
     pallet = Pallet.objects.create(
         kind="inbound",
         status="closed",
+        pallet_type=line.pallet_type,
         cell=line.cell,
         location=line.place,
         created_by=user,
@@ -279,10 +429,14 @@ def _post_found(line: InventoryLine, user) -> None:
     pallet.number = document_number("ПЛ", pallet.id)
     pallet.barcode = barcode("PL", pallet.id)
     pallet.save(update_fields=["number", "barcode"])
+    _apply_measure(line, pallet, lot)
     post_in(task=task, task_line=task_line, pallet=pallet, lot=lot, qty_kg=fact, user=user)
     line.pallet = pallet
     line.lot = lot
     line.save(update_fields=["pallet", "lot"])
+    from apps.printing.services import schedule_accepted_passport
+
+    schedule_accepted_passport(pallet.id, getattr(user, "id", None))
 
 
 def _post_line(line: InventoryLine, user) -> None:
@@ -304,17 +458,13 @@ def _post_line(line: InventoryLine, user) -> None:
     if fact == 0:
         remove_in(movement)
         return
-    book = as_kg(line.book_kg)
     supplier_changed = line.supplier_id != line.lot.supplier_id
-    if fact == book and not supplier_changed:
+    lot = _lot_for_supplier(movement.lot, line.supplier_id) if supplier_changed else movement.lot
+    if _needs_units(line, movement.pallet, lot):
+        _apply_measure(line, movement.pallet, lot)
+    if lot.id == movement.lot_id and as_kg(movement.qty_kg) == fact:
         return
-    lot = movement.lot
-    qty = fact if fact != book else as_kg(movement.qty_kg)
-    if supplier_changed:
-        lot = _lot_for_supplier(movement.lot, line.supplier_id)
-    if lot.id == movement.lot_id and as_kg(movement.qty_kg) == qty:
-        return
-    update_in(movement, lot=lot, qty_kg=qty)
+    update_in(movement, lot=lot, qty_kg=fact)
 
 
 @transaction.atomic
@@ -322,7 +472,11 @@ def post_document(document: InventoryDocument, user) -> None:
     document = InventoryDocument.objects.select_for_update().get(pk=document.pk)
     if document.status != InventoryDocument.Status.COUNTING:
         raise WarehouseError("Провести можно только документ в подсчёте")
-    lines = list(document.lines.select_related("lot", "pallet", "supplier", "product", "caliber", "grade", "cell__zone"))
+    lines = list(
+        document.lines.select_related(
+            "lot", "lot__receipt", "pallet", "supplier", "product", "caliber", "grade", "packaging", "cell__zone"
+        ).prefetch_related("pallet__units")
+    )
     pending = sum(1 for line in lines if line.fact_kg is None)
     if pending:
         raise WarehouseError(f"Не посчитано паллет: {pending}")

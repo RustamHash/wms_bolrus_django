@@ -2,7 +2,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from apps.catalog.models import Caliber, Grade, Product, Supplier
+from apps.catalog.models import Caliber, Grade, Packaging, Product, Supplier
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import parse_date, text
 from apps.common.http import done, guarded, roles_required
@@ -13,8 +13,11 @@ from apps.inventory.count import (
     delete_found,
     parse_fact_kg,
     post_document,
+    read_measure,
     save_count,
+    scoped_products,
     start_document,
+    with_measure,
 )
 from apps.inventory.models import InventoryDocument, InventoryLine
 from apps.storage.places import place_form_context, resolve_place
@@ -39,8 +42,9 @@ def _lines(document: InventoryDocument):
         "caliber",
         "grade",
         "counted_by",
+        "packaging",
         "cell__zone",
-    ).order_by("id")
+    ).prefetch_related("pallet__units__packaging").order_by("id")
 
 
 @roles_required("office")
@@ -99,14 +103,15 @@ def inventory_create(request):
 
 
 def _detail_context(document: InventoryDocument) -> dict:
-    lines = list(_lines(document))
+    lines = with_measure(list(_lines(document)))
     return {
         "title": document.number,
         "document": document,
         "lines": lines,
         "suppliers": Supplier.objects.order_by("name"),
         "products": document.products.order_by("name"),
-        "all_products": Product.objects.order_by("name"),
+        "choice_products": scoped_products(document),
+        "packagings": Packaging.objects.order_by("name"),
         "calibers": Caliber.objects.order_by("sort_order", "name"),
         "grades": Grade.objects.order_by("sort_order", "name"),
         "counted": sum(1 for line in lines if line.fact_kg is not None),
@@ -191,7 +196,7 @@ def inventory_add_found(request, doc_id):
             grade_id=_choice_id(request.POST, "grade_id", "сорт"),
             supplier_id=_choice_id(request.POST, "supplier_id", "поставщика"),
             cell=resolve_place(request.POST, required=True),
-            qty_kg=parse_fact_kg(text(request.POST, "fact_kg")),
+            measure=read_measure(request.POST),
             user=request.user,
         )
         return None
@@ -199,7 +204,7 @@ def inventory_add_found(request, doc_id):
     _, response = guarded(request, back, action)
     if response:
         return response
-    return done(request, back, "Паллета добавлена. На остаток встанет после проводки")
+    return done(request, back, "Паллета добавлена. Состав, остаток и паспорт встанут после проводки")
 
 
 @roles_required("office")

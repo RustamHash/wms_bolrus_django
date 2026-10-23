@@ -4,17 +4,25 @@ from decimal import Decimal
 from django.test import Client, TestCase
 
 from apps.accounts.models import User
-from apps.catalog.models import Caliber, Consignee, ConsigneeCategory, Grade, Product, Supplier
+from apps.catalog.models import Caliber, Consignee, ConsigneeCategory, Grade, Packaging, Product, Supplier
 from apps.common.exceptions import WarehouseError
 from apps.common.kg import as_kg
-from apps.inventory.count import _lot_on_receipt
-from apps.inventory.models import Balance, Movement, TransformDocument
+from apps.inventory.count import (
+    _lot_on_receipt,
+    add_found,
+    create_document as create_inventory,
+    post_document as post_inventory,
+    read_measure,
+    save_count,
+    start_document as start_inventory,
+)
+from apps.inventory.models import Balance, InventoryLine, Movement, TransformDocument
 from apps.inventory.services import has_downstream, post_in
 from apps.inventory.transform import add_input, add_output, add_waste, create_document, post_document
 from apps.planning.models import Task, TaskLine
 from apps.receiving.models import Lot, Receipt
 from apps.receiving.services import _lot
-from apps.storage.models import Pallet
+from apps.storage.models import HandlingUnit, Pallet, WarehouseCell, WarehouseZone
 
 
 class TransformTests(TestCase):
@@ -284,3 +292,182 @@ class TransformTests(TestCase):
         )
         self.assertEqual(created.status_code, 302)
         self.assertIn("/transform/", created["Location"])
+
+
+class InventoryCountTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user("inventory-count", "secret", name="Инвентаризация", role="admin")
+        cls.supplier = Supplier.objects.create(name="Поставщик инвентаризации")
+        cls.product = Product.objects.create(name="Картофель инвентаризации", code="INV-POT")
+        cls.other = Product.objects.create(name="Морковь инвентаризации", code="INV-CAR")
+        cls.caliber = Caliber.objects.create(name="5+ инвентаризация")
+        cls.grade = Grade.objects.create(name="1 сорт инвентаризация")
+        cls.packaging = Packaging.objects.create(name="Сетка инвентаризации", tare_kg=Decimal("0.200"))
+        cls.zone = WarehouseZone.objects.create(code="И", name="Зона инвентаризации", barcode="ZONE-INV")
+        cls.cell = WarehouseCell.objects.create(zone=cls.zone, code="01", barcode="CELL-INV-01")
+        cls.receipt = Receipt.objects.create(
+            supplier=cls.supplier, doc_date=date(2026, 10, 1), created_by=cls.user, status="closed"
+        )
+        cls.task = Task.objects.create(
+            kind="receive", status="closed", supplier=cls.supplier, doc_date=date(2026, 10, 1), created_by=cls.user
+        )
+        cls.task_line = TaskLine.objects.create(
+            task=cls.task, product=cls.product, caliber=cls.caliber, grade=cls.grade, qty_kg=Decimal("10.000")
+        )
+
+    def _measure(self, places, gross, net=None):
+        form = {
+            "packaging_id": str(self.packaging.id),
+            "places": str(places),
+            "pallet_type": "EUR",
+            "gross": str(gross),
+            "net_manual": "1" if net is not None else "0",
+        }
+        if net is not None:
+            form["net"] = str(net)
+        return read_measure(form)
+
+    def _document(self, scope="all", products=None):
+        document = create_inventory(
+            doc_date=date(2026, 10, 23),
+            scope=scope,
+            product_ids=products or [],
+            notes="",
+            user=self.user,
+        )
+        start_inventory(document)
+        return document
+
+    def _stock_pallet(self):
+        lot = Lot.objects.create(
+            receipt=self.receipt,
+            supplier=self.supplier,
+            product=self.product,
+            caliber=self.caliber,
+            grade=self.grade,
+            received_on=self.receipt.doc_date,
+            source=Lot.Source.SUPPLY,
+        )
+        pallet = Pallet.objects.create(
+            kind="inbound",
+            status="closed",
+            pallet_type="EUR",
+            created_by=self.user,
+            closed_by=self.user,
+        )
+        post_in(
+            task=self.task,
+            task_line=self.task_line,
+            pallet=pallet,
+            lot=lot,
+            qty_kg=Decimal("10.000"),
+            user=self.user,
+        )
+        unit = HandlingUnit.objects.create(
+            receipt=self.receipt,
+            lot=lot,
+            packaging=self.packaging,
+            gross_kg=Decimal("25.200"),
+            net_kg=Decimal("10.000"),
+            grade=self.grade,
+            pallet=pallet,
+            status="received",
+        )
+        return pallet, unit
+
+    def test_found_pallet_posts_units_movement_and_stock(self):
+        document = self._document()
+        measure = self._measure(10, "117.000")
+        add_found(
+            document,
+            product_id=self.product.id,
+            caliber_id=self.caliber.id,
+            grade_id=self.grade.id,
+            supplier_id=self.supplier.id,
+            cell=self.cell,
+            measure=measure,
+            user=self.user,
+        )
+        post_inventory(document, self.user)
+        line = InventoryLine.objects.select_related("pallet", "lot").get(document=document)
+        self.assertEqual(line.pallet.units.count(), 10)
+        self.assertEqual(line.pallet.pallet_type, "EUR")
+        self.assertEqual(sum(as_kg(unit.net_kg) for unit in line.pallet.units.all()), Decimal("100.000"))
+        self.assertEqual(sum(as_kg(unit.gross_kg) for unit in line.pallet.units.all()), Decimal("117.000"))
+        movement = Movement.objects.get(pallet=line.pallet, kind="in")
+        self.assertEqual(as_kg(movement.qty_kg), Decimal("100.000"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=line.lot).free_kg), Decimal("100.000"))
+        self.assertEqual(line.pallet.units.first().packaging_id, self.packaging.id)
+
+    def test_partial_scope_rejects_other_product_and_hides_it(self):
+        document = self._document(scope="products", products=[self.product.id])
+        with self.assertRaisesMessage(WarehouseError, "Этот товар не входит в инвентаризацию"):
+            add_found(
+                document,
+                product_id=self.other.id,
+                caliber_id=self.caliber.id,
+                grade_id=self.grade.id,
+                supplier_id=self.supplier.id,
+                cell=self.cell,
+                measure=self._measure(1, "25.200"),
+                user=self.user,
+            )
+        client = Client()
+        client.force_login(self.user)
+        page = client.get(f"/tsd/inventory/{document.id}")
+        self.assertContains(page, self.product.name)
+        self.assertNotContains(page, self.other.name)
+        self.assertContains(page, "Упаковок")
+        self.assertContains(page, "Грязный вес")
+        self.assertContains(page, "Чистый вес")
+
+    def test_same_composition_keeps_units(self):
+        pallet, unit = self._stock_pallet()
+        document = self._document()
+        line = InventoryLine.objects.get(document=document, pallet=pallet)
+        save_count(
+            line,
+            fact_kg=Decimal("10.000"),
+            supplier_id=self.supplier.id,
+            user=self.user,
+            fact_given=True,
+            measure=self._measure(1, "25.200"),
+        )
+        post_inventory(document, self.user)
+        self.assertEqual(list(pallet.units.values_list("id", flat=True)), [unit.id])
+        self.assertEqual(as_kg(Movement.objects.get(pallet=pallet, kind="in").qty_kg), Decimal("10.000"))
+
+    def test_changed_composition_rewrites_units_and_stock(self):
+        pallet, unit = self._stock_pallet()
+        document = self._document()
+        line = InventoryLine.objects.get(document=document, pallet=pallet)
+        save_count(
+            line,
+            fact_kg=None,
+            supplier_id=self.supplier.id,
+            user=self.user,
+            fact_given=True,
+            measure=self._measure(4, "50.000"),
+        )
+        post_inventory(document, self.user)
+        self.assertFalse(pallet.units.filter(pk=unit.id).exists())
+        self.assertEqual(pallet.units.count(), 4)
+        movement = Movement.objects.get(pallet=pallet, kind="in")
+        self.assertEqual(as_kg(movement.qty_kg), Decimal("34.200"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=movement.lot).free_kg), Decimal("34.200"))
+
+    def test_missing_pallet_removes_stock(self):
+        pallet, _unit = self._stock_pallet()
+        document = self._document()
+        line = InventoryLine.objects.get(document=document, pallet=pallet)
+        save_count(
+            line,
+            fact_kg=Decimal("0"),
+            supplier_id=self.supplier.id,
+            user=self.user,
+            fact_given=True,
+        )
+        post_inventory(document, self.user)
+        self.assertFalse(Movement.objects.filter(pallet=pallet, kind="in").exists())
+        self.assertEqual(as_kg(Balance.objects.get(lot__product=self.product).free_kg), Decimal("0.000"))

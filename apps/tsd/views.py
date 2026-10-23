@@ -3,13 +3,13 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.services import person_ids
-from apps.catalog.models import Caliber, Grade, Product, Supplier
+from apps.catalog.models import Caliber, Grade, Packaging, Supplier
 from apps.catalog.services import load_refs
 from apps.common.constants import TASK_WORK_STATUS
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import text
 from apps.common.http import done, guarded, roles_required
-from apps.inventory.count import add_found, parse_fact_kg, save_count
+from apps.inventory.count import add_found, parse_fact_kg, read_measure, save_count, scoped_products, with_measure
 from apps.inventory.models import InventoryDocument, InventoryLine, Movement
 from apps.planning.models import Task
 from apps.planning.views import task_context
@@ -197,8 +197,10 @@ def _inventory_lines(document):
             "product",
             "caliber",
             "grade",
+            "packaging",
             "cell__zone",
         )
+        .prefetch_related("pallet__units__packaging")
         .order_by("id")
     )
 
@@ -216,7 +218,7 @@ def tsd_inventory(request, doc_id):
     document = get_object_or_404(_counting_documents(), pk=doc_id)
     code = (request.GET.get("barcode") or "").strip()
     line_raw = (request.GET.get("line") or "").strip()
-    lines = _inventory_lines(document)
+    lines = with_measure(_inventory_lines(document))
     line = None
     missing = False
     if code:
@@ -238,7 +240,8 @@ def tsd_inventory(request, doc_id):
             "line": line,
             "missing": missing,
             "suppliers": Supplier.objects.order_by("name"),
-            "products": Product.objects.order_by("name"),
+            "products": scoped_products(document),
+            "packagings": Packaging.objects.order_by("name"),
             "calibers": Caliber.objects.order_by("sort_order", "name"),
             "grades": Grade.objects.order_by("sort_order", "name"),
             **place_form_context(),
@@ -260,13 +263,26 @@ def tsd_inventory_save(request, doc_id):
             supplier_id = int(supplier_raw)
         except ValueError as exc:
             raise WarehouseError("Выберите поставщика") from exc
-        save_count(
-            line,
-            fact_kg=parse_fact_kg(text(request.POST, "fact_kg")),
-            supplier_id=supplier_id,
-            user=request.user,
-            fact_given=True,
-        )
+        if request.POST.get("missing") == "1":
+            if line.pallet_id is None:
+                raise WarehouseError("Новую паллету уберите из документа, а не обнуляйте")
+            save_count(
+                line,
+                fact_kg=parse_fact_kg("0"),
+                supplier_id=supplier_id,
+                user=request.user,
+                fact_given=True,
+            )
+        else:
+            measure = read_measure(request.POST)
+            save_count(
+                line,
+                fact_kg=measure["net_kg"],
+                supplier_id=supplier_id,
+                user=request.user,
+                fact_given=True,
+                measure=measure,
+            )
         return line.pallet.number if line.pallet_id else (line.product.name if line.product_id else "новая")
 
     result, response = guarded(request, back, action)
@@ -295,7 +311,7 @@ def tsd_inventory_add(request, doc_id):
             grade_id=choice("grade_id", "сорт"),
             supplier_id=choice("supplier_id", "поставщика"),
             cell=resolve_place(request.POST, required=True),
-            qty_kg=parse_fact_kg(text(request.POST, "fact_kg")),
+            measure=read_measure(request.POST),
             user=request.user,
         )
         return None
@@ -303,4 +319,4 @@ def tsd_inventory_add(request, doc_id):
     _, response = guarded(request, back, action)
     if response:
         return response
-    return done(request, back, "Паллета добавлена. На остаток встанет после проводки")
+    return done(request, back, "Паллета добавлена. Состав, остаток и паспорт встанут после проводки")

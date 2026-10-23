@@ -36,7 +36,7 @@
 {% if document.status == "draft" %}
 <p class="hint">Нажмите «Начать», чтобы зафиксировать учётный вес паллет на складе.</p>
 {% elif open %}
-<p class="hint">Паспорт не нужен: факт и поставщик вводятся в строке. Ноль — паллеты нет. Если паллеты нет в учёте, добавьте её внизу: на остаток она встанет после проводки.</p>
+<p class="hint">На ТСД паллету считают как при приёмке: упаковка, число мест, грязный и чистый вес. Чистый после проводки попадает в движение, остаток и паспорт. Ноль — паллеты нет. Если паллеты нет в учёте, добавьте её внизу.</p>
 {% endif %}
 
 {% if lines %}
@@ -58,7 +58,8 @@
     <td>{{ line.place|default:"—" }}</td>
     <td>{{ line.book_kg|kg }}</td>
     <td>
-      {% if open %}
+      {% if line.measure.places %}<div class="hint">{{ line.measure.places }} уп.{% if line.measure.packaging_name %} · {{ line.measure.packaging_name }}{% endif %} · грязный {{ line.measure.gross|kg }}</div>{% endif %}
+      {% if open and not line.saved_measure %}
       <input form="line-{{ line.id }}" name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal">
       {% elif line.fact_kg != None %}{{ line.fact_kg|kg }}{% else %}—{% endif %}
     </td>
@@ -101,7 +102,7 @@
   <label>Товар
     <select name="product_id" required>
       <option value=""></option>
-      {% for product in all_products %}
+      {% for product in choice_products %}
       <option value="{{ product.id }}">{{ product.name }}</option>
       {% endfor %}
     </select>
@@ -114,7 +115,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>Сорт
+  <label>Сортность
     <select name="grade_id" required>
       <option value=""></option>
       {% for grade in grades %}
@@ -131,7 +132,7 @@
     </select>
   </label>
   {% include "partials/cell_pick.html" %}
-  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  {% include "partials/pallet_measure.html" %}
   <div class="actions"><button type="submit">Добавить</button></div>
 </form>
 {% endif %}
