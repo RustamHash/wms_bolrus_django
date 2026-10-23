@@ -58,7 +58,8 @@ def _qr_layout(payload: str, max_dots: int) -> tuple[int, int]:
     image.add_data(payload)
     image.make(fit=True)
     modules = max(1, int(image.modules_count))
-    cell = max(1, min(2, max_dots // modules))
+    # Точка 3 на 203 dpi — 0,4 мм. Это в 1,5 раза крупнее прежней точки 2 и читается телефоном.
+    cell = 3 if modules * 3 <= max_dots else max(1, max_dots // modules)
     return cell, modules * cell
 
 
@@ -76,6 +77,24 @@ def _wrap_lines(lines: list[str], usable: int, scale: int) -> tuple[int, list[st
     for line in lines:
         wrapped.extend(_wrap(line, max_chars))
     return step, wrapped or [""]
+
+
+def _wrap_corner(lines: list[str], usable: int, scale: int, qr_side: int, quiet: int, top: int, text_bottom: int):
+    """Строки рядом с QR уже, ниже кода — на всю ширину."""
+    step = FONT_HEIGHT * scale + 4
+    narrow = max(1, (usable - qr_side - quiet) // (FONT_WIDTH * scale))
+    wide = max(1, usable // (FONT_WIDTH * scale))
+    wrapped: list[str] = []
+    y = top
+    qr_span = top + qr_side + quiet
+    for line in lines:
+        parts = _wrap(line, narrow if y < qr_span else wide) or [""]
+        for part in parts:
+            wrapped.append(part)
+            y += step
+    if not _lines_fit(len(wrapped), top, step, scale, text_bottom):
+        return step, None
+    return step, wrapped
 
 
 def _lines_fit(count: int, top: int, step: int, scale: int, text_bottom: int) -> bool:
@@ -106,17 +125,19 @@ def _label(
     barcode_h = mm_to_dots(16, dpi)
     human = mm_to_dots(4, dpi) if barcode else 0
     if symbol == "qr" and barcode:
-        # Около 8 мм: в четыре раза меньше прежних 32 мм. Текст из-за этого не режется.
-        limit = min(mm_to_dots(16, dpi), usable)
+        # Сторона около 15 мм, справа от номера в верхнем углу.
+        limit = min(mm_to_dots(22, dpi), usable)
         qr_cell, qr_side = _qr_layout(barcode, limit)
         quiet = max(gap, qr_cell * 4)
-        band = qr_side + quiet
-        text_bottom = label_h - bottom - band
+        band = qr_side
+        text_bottom = label_h - bottom
         scale = 2
-        step, wrapped = _wrap_lines(lines, usable, scale)
-        if not _lines_fit(len(wrapped), top, step, scale, text_bottom):
+        step, wrapped = _wrap_corner(lines, usable, scale, qr_side, quiet, top, text_bottom)
+        if wrapped is None:
             scale = 1
-            step, wrapped = _wrap_lines(lines, usable, scale)
+            step, wrapped = _wrap_corner(lines, usable, scale, qr_side, quiet, top, text_bottom)
+        if wrapped is None:
+            step, wrapped = _wrap_lines(lines, max(1, usable - qr_side - quiet), 1)
         gap = quiet
     else:
         band = barcode_h + human + gap if barcode else 0
@@ -139,8 +160,8 @@ def _label(
         y += step
     body = "".join(commands).encode("cp1251", errors="replace")
     if band and barcode and symbol == "qr" and qr_side:
-        qr_y = min(y + gap, label_h - bottom - qr_side)
-        qr_x = max(left, (label_w - qr_side) // 2)
+        qr_x = label_w - right - qr_side
+        qr_y = top
         body += _qr_command(qr_x, qr_y, barcode, qr_cell)
     elif band and barcode:
         # Тот же левый край, что у текста, и сразу под последней строкой.
