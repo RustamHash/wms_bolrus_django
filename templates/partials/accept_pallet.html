@@ -1,230 +1,69 @@
-{% load wms %}
-<form method="post" action="/tasks/{{ task.id }}/receive" data-accept class="card">{% csrf_token %}
-  <input type="hidden" name="next" value="{% if request.path|startswith:'/tsd' %}/tsd/tasks/{{ task.id }}{% else %}/tasks/{{ task.id }}?tab=manual{% endif %}">
-  <label>Строка
-    <select name="task_line_id" data-task-line required>
-      {% for line in task.lines.all %}
-      {% with memory=defaults|lookup:line.product_id info=reserve|get_item:line.id %}
-      <option value="{{ line.id }}"
-        data-product="{{ line.product_id }}"
-        data-caliber="{{ line.caliber_id }}"
-        data-grade="{{ line.grade_id }}"
-        data-pallet="{% if memory %}{{ memory.pallet_type }}{% endif %}"
-        data-packaging="{% if memory %}{{ memory.packaging_id }}{% endif %}"
-        {% if info %}data-reserve-label="{{ info.label }}" data-reserve-plan="{{ info.plan }}" data-reserve-held="{{ info.held }}"{% endif %}>
-        {{ line.product.name }} · план {{ line.qty_kg|kg }} · принято {{ received|get_item:line.id|kg }}
-      </option>
-      {% endwith %}
+﻿{% load wms %}
+<div class="card grid" style="margin-bottom: 1rem;">
+  <label>Строка задания
+    <select name="task_line_id" required>
+      <option value=""></option>
+      {% for line in loose_lines %}
+      <option value="{{ line.line.id }}">{{ line.line.product.name }} · {{ line.line.caliber.name|default:"без калибра" }} · {{ line.line.grade.name|default:"без сорта" }} (ост. {{ line.left|kg }} кг)</option>
       {% endfor %}
     </select>
   </label>
-  <label>Калибр
-    <select name="caliber_id" required>
-      <option value=""></option>
-      {% for item in calibers %}<option value="{{ item.id }}" {% if current and item.id == current.caliber_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+
+  <label>ид паллета
+    <select name="pallet_type" required>
+      <option value="EUR" {% if last_pallet.pallet_type == 'EUR' %}selected{% endif %}>вро</option>
+      <option value="USA" {% if last_pallet.pallet_type == 'USA' %}selected{% endif %}>мериканец</option>
     </select>
   </label>
+
+  <label>паковка
+    <select name="packaging_id" required>
+      <option value=""></option>
+      {% for pk in packagings %}
+      <option value="{{ pk.id }}" {% if last_pallet.packaging_id == pk.id %}selected{% endif %}>{{ pk.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>алибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for c in calibers %}
+      <option value="{{ c.id }}" {% if last_pallet.caliber_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
   <label>Сортность
     <select name="grade_id" required>
       <option value=""></option>
-      {% for item in grades %}<option value="{{ item.id }}" {% if current and item.id == current.grade_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Вид паллета
-    <select name="pallet_type" required>
-      <option value=""></option>
-      {% for key, name in PALLET_TYPE.items %}
-      <option value="{{ key }}" data-tare="{% pallet_tare key %}" {% if memory and memory.pallet_type == key %}selected{% endif %}>{% pallet_label key %}</option>
+      {% for g in grades %}
+      <option value="{{ g.id }}" {% if last_pallet.grade_id == g.id %}selected{% endif %}>{{ g.name }}</option>
       {% endfor %}
     </select>
   </label>
-  <label>Упаковка
-    <select name="packaging_id" required>
-      <option value=""></option>
-      {% for item in packagings %}
-      <option value="{{ item.id }}" data-tare="{{ item.tare_kg }}" {% if memory and memory.packaging_id == item.id %}selected{% endif %}>{{ item.name }} ({{ item.tare_kg|kg }} кг)</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>Упаковок <input name="places" inputmode="numeric" required></label>
-  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
-  <label>Чистый вес, кг <input name="net" inputmode="decimal" required></label>
-  <input type="hidden" name="net_manual" value="0">
-  <p class="hint">Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок. Поле можно поправить.</p>
+
+  <label>ол-во упаковок <input name="places" inputmode="numeric" required></label>
+  
+  <label>рязный вес, кг <input name="gross" inputmode="decimal" required></label>
+  
+  <label class="check"><input type="checkbox" name="net_manual" value="1" onclick="document.getElementById('net-input').style.display = this.checked ? 'block' : 'none'"> вести чистый вес вручную</label>
+  <label id="net-input" style="display:none">истый вес, кг <input name="net" inputmode="decimal"></label>
+
   {% if consignee_categories %}
   <fieldset>
-    <legend>Категории отгрузки</legend>
-    {% for item in consignee_categories %}
-    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}"> {{ item.name }}</label>
+    <legend>атегории отгрузки (на выход)</legend>
+    {% for cat in consignee_categories %}
+    <label class="check">
+      <input type="checkbox" name="category_id" value="{{ cat.id }}" 
+             {% if last_pallet and cat.id in last_pallet.category_ids %}checked{% endif %}>
+      {{ cat.name }}
+    </label>
     {% endfor %}
-    <p class="hint">Ничего не отмечено — паллету можно отдать любой категории. Отмеченные категории ограничивают, кому её можно отгрузить.</p>
   </fieldset>
   {% endif %}
-  {% if consignees %}
-  <label data-client-box>Грузополучатель
-    <span class="client-pick" data-client-pick>
-      <input type="hidden" name="consignee_id" value="">
-      <input type="text" data-client-query autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Свободный остаток" enterkeyhint="search">
-      <ul data-client-list hidden>
-        <li><button type="button" data-id="">Свободный остаток</button></li>
-        {% for item in consignees %}<li><button type="button" data-id="{{ item.id }}">{{ item.name }}</button></li>{% endfor %}
-      </ul>
-    </span>
-  </label>
-  <p class="hint" data-client-hint>Начните вводить имя. Пусто — паллета в общий остаток. Грузополучатель — паллета ждёт его заказ и другим не отдаётся.</p>
-  {% endif %}
-  <label class="check" data-reserve-box hidden>
-    <input type="checkbox" name="reserve" value="1">
-    Резерв под <span data-reserve-caption></span>
-  </label>
-  <p class="hint" data-reserve-progress hidden></p>
-  <button class="btn menu">Принять паллету</button>
-</form>
-<script>
-  document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll("form[data-accept]").forEach((form) => {
-      const line = form.querySelector("[data-task-line]");
-      const net = form.querySelector("[name=net]");
-      const manual = form.querySelector("[name=net_manual]");
-      if (!net) return;
-      let netTouched = false;
-      const setManual = (touched) => {
-        netTouched = touched;
-        if (manual) manual.value = touched ? "1" : "0";
-      };
-      net.addEventListener("input", () => { setManual(true); });
-      const readTare = (name) => {
-        const option = form.querySelector(`[name=${name}] option:checked`);
-        const raw = option && option.dataset.tare ? option.dataset.tare : "0";
-        const value = Number(String(raw).replace(",", "."));
-        return Number.isFinite(value) ? value : 0;
-      };
-      const recalc = () => {
-        if (netTouched) return;
-        const gross = Number(String(form.querySelector("[name=gross]").value).replace(",", "."));
-        const places = Number(form.querySelector("[name=places]").value);
-        if (!gross || !places) {
-          net.value = "";
-          return;
-        }
-        const value = gross - readTare("pallet_type") - readTare("packaging_id") * places;
-        net.value = value > 0 ? value.toFixed(3).replace(".", ",") : "";
-      };
-      const reserveBox = form.querySelector("[data-reserve-box]");
-      const reserveProgress = form.querySelector("[data-reserve-progress]");
-      const clientBox = form.querySelector("[data-client-box]");
-      const clientHint = form.querySelector("[data-client-hint]");
-      const pick = form.querySelector("[data-client-pick]");
-      const clientValue = pick ? pick.querySelector("[name=consignee_id]") : null;
-      const clientQuery = pick ? pick.querySelector("[data-client-query]") : null;
-      const clientList = pick ? pick.querySelector("[data-client-list]") : null;
-      const clientButtons = clientList ? [...clientList.querySelectorAll("button")] : [];
-      let clientChosen = "";
-      const clientLabel = (id) => {
-        const button = clientButtons.find((item) => item.dataset.id === id);
-        return button && id ? button.textContent.trim() : "";
-      };
-      const paintClients = () => {
-        const needle = clientQuery.value.trim().toLocaleLowerCase("ru");
-        let marked = null;
-        clientButtons.forEach((button) => {
-          const name = button.textContent.trim().toLocaleLowerCase("ru");
-          const match = !needle || name.includes(needle);
-          button.parentElement.hidden = !match;
-          button.classList.remove("mark");
-          if (match && !marked && button.dataset.id) marked = button;
-        });
-        if (!needle) marked = clientButtons[0];
-        if (marked) marked.classList.add("mark");
-      };
-      const chooseClient = (id) => {
-        clientChosen = id || "";
-        clientValue.value = clientChosen;
-        clientQuery.value = clientLabel(clientChosen);
-        clientList.hidden = true;
-      };
-      const openClients = () => {
-        paintClients();
-        clientList.hidden = false;
-      };
-      if (clientQuery) {
-        clientQuery.addEventListener("focus", openClients);
-        clientQuery.addEventListener("input", openClients);
-        clientQuery.addEventListener("keydown", (event) => {
-          const visible = clientButtons.filter((button) => !button.parentElement.hidden);
-          const index = visible.findIndex((button) => button.classList.contains("mark"));
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            if (clientList.hidden) openClients();
-            const next = visible[index + (event.key === "ArrowDown" ? 1 : -1)] || visible[0];
-            if (!next) return;
-            visible.forEach((button) => button.classList.remove("mark"));
-            next.classList.add("mark");
-            next.scrollIntoView({ block: "nearest" });
-          }
-          if (event.key === "Enter" && !clientList.hidden) {
-            const marked = visible.find((button) => button.classList.contains("mark"));
-            if (!marked) return;
-            event.preventDefault();
-            chooseClient(marked.dataset.id);
-          }
-          if (event.key === "Escape") clientList.hidden = true;
-        });
-        clientQuery.addEventListener("blur", () => {
-          window.setTimeout(() => {
-            clientList.hidden = true;
-            if (!clientQuery.value.trim()) {
-              chooseClient("");
-              return;
-            }
-            const exact = clientButtons.find((button) => button.dataset.id && button.textContent.trim().toLocaleLowerCase("ru") === clientQuery.value.trim().toLocaleLowerCase("ru"));
-            if (exact) chooseClient(exact.dataset.id);
-            else clientQuery.value = clientLabel(clientChosen);
-          }, 150);
-        });
-        clientButtons.forEach((button) => {
-          button.addEventListener("mousedown", (event) => event.preventDefault());
-          button.addEventListener("click", () => chooseClient(button.dataset.id));
-        });
-      }
-      const applyLine = () => {
-        if (!line) return;
-        const option = line.selectedOptions[0];
-        if (!option) return;
-        form.querySelector("[name=caliber_id]").value = option.getAttribute("data-caliber") || "";
-        form.querySelector("[name=grade_id]").value = option.getAttribute("data-grade") || "";
-        form.querySelector("[name=pallet_type]").value = option.getAttribute("data-pallet") || "";
-        form.querySelector("[name=packaging_id]").value = option.getAttribute("data-packaging") || "";
-        const caption = option.getAttribute("data-reserve-label") || "";
-        if (clientBox) clientBox.hidden = !!caption;
-        if (clientHint) clientHint.hidden = !!caption;
-        if (caption && clientValue) chooseClient("");
-        if (reserveBox) {
-          reserveBox.hidden = !caption;
-          reserveBox.querySelector("[data-reserve-caption]").textContent = caption;
-          const plan = Number(option.getAttribute("data-reserve-plan") || "0");
-          const held = Number(option.getAttribute("data-reserve-held") || "0");
-          const box = reserveBox.querySelector("[name=reserve]");
-          if (box) box.checked = caption && held < plan;
-          if (reserveProgress) {
-            reserveProgress.hidden = !caption;
-            const format = (value) => value.toFixed(3).replace(".", ",");
-            reserveProgress.textContent = caption ? `Уже в резерве ${format(held)} из ${format(plan)} кг. Сверх плана паллета остаётся свободной, если галочку снять.` : "";
-          }
-        }
-        setManual(false);
-        recalc();
-      };
-      const packaging = form.querySelector("[name=packaging_id]");
-      const palletType = form.querySelector("[name=pallet_type]");
-      const places = form.querySelector("[name=places]");
-      const gross = form.querySelector("[name=gross]");
-      if (line) line.addEventListener("change", applyLine);
-      if (palletType) palletType.addEventListener("change", () => { setManual(false); recalc(); });
-      packaging.addEventListener("change", () => { setManual(false); recalc(); });
-      places.addEventListener("input", () => { setManual(false); recalc(); });
-      gross.addEventListener("input", () => { setManual(false); recalc(); });
-      if (line) applyLine();
-    });
-  });
-</script>
+
+  {% include "partials/cell_pick.html" %}
+
+  <div class="actions"><button type="submit">ринять паллету</button></div>
+</div>

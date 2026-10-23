@@ -341,6 +341,7 @@ def task_context(task, movements, user=None):
         "consignees": list(Consignee.objects.order_by("name")) if task.kind == "receive" and not task.order_id else [],
         "consignee_categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")) if task.kind == "receive" else [],
         "defaults": pallet_defaults(task) if task.kind == "receive" else {},
+        "last_pallet": list(pallet_defaults(task).values())[0] if task.kind == "receive" and pallet_defaults(task) else None,
         "can_receive": task.kind == "receive" and task.is_working() and user is not None and (user.role == "receiver" or user.is_office),
         "can_status": user is not None and user.is_office,
         "status_choices": task_status_choices(task.kind, task.status),
