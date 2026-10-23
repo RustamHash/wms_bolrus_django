@@ -9,14 +9,14 @@
     </select>
   </label>
 
-  <label>ид паллета
+  <label>Вид паллета
     <select name="pallet_type" required>
-      <option value="EUR" {% if last_pallet.pallet_type == 'EUR' %}selected{% endif %}>EUR</option>
-      <option value="USA" {% if last_pallet.pallet_type == 'USA' %}selected{% endif %}>USA</option>
+      <option value="EUR" {% if last_pallet.pallet_type == 'EUR' %}selected{% endif %}>Евро</option>
+      <option value="USA" {% if last_pallet.pallet_type == 'USA' %}selected{% endif %}>Американец</option>
     </select>
   </label>
 
-  <label>паковка
+  <label>Упаковка
     <select name="packaging_id" required>
       <option value=""></option>
       {% for pk in packagings %}
@@ -25,7 +25,7 @@
     </select>
   </label>
 
-  <label>алибр
+  <label>Калибр
     <select name="caliber_id" required>
       <option value=""></option>
       {% for c in calibers %}
@@ -43,16 +43,16 @@
     </select>
   </label>
 
-  <label>ол-во упаковок <input name="places" inputmode="numeric" required></label>
+  <label>Кол-во упаковок <input name="places" inputmode="numeric" required></label>
   
-  <label>рязный вес, кг <input name="gross" inputmode="decimal" required></label>
+  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
   
-  <label class="check"><input type="checkbox" name="net_manual" value="1" onclick="document.getElementById('net-input').style.display = this.checked ? 'block' : 'none'"> вести чистый вес вручную</label>
-  <label id="net-input" style="display:none">истый вес, кг <input name="net" inputmode="decimal"></label>
+  <label class="check"><input type="checkbox" name="net_manual" value="1" onclick="document.getElementById('net-input').style.display = this.checked ? 'block' : 'none'"> Ввести чистый вес вручную</label>
+  <label id="net-input" style="display:none">Чистый вес, кг <input name="net" inputmode="decimal"></label>
 
   {% if consignee_categories %}
   <fieldset>
-    <legend>атегории отгрузки (на выход)</legend>
+    <legend>Категории отгрузки (на выход)</legend>
     {% for cat in consignee_categories %}
     <label class="check">
       <input type="checkbox" name="category_id" value="{{ cat.id }}" 
@@ -65,5 +65,5 @@
 
   {% include "partials/cell_pick.html" %}
 
-  <div class="actions"><button type="submit">ринять паллету</button></div>
+  <div class="actions"><button type="submit">Принять паллету</button></div>
 </div>
