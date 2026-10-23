@@ -57,6 +57,21 @@ def _context(pallet, units) -> dict:
     }
 
 
+def passport_lines(pallet, units) -> list[str]:
+    """Те же поля, что на листе паспорта. Носитель меняет только вёрстку."""
+    data = _context(pallet, units)
+    lines = [
+        f"Дата {data['date']}",
+        f"Поставщик {data['supplier']}",
+        f"Товар {data['product']}",
+        f"Сортность {data['grade']}",
+        f"Брутто / нетто {data['weight']}",
+    ]
+    if data["client"]:
+        lines.append(f"Клиент {data['client']}")
+    return lines
+
+
 def _client_name(pallet) -> str:
     if pallet.reserved_consignee_id:
         return (pallet.reserved_consignee.name or "").strip()

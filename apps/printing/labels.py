@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-from apps.common.present import format_kg, group_units, unit_lines
+import qrcode
+
+from apps.common.present import format_kg, unit_lines
 
 # Встроенный шрифт TSC «3»: 16×24 точки до увеличения.
 FONT = "3"
@@ -51,58 +53,108 @@ def _wrap(text: str, max_chars: int) -> list[str]:
     return lines
 
 
-def _label(lines: list[str], barcode: str, label_w: int, label_h: int, dpi: int, copies: int = 1) -> str:
+def _qr_layout(payload: str, max_dots: int) -> tuple[int, int]:
+    image = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
+    image.add_data(payload)
+    image.make(fit=True)
+    modules = max(1, int(image.modules_count))
+    cell = max(1, min(2, max_dots // modules))
+    return cell, modules * cell
+
+
+def _qr_command(x: int, y: int, payload: str, cell: int) -> bytes:
+    # В кавычках только LF: CR оборвал бы команду TSPL. UTF-8 читается телефоном так же, как QR на PDF.
+    data = payload.replace("\r\n", "\n").replace("\r", "\n").replace('"', "'")
+    prefix = f'QRCODE {x},{y},M,{cell},A,0,"'.encode("ascii")
+    return prefix + data.encode("utf-8") + b'"\r\n'
+
+
+def _wrap_lines(lines: list[str], usable: int, scale: int) -> tuple[int, list[str]]:
+    step = FONT_HEIGHT * scale + 4
+    max_chars = max(1, usable // (FONT_WIDTH * scale))
+    wrapped: list[str] = []
+    for line in lines:
+        wrapped.extend(_wrap(line, max_chars))
+    return step, wrapped or [""]
+
+
+def _lines_fit(count: int, top: int, step: int, scale: int, text_bottom: int) -> bool:
+    if count <= 0:
+        return True
+    return top + (count - 1) * step + FONT_HEIGHT * scale <= text_bottom
+
+
+def _label(
+    lines: list[str],
+    barcode: str,
+    label_w: int,
+    label_h: int,
+    dpi: int,
+    copies: int = 1,
+    *,
+    symbol: str = "barcode",
+) -> bytes:
     # 5 мм слева: печатающая головка TSC не начинает с самого края наклейки.
     left = mm_to_dots(5, dpi)
     top = mm_to_dots(3, dpi)
     right = mm_to_dots(4, dpi)
     bottom = mm_to_dots(3, dpi)
     gap = mm_to_dots(2, dpi)
+    usable = max(1, label_w - left - right)
+    qr_cell = 0
+    qr_side = 0
     barcode_h = mm_to_dots(10, dpi)
     human = mm_to_dots(4, dpi) if barcode else 0
-    band = barcode_h + human + gap if barcode else 0
-    text_bottom = label_h - bottom - band
-    if text_bottom < top + FONT_HEIGHT:
-        text_bottom = label_h - bottom
-        band = 0
-
-    usable = max(1, label_w - left - right)
-    scale = 2
-    step = FONT_HEIGHT * scale + 4
-    max_chars = max(1, usable // (FONT_WIDTH * scale))
-    wrapped: list[str] = []
-    for line in lines:
-        wrapped.extend(_wrap(line, max_chars))
-    if not wrapped:
-        wrapped = [""]
-    if top + len(wrapped) * step > text_bottom:
-        scale = 1
-        step = FONT_HEIGHT + 4
-        max_chars = max(1, usable // FONT_WIDTH)
-        wrapped = []
-        for line in lines:
-            wrapped.extend(_wrap(line, max_chars))
-        if not wrapped:
-            wrapped = [""]
+    if symbol == "qr" and barcode:
+        # Около 8 мм: в четыре раза меньше прежних 32 мм. Текст из-за этого не режется.
+        limit = min(mm_to_dots(8, dpi), usable)
+        qr_cell, qr_side = _qr_layout(barcode, limit)
+        quiet = max(gap, qr_cell * 4)
+        band = qr_side + quiet
+        text_bottom = label_h - bottom - band
+        scale = 2
+        step, wrapped = _wrap_lines(lines, usable, scale)
+        if not _lines_fit(len(wrapped), top, step, scale, text_bottom):
+            scale = 1
+            step, wrapped = _wrap_lines(lines, usable, scale)
+        gap = quiet
+    else:
+        band = barcode_h + human + gap if barcode else 0
+        text_bottom = label_h - bottom - band
+        if text_bottom < top + FONT_HEIGHT:
+            text_bottom = label_h - bottom
+            band = 0
+        scale = 2
+        step, wrapped = _wrap_lines(lines, usable, scale)
+        if not _lines_fit(len(wrapped), top, step, scale, text_bottom):
+            scale = 1
+            step, wrapped = _wrap_lines(lines, usable, scale)
 
     commands = ["CLS\r\n", "CODEPAGE 1251\r\n"]
     y = top
     for line in wrapped:
-        if y + FONT_HEIGHT * scale > text_bottom:
+        if symbol != "qr" and y + FONT_HEIGHT * scale > text_bottom:
             break
         commands.append(f'TEXT {left},{y},"{FONT}",0,{scale},{scale},"{line}"\r\n')
         y += step
-    if band and barcode:
+    body = "".join(commands).encode("cp1251", errors="replace")
+    if band and barcode and symbol == "qr" and qr_side:
+        qr_y = min(y + gap, label_h - bottom - qr_side)
+        qr_x = max(left, (label_w - qr_side) // 2)
+        body += _qr_command(qr_x, qr_y, barcode, qr_cell)
+    elif band and barcode:
         # Тот же левый край, что у текста, и сразу под последней строкой.
         # wide=4: у Code 128 широкая полоса вдвое шире узкой, иначе штрихкод съезжает.
         barcode_y = min(y + gap, label_h - bottom - barcode_h - human)
-        commands.append(f'BARCODE {left},{barcode_y},"128",{barcode_h},1,0,2,4,"{_clean(barcode)}"\r\n')
+        body += f'BARCODE {left},{barcode_y},"128",{barcode_h},1,0,2,4,"{_clean(barcode)}"\r\n'.encode(
+            "cp1251", errors="replace"
+        )
     copies = max(1, int(copies))
-    commands.append(f"PRINT 1,{copies}\r\n")
-    return "".join(commands)
+    body += f"PRINT 1,{copies}\r\n".encode("ascii")
+    return body
 
 
-def _job(printer, kind: str, labels: list[tuple[list[str], str]], copies: int = 1) -> bytes:
+def _job(printer, kind: str, labels: list[tuple[list[str], str]], copies: int = 1, *, symbol: str = "barcode") -> bytes:
     width_mm, height_mm, _gap_mm = LABEL_MM[kind]
     dpi = int(printer.dpi or 203)
     label_w = mm_to_dots(width_mm, dpi)
@@ -111,73 +163,30 @@ def _job(printer, kind: str, labels: list[tuple[list[str], str]], copies: int = 
     if gap_mm <= 0:
         gap_mm = 2
     parts = [
-        f"GAP {gap_mm} mm,0 mm\r\n",
-        "OFFSET 0 mm\r\n",
-        "REFERENCE 0,0\r\n",
-        "DIRECTION 1\r\n",
+        f"GAP {gap_mm} mm,0 mm\r\n".encode("ascii"),
+        b"OFFSET 0 mm\r\n",
+        b"REFERENCE 0,0\r\n",
+        b"DIRECTION 1\r\n",
     ]
     for lines, barcode in labels:
-        parts.append(_label(lines, barcode, label_w, label_h, dpi, copies))
-    return "".join(parts).encode("cp1251", errors="replace")
+        parts.append(_label(lines, barcode, label_w, label_h, dpi, copies, symbol=symbol))
+    return b"".join(parts)
 
 
 def unit_label(printer, unit) -> bytes:
     return _job(printer, "unit", [(unit_lines(unit), unit.barcode)])
 
 
-def _supplier_line(groups) -> str:
-    names = []
-    for group in groups:
-        for unit in group.units:
-            name = (unit.lot.supplier.name or "").strip()
-            if name and name not in names:
-                names.append(name)
-    return ", ".join(names)
-
-
-def _party_lines(pallet) -> list[str]:
-    lines = []
-    if pallet.order_id:
-        number = (pallet.order.number or "").strip()
-        if number:
-            lines.append(f"Заказ {number}")
-    if pallet.reserved_consignee_id:
-        client = (pallet.reserved_consignee.name or "").strip()
-    elif pallet.order_id and pallet.order.consignee_id:
-        client = (pallet.order.consignee.name or "").strip()
-    else:
-        client = ""
-    if client:
-        lines.append(client)
-    return lines
-
-
 def pallet_labels(printer, pallet, copies: int = 2) -> bytes:
-    groups = group_units(pallet.units.all())
-    lines = [pallet.number, *_party_lines(pallet)]
-    supplier = _supplier_line(groups)
-    if supplier:
-        lines.append(supplier)
-    if pallet.kind == "inbound" and len(groups) == 1:
-        group = groups[0]
-        lines.extend(
-            [
-                group.product,
-                f"{group.caliber} · {group.grade}",
-                f"{group.count} мест · {format_kg(group.kg)} кг",
-            ]
+    from apps.printing.passport import _qr_text, passport_lines
+
+    units = list(
+        pallet.units.exclude(status="rejected").select_related(
+            "lot__product", "lot__caliber", "lot__supplier", "grade", "packaging"
         )
-    else:
-        lines.append("Смешанная паллета" if pallet.kind == "outbound" else "Состав")
-        for group in groups:
-            lines.append(
-                f"{group.product} {group.caliber} {group.grade} {group.count}шт {format_kg(group.kg)}кг"
-            )
-    if not groups:
-        lines.append("Пусто")
-    capacity = 8
-    chunks = [lines[i : i + capacity] for i in range(0, len(lines), capacity)] or [lines]
-    return _job(printer, "pallet", [(chunk, pallet.barcode) for chunk in chunks], copies)
+    )
+    lines = passport_lines(pallet, units)
+    return _job(printer, "pallet", [(lines, _qr_text(pallet, units))], copies, symbol="qr")
 
 
 def ship_sticker(printer, paper, groups) -> bytes:
