@@ -103,11 +103,11 @@ def _label(
     usable = max(1, label_w - left - right)
     qr_cell = 0
     qr_side = 0
-    barcode_h = mm_to_dots(10, dpi)
+    barcode_h = mm_to_dots(16, dpi)
     human = mm_to_dots(4, dpi) if barcode else 0
     if symbol == "qr" and barcode:
         # Около 8 мм: в четыре раза меньше прежних 32 мм. Текст из-за этого не режется.
-        limit = min(mm_to_dots(8, dpi), usable)
+        limit = min(mm_to_dots(16, dpi), usable)
         qr_cell, qr_side = _qr_layout(barcode, limit)
         quiet = max(gap, qr_cell * 4)
         band = qr_side + quiet
