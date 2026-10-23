@@ -10,38 +10,37 @@
 {% endif %}
 <h2>Создано {{ report.created|length }}</h2>
 <table class="sheet">
-  <tr><th>Номер</th><th>Номер 1С</th><th>{{ party_label }}</th><th class="num">Строк</th></tr>
+  <tr><th>Номер</th><th>{{ party_label }}</th><th class="num">Строк</th></tr>
   {% for item in report.created %}
   <tr>
     <td><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a></td>
-    <td>{{ item.external }}</td>
     <td>{{ item.party }}</td>
     <td class="num">{{ item.lines }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="4">Новых заказов нет</td></tr>
+  <tr><td colspan="3">Новых заказов нет</td></tr>
   {% endfor %}
 </table>
 {% if report.updated %}
 <h2>Обновлено {{ report.updated|length }}</h2>
 {% for item in report.updated %}
 {% if item.revision %}
-<h3><a href="{% if revisions_href %}{{ revisions_href }}{{ item.id }}/revisions{% else %}/orders/{{ item.id }}/revisions{% endif %}">{{ item.number }}</a> {{ item.external }} · версия {{ item.revision }}</h3>
+<h3><a href="{% if revisions_href %}{{ revisions_href }}{{ item.id }}/revisions{% else %}/orders/{{ item.id }}/revisions{% endif %}">{{ item.number }}</a> · версия {{ item.revision }}</h3>
 <p>{{ item.party }}. {{ item.summary }}</p>
 {% include "orders/revision_diff.html" with changes=item.changes %}
 {% else %}
-<p><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }} · {{ item.party }}</p>
+<p><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> · {{ item.party }}</p>
 {% endif %}
 {% endfor %}
 {% endif %}
 {% if report.unchanged %}
 <h2>Без изменений {{ report.unchanged|length }}</h2>
-<ul>{% for item in report.unchanged %}<li><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</li>{% endfor %}</ul>
+<ul>{% for item in report.unchanged %}<li><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a></li>{% endfor %}</ul>
 {% endif %}
 {% if report.closed %}
 <h2>Не обновлены</h2>
 {% for item in report.closed %}
-<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</h3>
+<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a></h3>
 <p>{{ item.summary }}</p>
 {% if item.changes %}{% include "orders/revision_diff.html" with changes=item.changes %}{% endif %}
 {% endfor %}
@@ -49,7 +48,7 @@
 {% if report.blocked %}
 <h2>Расхождение есть, заказ не изменился</h2>
 {% for item in report.blocked %}
-<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</h3>
+<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a></h3>
 {% include "orders/revision_diff.html" with changes=item.changes %}
 {% endfor %}
 {% endif %}

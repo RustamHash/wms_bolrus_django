@@ -9,14 +9,14 @@ from django.db import transaction
 
 from apps.catalog.models import ExternalProduct, ProductAlias, Seller
 from apps.catalog.parties import upsert_consignee, upsert_external, upsert_supplier
-from apps.common.numbers import document_number
 from apps.onec.dto import OrderDTO
 from apps.onec.orders import OnecOrders
 from apps.planning.import_customer import ImportReport, is_feedback_name
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine
 from apps.planning.purchase_revisions import apply_purchase_import, store_baseline as store_purchase_baseline
 from apps.planning.revisions import apply_import, revision_summary, store_baseline
-from apps.planning.services import create_order
+from apps.common.exceptions import WarehouseError
+from apps.planning.services import create_order, use_purchase_number
 
 PURCHASE_STATES = {
     "Отправка на склад": "incoming",
@@ -460,7 +460,10 @@ def _sync_purchase(
         if not any_status:
             return f"Пропущен {external}: статус «{doc.state or '—'}»"
         status = "incoming"
-    found = PurchaseOrder.objects.filter(external_number=external).select_related("supplier").first()
+    found = (
+        PurchaseOrder.objects.filter(external_number=external).select_related("supplier").first()
+        or PurchaseOrder.objects.filter(number=external).select_related("supplier").first()
+    )
     if found is not None and not update:
         report.duplicates.append(external)
         return f"Пропущен {external}: уже есть в WMS"
@@ -477,7 +480,10 @@ def _sync_purchase(
         report.empty.append(external)
         return f"Пропущен {external}: нет строк в кг"
     if found is None:
+        if PurchaseOrder.objects.filter(number=external).exists():
+            raise WarehouseError(f"{external}: заказ с таким номером уже есть")
         order = PurchaseOrder.objects.create(
+            number=external,
             external_number=external,
             supplier=supplier,
             doc_date=receipt,
@@ -486,8 +492,6 @@ def _sync_purchase(
             comment=doc.comment or "",
             created_by=user,
         )
-        order.number = document_number("ЗП", order.id)
-        order.save(update_fields=["number"])
         for item in lines:
             PurchaseOrderLine.objects.create(
                 order=order,
@@ -501,7 +505,8 @@ def _sync_purchase(
             )
         store_purchase_baseline(order, user)
         report.created.append(_purchase_row(order, external, supplier.name))
-        return f"Создан заказ {order.number} ({external})"
+        return f"Создан заказ {order.number}"
+    use_purchase_number(found, external)
     result = apply_purchase_import(
         found,
         user,
@@ -517,15 +522,15 @@ def _sync_purchase(
     if kind == "updated":
         row["revision"] = result["revision"]
         report.updated.append(row)
-        return f"Обновлён заказ {found.number} ({external})"
+        return f"Обновлён заказ {found.number}"
     if kind == "closed":
         report.closed.append(row)
-        return f"Не обновлён {found.number} ({external}): закрыт или уже принят"
+        return f"Не обновлён {found.number}: закрыт или уже принят"
     if kind == "blocked":
         report.blocked.append(row)
-        return f"Не обновлён {found.number} ({external}): есть блокировки"
+        return f"Не обновлён {found.number}: есть блокировки"
     report.unchanged.append(row)
-    return f"Без изменений {found.number} ({external})"
+    return f"Без изменений {found.number}"
 
 
 @transaction.atomic

@@ -313,37 +313,25 @@ def edit_inbound(
 
 
 def pallet_defaults(task: Task) -> dict[int, dict]:
-    """
-    Возвращает словарь product_id -> настройки по умолчанию для приёмки.
-    По умолчанию берет настройки с ПОСЛЕДНЕЙ принятой паллеты в этом задании,
-    чтобы кладовщику не приходилось каждый раз выбирать тару и сорт.
-    """
     from apps.inventory.models import Movement
 
-    # Ищем последний приход в рамках этого задания
-    query = Movement.objects.filter(kind="in", task=task).select_related(
-        "pallet", "lot"
-    ).prefetch_related(
-        "pallet__units__packaging", "pallet__allowed_categories"
-    ).order_by("-id")
-
-    found = {}
-    for movement in query:
+    query = Movement.objects.filter(kind="in", task__isnull=False).select_related("pallet", "lot").prefetch_related(
+        "pallet__units"
+    )
+    if task.purchase_order_id:
+        query = query.filter(task__purchase_order_id=task.purchase_order_id)
+    else:
+        query = query.filter(task_id=task.id)
+    found: dict[int, dict] = {}
+    for movement in query.order_by("-id"):
         product_id = movement.lot.product_id
         if product_id in found:
             continue
-            
-        unit = movement.pallet.units.first()
-        categories = list(movement.pallet.allowed_categories.values_list("id", flat=True))
-        
+        unit = movement.pallet.units.all().first()
         found[product_id] = {
             "pallet_type": movement.pallet.pallet_type or "",
             "packaging_id": unit.packaging_id if unit else None,
-            "caliber_id": movement.lot.caliber_id,
-            "grade_id": movement.lot.grade_id,
-            "category_ids": categories,
         }
-        
     return found
 
 

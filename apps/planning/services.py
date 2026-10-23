@@ -310,41 +310,19 @@ def create_task(*, order_id, kind, supplier_id, ttn_number, doc_date, lines, use
 
 ASSIGNABLE_KINDS = ("receive", "pick", "ship")
 
-_STAFF_ROLE = {
-    "receive": "receiver",
-    "pick": "warehouse",
-    "ship": "warehouse",
-}
-
 
 def task_staff(kind: str) -> list:
-    from django.db.models import Q
+    from apps.accounts.access import screen_allows
     from apps.accounts.models import User
-    from apps.accounts.access import screen_codename
 
-    role = _STAFF_ROLE.get(kind)
-    if role is None:
+    if kind not in ASSIGNABLE_KINDS:
         return []
-
-    flag = f"access_{kind}"
-    screen_names = [screen_codename(f"tsd_{kind}", action) for action in ("view", "change")]
-    
-    # Базовый фильтр: либо старые флаги (role/position), либо новые права (permissions)
-    query = (
-        Q(access_managed=False, role=role)
-        | Q(access_managed=False, role="employee", **{flag: True})
-        | Q(access_managed=False, role="employee", position__is_active=True, **{f"position__{flag}": True})
-        | Q(access_managed=True, user_permissions__codename__in=screen_names)
-    )
-
-    return list(
-        User.objects.filter(is_active=True)
-        .filter(query)
-        # Исключаем "чистых" офисных, но НЕ исключаем админов, если у них есть настройки прав
-        .exclude(Q(role__in=("office", "admin")) & Q(access_managed=False))
-        .distinct()
-        .order_by("name")
-    )
+    screen = f"tsd_{kind}"
+    return [
+        user
+        for user in User.objects.filter(is_active=True).order_by("name")
+        if screen_allows(user, screen, "change")
+    ]
 
 
 def receive_staff() -> list:
@@ -752,6 +730,17 @@ def _purchase_printer(printer_id, current: PurchaseOrder | None):
 
 
 @transaction.atomic
+def use_purchase_number(order: PurchaseOrder, external: str) -> None:
+    clean = (external or "").strip()
+    if not clean or (order.number == clean and order.external_number == clean):
+        return
+    if PurchaseOrder.objects.filter(number=clean).exclude(pk=order.pk).exists():
+        raise WarehouseError("Заказ с таким номером уже есть")
+    order.number = clean
+    order.external_number = clean
+    order.save(update_fields=["number", "external_number"])
+
+
 def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, comment, lines, user, printer_id=None) -> PurchaseOrder:
     if status not in ("draft", "incoming", "closed"):
         raise WarehouseError("Выберите статус")

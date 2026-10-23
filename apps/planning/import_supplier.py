@@ -5,7 +5,6 @@ from django.db import transaction
 from apps.catalog.models import ExternalProduct, ProductAlias
 from apps.catalog.parties import upsert_external, upsert_supplier
 from apps.common.exceptions import WarehouseError
-from apps.common.numbers import document_number
 from apps.planning.import_customer import (
     ORDERS_DIR,
     ImportReport,
@@ -18,6 +17,7 @@ from apps.planning.import_customer import (
 )
 from apps.planning.models import PurchaseOrder, PurchaseOrderLine
 from apps.planning.purchase_revisions import apply_purchase_import, store_baseline
+from apps.planning.services import use_purchase_number
 from apps.planning.revisions import revision_summary
 
 HEADER = ("Дата поступления", "Номер", "Состояние", "Поставщик")
@@ -120,7 +120,10 @@ def import_supplier_orders(source, user, update: bool = False) -> ImportReport:
         if status is None:
             report.other_status += 1
             continue
-        found = PurchaseOrder.objects.filter(external_number=external).select_related("supplier").first()
+        found = (
+            PurchaseOrder.objects.filter(external_number=external).select_related("supplier").first()
+            or PurchaseOrder.objects.filter(number=external).select_related("supplier").first()
+        )
         if found is not None and not update:
             report.duplicates.append(external)
             continue
@@ -143,7 +146,10 @@ def import_supplier_orders(source, user, update: bool = False) -> ImportReport:
             report.empty.append(external)
             continue
         if found is None:
+            if PurchaseOrder.objects.filter(number=external).exists():
+                raise WarehouseError(f"{external}: заказ с таким номером уже есть")
             order = PurchaseOrder.objects.create(
+                number=external,
                 external_number=external,
                 supplier=supplier,
                 doc_date=receipt,
@@ -152,12 +158,11 @@ def import_supplier_orders(source, user, update: bool = False) -> ImportReport:
                 comment=comment,
                 created_by=user,
             )
-            order.number = document_number("ЗП", order.id)
-            order.save(update_fields=["number"])
             _store_lines(order, lines)
             store_baseline(order, user)
             report.created.append(_row(order, external, supplier.name))
             continue
+        use_purchase_number(found, external)
         result = apply_purchase_import(
             found,
             user,

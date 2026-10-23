@@ -20,18 +20,17 @@
   {% else %}
   <div class="journal-table">
 <table class="sheet">
-  <tr><th>Когда</th><th>Заказ</th><th>Номер 1С</th><th>Поставщик</th><th>Версия</th><th>Что изменилось</th></tr>
+  <tr><th>Когда</th><th>Заказ</th><th>Поставщик</th><th>Версия</th><th>Что изменилось</th></tr>
   {% for row in rows %}
   <tr data-href="/orders/suppliers/{{ row.revision.order_id }}/revisions">
     <td>{{ row.revision.created_at|date:"d.m.Y H:i" }}</td>
     <td><a href="/orders/suppliers/{{ row.revision.order_id }}/revisions">{{ row.revision.order.number }}</a></td>
-    <td>{{ row.revision.order.external_number|default:"" }}</td>
     <td>{{ row.revision.supplier_name }}</td>
     <td>{{ row.revision.revision }}</td>
     <td>{{ row.summary }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="6">Расхождений нет</td></tr>
+  <tr><td colspan="5">Расхождений нет</td></tr>
   {% endfor %}
 </table>
   </div>

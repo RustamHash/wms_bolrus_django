@@ -2,7 +2,7 @@
 {% load wms %}
 {% block title %}Версии {{ order.number }}{% endblock %}
 {% block content %}
-<h1>Версии {{ order.number }}{% if order.external_number %} · {{ order.external_number }}{% endif %}</h1>
+<h1>Версии {{ order.number }}</h1>
 <p>
   <a class="btn slim" href="/orders/suppliers/{{ order.id }}">К заказу</a>
   <a class="btn slim" href="/orders/suppliers/revisions">Все расхождения</a>

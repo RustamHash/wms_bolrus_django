@@ -54,7 +54,7 @@
             <input type="date" name="date_to" value="{{ import_to }}" data-period required>
           </span>
         </label>
-        <label>Номер 1С
+        <label>Номер
           <input name="order_number" placeholder="НФНФ-000000" disabled>
         </label>
         <span class="import-flags">
@@ -91,11 +91,10 @@
   </div>
   <div class="journal-table">
 <table class="sheet" {% if user.is_office %}data-bulk="suppliers-bulk"{% endif %}>
-  <tr><th>Номер</th><th>Номер 1С</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th><th>Комментарий</th></tr>
+  <tr><th>Номер</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th><th>Комментарий</th></tr>
   {% for row in rows %}
   <tr data-href="/orders/suppliers/{{ row.order.id }}" data-id="{{ row.order.id }}">
     <td><a href="/orders/suppliers/{{ row.order.id }}">{{ row.order.number }}</a></td>
-    <td>{{ row.order.external_number|default:"" }}</td>
     <td>{% if row.order.revision > 1 %}<a href="/orders/suppliers/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
     <td>{{ row.order.doc_date|date:"d.m.Y" }}</td>
     <td>{{ row.order.supplier.name }}</td>
@@ -105,7 +104,7 @@
     <td class="comment">{{ row.order.comment|default:"—" }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="9">Заказов нет</td></tr>
+  <tr><td colspan="8">Заказов нет</td></tr>
   {% endfor %}
 </table>
   </div>
