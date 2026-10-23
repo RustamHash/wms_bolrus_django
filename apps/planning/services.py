@@ -319,25 +319,29 @@ _STAFF_ROLE = {
 
 def task_staff(kind: str) -> list:
     from django.db.models import Q
-
     from apps.accounts.models import User
+    from apps.accounts.access import screen_codename
 
     role = _STAFF_ROLE.get(kind)
     if role is None:
         return []
-    from apps.accounts.access import screen_codename
 
     flag = f"access_{kind}"
     screen_names = [screen_codename(f"tsd_{kind}", action) for action in ("view", "change")]
+    
+    # Базовый фильтр: либо старые флаги (role/position), либо новые права (permissions)
+    query = (
+        Q(access_managed=False, role=role)
+        | Q(access_managed=False, role="employee", **{flag: True})
+        | Q(access_managed=False, role="employee", position__is_active=True, **{f"position__{flag}": True})
+        | Q(access_managed=True, user_permissions__codename__in=screen_names)
+    )
+
     return list(
         User.objects.filter(is_active=True)
-        .exclude(role__in=("office", "admin"))
-        .filter(
-            Q(access_managed=False, role=role)
-            | Q(access_managed=False, role="employee", **{flag: True})
-            | Q(access_managed=False, role="employee", position__is_active=True, **{f"position__{flag}": True})
-            | Q(access_managed=True, user_permissions__codename__in=screen_names)
-        )
+        .filter(query)
+        # Исключаем "чистых" офисных, но НЕ исключаем админов, если у них есть настройки прав
+        .exclude(Q(role__in=("office", "admin")) & Q(access_managed=False))
         .distinct()
         .order_by("name")
     )

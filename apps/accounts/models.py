@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
