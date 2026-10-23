@@ -58,8 +58,11 @@ def _qr_layout(payload: str, max_dots: int) -> tuple[int, int]:
     image.add_data(payload)
     image.make(fit=True)
     modules = max(1, int(image.modules_count))
-    # Точка 3 на 203 dpi — 0,4 мм. Это в 1,5 раза крупнее прежней точки 2 и читается телефоном.
-    cell = 3 if modules * 3 <= max_dots else max(1, max_dots // modules)
+    # Короткий номер занимает меньше клеток. Точку увеличиваем, чтобы сторона осталась около 15 мм.
+    if modules * 3 <= max_dots:
+        cell = max(3, min(10, max_dots // modules))
+    else:
+        cell = max(1, max_dots // modules)
     return cell, modules * cell
 
 
@@ -126,7 +129,7 @@ def _label(
     human = mm_to_dots(4, dpi) if barcode else 0
     if symbol == "qr" and barcode:
         # Сторона около 15 мм, справа от номера в верхнем углу.
-        limit = min(mm_to_dots(22, dpi), usable)
+        limit = min(mm_to_dots(16, dpi), usable)
         qr_cell, qr_side = _qr_layout(barcode, limit)
         quiet = max(gap, qr_cell * 4)
         band = qr_side
@@ -199,7 +202,7 @@ def unit_label(printer, unit) -> bytes:
 
 
 def pallet_labels(printer, pallet, copies: int = 2) -> bytes:
-    from apps.printing.passport import _qr_text, passport_lines
+    from apps.printing.passport import passport_lines
 
     units = list(
         pallet.units.exclude(status="rejected").select_related(
@@ -207,7 +210,9 @@ def pallet_labels(printer, pallet, copies: int = 2) -> bytes:
         )
     )
     lines = passport_lines(pallet, units)
-    return _job(printer, "pallet", [(lines, _qr_text(pallet, units))], copies, symbol="qr")
+    # В QR только номер: поиск ТСД находит паллету по нему.
+    code = (pallet.number or pallet.barcode or "").strip()
+    return _job(printer, "pallet", [(lines, code)], copies, symbol="qr")
 
 
 def ship_sticker(printer, paper, groups) -> bytes:
