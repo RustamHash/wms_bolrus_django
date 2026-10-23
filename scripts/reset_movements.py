@@ -42,7 +42,7 @@ from apps.planning.models import (
 )
 from apps.picking.models import PickAllocation
 from apps.receiving.models import Lot, Receipt
-from apps.shipping.models import Allocation, Shipment, ShipmentUnit
+from apps.shipping.models import Allocation
 from apps.storage.models import HandlingUnit, Pallet
 
 
@@ -79,8 +79,6 @@ def main():
         # ---------- 3. Остальное — «дети → родители» ----------
         steps = [
             ("Allocation", Allocation),
-            ("ShipmentUnit", ShipmentUnit),
-            ("Shipment", Shipment),
             ("PickAllocation", PickAllocation),
             ("InventoryLine", InventoryLine),
             ("InventoryDocument", InventoryDocument),

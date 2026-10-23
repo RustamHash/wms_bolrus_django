@@ -2,36 +2,24 @@ from django.db import transaction
 
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import get_row
-from apps.common.numbers import document_number
 from apps.inventory.models import Movement
 from apps.inventory.services import physical_left, post_out
 from apps.planning.models import TaskLine
 from apps.planning.spec import same_spec, specificity
-from apps.shipping.models import Shipment, ShipmentUnit
-from apps.storage.models import Pallet
+from apps.storage.models import HandlingUnit, Pallet
 
 
 def _same_spec(movement, line: TaskLine) -> bool:
     return same_spec(movement.lot, line)
 
 
-def _shipment(task, user) -> Shipment:
-    shipment = Shipment.objects.filter(task_id=task.id).first()
-    if shipment is not None:
-        return shipment
-    order = task.order
-    shipment = Shipment.objects.create(
-        order=order,
-        task=task,
-        seller_name=order.seller.name,
-        seller_requisites=order.seller.requisites,
-        client_name=order.consignee.name,
-        shipping_terms=order.shipping_terms,
-        created_by=user,
+def shipped_units(task) -> list:
+    pallet_ids = Movement.objects.filter(task_id=task.id, kind="out").values_list("pallet_id", flat=True)
+    return list(
+        HandlingUnit.objects.filter(pallet_id__in=pallet_ids)
+        .select_related("lot__product", "lot__caliber", "grade", "packaging")
+        .order_by("id")
     )
-    shipment.number = document_number("ОТ", shipment.id)
-    shipment.save(update_fields=["number"])
-    return shipment
 
 
 def _unshipped_pick(pallet_id: int, order_id: int, movement_id: int | None):
@@ -61,13 +49,11 @@ def ship_pallet(*, task_line_id: int, pallet_id: int, user, confirmed: bool, mov
     if not _same_spec(source, line):
         raise WarehouseError("Паллета не совпадает со строкой задания")
     movement = post_out(task=task, task_line=line, pallet=pallet, source=source, user=user)
-    shipment = _shipment(task, user)
     if physical_left(pallet.id) <= 0:
         for unit in pallet.units.all():
             unit.status = "shipped"
             unit.save(update_fields=["status"])
-            ShipmentUnit.objects.get_or_create(shipment=shipment, unit=unit)
-    return movement, shipment
+    return movement
 
 
 def waiting_pallets(task) -> list[dict]:

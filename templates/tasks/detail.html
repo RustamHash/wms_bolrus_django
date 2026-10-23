@@ -4,7 +4,15 @@
 {% block content %}
 <h1>{{ task.number }} · {{ TASK_KIND|label:task.kind }}</h1>
 <div class="doc-bar">
-  <a class="btn slim" href="/tasks/{{ task.id }}/print" target="_blank">Печать</a>
+  <a class="btn slim" href="/tasks/{{ task.id }}/print" target="_blank">Печать задания</a>
+  {% if task.kind == "ship" %}
+  <a class="btn slim" href="/tasks/{{ task.id }}/sticker.pdf" target="_blank">Стикер PDF</a>
+  <a class="btn slim" href="/tasks/{{ task.id }}/waybill.pdf" target="_blank">Отгрузочный лист</a>
+  <form class="inline" method="post" action="/tasks/{{ task.id }}/documents">{% csrf_token %}
+    <button class="slim" name="document" value="sticker">Стикер на принтер</button>
+    <button class="slim" name="document" value="waybill">Лист на принтер</button>
+  </form>
+  {% endif %}
 </div>
 <p>
   {% if task.purchase_order %}
@@ -28,6 +36,19 @@
 </form>
 {% else %}
 <p>{{ TASK_STATUS|label:task.status }}</p>
+{% endif %}
+{% if task.kind == "receive" or task.kind == "ship" %}
+<form method="post" action="/tasks/{{ task.id }}/printer" class="row">{% csrf_token %}
+  <label>Принтер
+    <select name="printer_id" {% if not can_status %}disabled{% endif %}>
+      <option value="">—</option>
+      {% for item in printers %}
+      <option value="{{ item.id }}" {% if task.printer_id == item.id %}selected{% endif %}>{{ item.name }} · {% if item.printer_type == 'tsc' %}термо{% else %}A4{% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if can_status %}<button class="slim">Назначить принтер</button>{% endif %}
+</form>
 {% endif %}
 {% if task.kind == "receive" or task.kind == "pick" or task.kind == "ship" %}
 <form method="post" action="/tasks/{{ task.id }}/assign" class="row">{% csrf_token %}
@@ -139,7 +160,7 @@
 {% endif %}
 
 {% if task.kind == "ship" and task.is_working and user.role == "warehouse" or task.kind == "ship" and task.is_working and user.is_office %}
-<h2>Паллеты в накладную</h2>
+<h2>К отгрузке</h2>
 {% for item in waiting %}
 <form method="post" action="/tasks/{{ task.id }}/ship" class="card">{% csrf_token %}
   <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
@@ -147,7 +168,7 @@
   <input type="hidden" name="movement_id" value="{{ item.movement.id }}">
   <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}</p>
   <label><input type="checkbox" name="confirm" value="1"> Условия отгрузки проверены: {% if task.order %}{{ task.order.shipping_terms }}{% else %}не указаны{% endif %}</label>
-  <button>Провести в накладную</button>
+  <button>Отгрузить</button>
 </form>
 {% empty %}
 <p>Отобранных паллет под это задание нет.</p>

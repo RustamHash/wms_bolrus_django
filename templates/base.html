@@ -38,9 +38,6 @@
       </div>
     </div>
     {% endif %}
-    {% if user.is_authenticated and user|screen:"web_shipments" %}
-    <a href="/shipments" class="{% if request.path|startswith:'/shipments' %}active{% endif %}">Накладные</a>
-    {% endif %}
     {% if user.is_authenticated and user.can_shift %}
     <a href="/shift" class="{% if request.path|startswith:'/shift' %}active{% endif %}">Смена</a>
     {% endif %}

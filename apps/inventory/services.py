@@ -496,14 +496,57 @@ def lot_journal(lot_id: int) -> list[dict]:
     return found
 
 
-def stock_rows() -> list[dict]:
-    rows = Balance.objects.select_related(
-        "lot__product", "lot__caliber", "lot__grade", "lot__supplier", "lot__receipt"
-    ).order_by("lot__received_on", "id")
-    result = []
-    for row in rows:
-        if as_kg(row.free_kg) == 0 and as_kg(row.reserved_kg) == 0 and as_kg(row.picked_kg) == 0:
+def _shipping_categories(lot_ids: list[int]) -> dict[int, str]:
+    """Категории отгрузки паллет, на которых партия ещё лежит. Пустой список паллеты — любая."""
+    if not lot_ids:
+        return {}
+    links = list(
+        Movement.objects.filter(kind=Movement.Kind.IN, lot_id__in=lot_ids).values_list("pallet_id", "lot_id")
+    )
+    if not links:
+        return {}
+    pallet_ids = {pallet_id for pallet_id, _lot_id in links}
+    inbound = inbound_kg_by_pallet(pallet_ids)
+    taken = taken_kg_by_pallet(pallet_ids)
+    alive = {pallet_id for pallet_id, qty in inbound.items() if as_kg(qty - taken.get(pallet_id, 0)) > 0}
+    lot_by_pallet = {pallet_id: lot_id for pallet_id, lot_id in links if pallet_id in alive}
+    if not lot_by_pallet:
+        return {}
+    movements = Movement.objects.filter(
+        kind=Movement.Kind.IN, pallet_id__in=lot_by_pallet
+    ).prefetch_related("pallet__allowed_categories")
+    grouped: dict[int, dict] = {}
+    for movement in movements:
+        bucket = grouped.setdefault(movement.lot_id, {"any": False, "names": {}})
+        categories = list(movement.pallet.allowed_categories.all())
+        if not categories:
+            bucket["any"] = True
             continue
+        for item in categories:
+            bucket["names"][item.name] = item.sort_order
+    labels = {}
+    for lot_id, bucket in grouped.items():
+        names = [name for name, _order in sorted(bucket["names"].items(), key=lambda pair: (pair[1], pair[0].casefold()))]
+        if bucket["any"]:
+            names.append("любая")
+        labels[lot_id] = ", ".join(names)
+    return labels
+
+
+def stock_rows() -> list[dict]:
+    rows = list(
+        Balance.objects.select_related(
+            "lot__product", "lot__caliber", "lot__grade", "lot__supplier", "lot__receipt"
+        ).order_by("lot__received_on", "id")
+    )
+    present = [
+        row
+        for row in rows
+        if as_kg(row.free_kg) != 0 or as_kg(row.reserved_kg) != 0 or as_kg(row.picked_kg) != 0
+    ]
+    categories = _shipping_categories([row.lot_id for row in present])
+    result = []
+    for row in present:
         lot = row.lot
         source = lot.get_source_display()
         if lot.is_opening:
@@ -516,6 +559,7 @@ def stock_rows() -> list[dict]:
                 "caliber": lot.caliber.name,
                 "grade": lot.grade.name,
                 "supplier": lot.supplier.name,
+                "categories": categories.get(lot.id, ""),
                 "source": source,
                 "receipt": lot.receipt.number or "",
                 "free_kg": as_kg(row.free_kg),

@@ -8,8 +8,16 @@ from apps.common.http import back_url, roles_required
 from apps.planning.models import Task
 from apps.printing import labels, pdfs
 from apps.printing.models import Printer
-from apps.printing.services import print_accepted_passport, print_pallet, print_shipment, print_unit, send_pdf, send_tspl
-from apps.shipping.models import Shipment
+from apps.printing.services import (
+    print_accepted_passport,
+    print_pallet,
+    print_task_document,
+    print_unit,
+    send_pdf,
+    send_tspl,
+    ship_paper,
+)
+from apps.shipping.services import shipped_units
 from apps.storage.models import HandlingUnit, Pallet
 
 
@@ -109,32 +117,36 @@ def pallet_print(request, pallet_id):
     return _ok(request, target, message)
 
 
+def _ship_task(task_id):
+    return Task.objects.select_related("order__seller", "order__consignee", "printer").filter(pk=task_id, kind="ship").first()
+
+
 @roles_required("warehouse")
-def sticker_pdf(request, shipment_id):
-    shipment = Shipment.objects.filter(pk=shipment_id).prefetch_related("units__lot__product", "units__lot__caliber", "units__grade").first()
-    if shipment is None:
+def task_sticker_pdf(request, task_id):
+    task = _ship_task(task_id)
+    if task is None:
         return HttpResponse("Не найдено", status=404)
-    return _pdf(pdfs.sticker_pdf(shipment, list(shipment.units.all())), f"sticker-{shipment.id}.pdf")
+    units = shipped_units(task)
+    return _pdf(pdfs.sticker_pdf(ship_paper(task), units), f"sticker-{task.id}.pdf")
 
 
 @roles_required("warehouse")
-def waybill_pdf(request, shipment_id):
-    shipment = Shipment.objects.filter(pk=shipment_id).select_related("order").prefetch_related(
-        "units__lot__product", "units__lot__caliber", "units__grade"
-    ).first()
-    if shipment is None:
+def task_waybill_pdf(request, task_id):
+    task = _ship_task(task_id)
+    if task is None:
         return HttpResponse("Не найдено", status=404)
-    return _pdf(pdfs.waybill_pdf(shipment, list(shipment.units.all())), f"waybill-{shipment.id}.pdf")
+    units = shipped_units(task)
+    return _pdf(pdfs.waybill_pdf(ship_paper(task), units), f"waybill-{task.id}.pdf")
 
 
 @roles_required("warehouse")
-def shipment_print(request, shipment_id):
-    shipment = Shipment.objects.filter(pk=shipment_id).prefetch_related("units__lot__product", "units__lot__caliber", "units__grade").first()
-    target = back_url(request, f"/shipments/{shipment_id}")
-    if shipment is None:
-        return _fail(request, target, "Накладная не найдена")
+def task_document_print(request, task_id):
+    task = _ship_task(task_id)
+    target = back_url(request, f"/tasks/{task_id}")
+    if task is None:
+        return _fail(request, target, "Задание не найдено")
     try:
-        message = print_shipment(shipment, text(request.POST, "target"), text(request.POST, "document"))
+        message = print_task_document(task, text(request.POST, "document"))
     except WarehouseError as exc:
         return _fail(request, target, str(exc))
     return _ok(request, target, message)

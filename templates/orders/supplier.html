@@ -33,15 +33,6 @@
     <label>Дата поступления
       <input type="date" name="receipt_date" value="{% if order and order.receipt_date %}{{ order.receipt_date|date:"Y-m-d" }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
     </label>
-    <label>Принтер
-      <select name="printer_id" {% if not editable %}disabled{% endif %}>
-        {% for item in printers %}
-        <option value="{{ item.id }}" {% if order and order.printer_id == item.id or not order and item.id == default_printer_id %}selected{% endif %}>{{ item.name }} · {% if item.printer_type == 'tsc' %}термо, 2 копии{% else %}A4{% endif %}</option>
-        {% empty %}
-        <option value="">Нет принтера</option>
-        {% endfor %}
-      </select>
-    </label>
     <label>Статус
       <select name="status" {% if not can_status %}disabled{% endif %}>
         {% for key, label in PURCHASE_STATUS.items %}

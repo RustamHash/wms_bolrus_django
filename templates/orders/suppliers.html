@@ -4,7 +4,7 @@
 {% block content %}
 <div class="journal">
   <div class="journal-tools band">
-    <form class="journal-bar journal-filter" method="get" action="/orders/suppliers">
+    <form class="journal-bar journal-filter" method="get" action="/orders/suppliers" onchange="this.submit()">
       <div class="journal-title">Заказы поставщикам <span class="journal-count">{{ rows|length }}</span></div>
       <label>Период
         <span class="dates">

@@ -39,6 +39,7 @@ from apps.planning.services import (
     delete_tasks,
     assign_receive_task,
     require_assigned,
+    set_task_printer,
     set_task_status,
     staff_for_tasks,
     unmapped_titles,
@@ -209,16 +210,12 @@ def _purchase_form(order, user):
             if line.customer_line_id:
                 linked.append(line.customer_line_id)
     held = holding_by_order_line(linked)
-    printers = _purchase_printers()
-    default_printer_id = next((item.id for item in printers if item.is_default), printers[0].id if printers else None)
     return {
         "order": order,
         "purchase_lines": lines,
         "tasks": list(Task.objects.filter(purchase_order=order).order_by("-id")) if order else [],
         "editable": user.is_office and (order is None or order.status != "closed"),
         "can_status": user.is_office,
-        "printers": printers,
-        "default_printer_id": default_printer_id,
         "unmapped": unmapped,
         "customer_lines": _customer_line_choices(linked),
         "held": held,
@@ -343,6 +340,7 @@ def task_context(task, movements, user=None):
         "defaults": pallet_defaults(task) if task.kind == "receive" else {},
         "can_receive": task.kind == "receive" and task.is_working() and user is not None and (user.role == "receiver" or user.is_office),
         "can_status": user is not None and user.is_office,
+        "printers": _purchase_printers() if task.kind in ("receive", "ship") else [],
         "status_choices": task_status_choices(task.kind, task.status),
         "receivers": staff_for_tasks([task], task.kind) if task.kind in ("receive", "pick", "ship") else [],
         **(load_refs() if task.kind == "receive" else {}),
@@ -536,7 +534,6 @@ def supplier_order_create(request):
             comment=text(form, "comment"),
             lines=_purchase_lines(form),
             user=request.user,
-            printer_id=optional_int(form, "printer_id"),
         )
 
     result, response = guarded(request, "/orders/suppliers/new", action)
@@ -569,7 +566,6 @@ def supplier_order_save(request, purchase_id):
             comment=order.comment if closed else text(form, "comment"),
             lines=[] if closed else _purchase_lines(form),
             user=request.user,
-            printer_id=None if closed else optional_int(form, "printer_id"),
         )
 
     result, response = guarded(request, f"/orders/suppliers/{purchase_id}", action)
@@ -1380,6 +1376,7 @@ def task_detail(request, task_id):
             "purchase_order__supplier",
             "supplier",
             "assignee",
+            "printer",
         ),
         pk=task_id,
     )
@@ -1433,6 +1430,26 @@ def task_status(request, task_id):
         return response
     label = dict(task_status_choices(result.kind, result.status)).get(result.status, result.status)
     return done(request, back, f"Статус: {label}")
+
+
+@roles_required("office")
+def task_printer(request, task_id):
+    back = _task_back(request, task_id)
+
+    def action():
+        task = Task.objects.select_related("printer").filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        if task.kind not in ("receive", "ship"):
+            raise WarehouseError("Этому заданию принтер не нужен")
+        set_task_printer(task, optional_int(request.POST, "printer_id"))
+        return task
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    name = result.printer.name if result.printer_id else "не назначен"
+    return done(request, back, f"Принтер: {name}")
 
 
 @roles_required("office")

@@ -9,7 +9,6 @@ from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderL
 from apps.printing.models import Printer
 from apps.receiving.models import Lot, Receipt
 from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
-from apps.shipping.models import Shipment
 from apps.storage.models import HandlingUnit, Pallet, WarehouseCell, WarehouseZone
 from config.admin_site import wms_admin
 
@@ -92,7 +91,6 @@ for model, fields in (
     (TaskLine, ("task", "product", "qty_kg")),
     (Receipt, ("number", "supplier", "doc_date", "status")),
     (Lot, ("number", "source", "product", "supplier", "received_on", "expires_on", "parent", "is_opening")),
-    (Shipment, ("number", "client_name", "order")),
     (WarehouseZone, ("code", "name", "barcode")),
     (WarehouseCell, ("zone", "code", "name", "barcode")),
     (Pallet, ("number", "kind", "status")),

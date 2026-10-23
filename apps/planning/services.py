@@ -274,6 +274,7 @@ def create_task(*, order_id, kind, supplier_id, ttn_number, doc_date, lines, use
         supplier=supplier,
         ttn_number=ttn_number.strip() if kind == "receive" else "",
         doc_date=doc_date if kind == "receive" else None,
+        printer=_task_printer() if kind in ("receive", "ship") else None,
         created_by=user,
     )
     task.number = document_number("ЗД", task.id)
@@ -503,8 +504,6 @@ def close_task_order(task: Task):
 def delete_purchase_orders(ids: list[int]) -> tuple[list[str], list[str]]:
     from django.db.models.deletion import ProtectedError
 
-    from apps.shipping.models import Shipment
-
     deleted = []
     failed = []
     orders = {order.id: order for order in PurchaseOrder.objects.filter(pk__in=ids)}
@@ -517,10 +516,7 @@ def delete_purchase_orders(ids: list[int]) -> tuple[list[str], list[str]]:
         task_ids = list(order.tasks.values_list("id", flat=True))
         try:
             with transaction.atomic():
-                if task_ids and (
-                    Movement.objects.filter(task_id__in=task_ids).exists()
-                    or Shipment.objects.filter(task_id__in=task_ids).exists()
-                ):
+                if task_ids and Movement.objects.filter(task_id__in=task_ids).exists():
                     raise WarehouseError("уже есть движения")
                 if task_ids:
                     Task.objects.filter(pk__in=task_ids).delete()
@@ -536,7 +532,7 @@ def delete_purchase_orders(ids: list[int]) -> tuple[list[str], list[str]]:
 def delete_customer_orders(ids: list[int]) -> tuple[list[str], list[str]]:
     from django.db.models.deletion import ProtectedError
 
-    from apps.shipping.models import Allocation, Shipment
+    from apps.shipping.models import Allocation
     from apps.storage.models import Pallet
 
     deleted = []
@@ -552,11 +548,8 @@ def delete_customer_orders(ids: list[int]) -> tuple[list[str], list[str]]:
         line_ids = list(order.lines.values_list("id", flat=True))
         try:
             with transaction.atomic():
-                used = bool(Shipment.objects.filter(order_id=order.id).exists() or Pallet.objects.filter(order_id=order.id).exists())
-                if task_ids and (
-                    Movement.objects.filter(task_id__in=task_ids).exists()
-                    or Shipment.objects.filter(task_id__in=task_ids).exists()
-                ):
+                used = Pallet.objects.filter(order_id=order.id).exists()
+                if task_ids and Movement.objects.filter(task_id__in=task_ids).exists():
                     used = True
                 if line_ids and Allocation.objects.filter(order_line_id__in=line_ids).exists():
                     used = True
@@ -576,8 +569,6 @@ def delete_customer_orders(ids: list[int]) -> tuple[list[str], list[str]]:
 def delete_tasks(ids: list[int]) -> tuple[list[str], list[str]]:
     from django.db.models.deletion import ProtectedError
 
-    from apps.shipping.models import Shipment
-
     deleted = []
     failed = []
     tasks = {task.id: task for task in Task.objects.filter(pk__in=ids)}
@@ -589,7 +580,7 @@ def delete_tasks(ids: list[int]) -> tuple[list[str], list[str]]:
         number = task.number or f"#{task.id}"
         try:
             with transaction.atomic():
-                if Movement.objects.filter(task_id=task.id).exists() or Shipment.objects.filter(task_id=task.id).exists():
+                if Movement.objects.filter(task_id=task.id).exists():
                     raise WarehouseError("уже есть движения")
                 task.delete()
             deleted.append(number)
@@ -709,7 +700,7 @@ def _sync_receive_task(order: PurchaseOrder) -> None:
     _fill_receive_lines(task, order)
 
 
-def _purchase_printer(printer_id, current: PurchaseOrder | None):
+def _task_printer(printer_id=None):
     from apps.common.exceptions import PrintError
     from apps.printing.models import Printer
     from apps.printing.services import default_printer
@@ -719,14 +710,17 @@ def _purchase_printer(printer_id, current: PurchaseOrder | None):
         if printer is None:
             raise WarehouseError("Выберите принтер")
         return printer
-    if current is not None and current.printer_id:
-        return current.printer
     for kind in ("tsc", "network"):
         try:
             return default_printer(kind)
         except PrintError:
             continue
     return None
+
+
+def set_task_printer(task: Task, printer_id: int | None) -> None:
+    task.printer = _task_printer(printer_id) if printer_id else None
+    task.save(update_fields=["printer"])
 
 
 @transaction.atomic
@@ -741,7 +735,7 @@ def use_purchase_number(order: PurchaseOrder, external: str) -> None:
     order.save(update_fields=["number", "external_number"])
 
 
-def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, comment, lines, user, printer_id=None) -> PurchaseOrder:
+def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, comment, lines, user) -> PurchaseOrder:
     if status not in ("draft", "incoming", "closed"):
         raise WarehouseError("Выберите статус")
     was_closed = order is not None and order.status == "closed"
@@ -753,7 +747,6 @@ def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, c
             receipt_date=receipt_date,
             status=status,
             comment=comment.strip(),
-            printer=_purchase_printer(printer_id, None),
             created_by=user,
         )
         order.number = document_number("ЗП", order.id)
@@ -770,7 +763,6 @@ def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, c
     order.receipt_date = receipt_date
     order.status = status
     order.comment = comment.strip()
-    order.printer = _purchase_printer(printer_id, order)
     order.save()
     _purchase_lines(order, lines)
     _sync_receive_task(order)
@@ -791,6 +783,7 @@ def create_receive_task(order: PurchaseOrder, user) -> Task:
             status=TASK_WORK_STATUS["receive"],
             supplier_id=order.supplier_id,
             doc_date=order.receipt_date or order.doc_date,
+            printer=_task_printer(),
             created_by=user,
         )
         task.number = document_number("ЗД", task.id)

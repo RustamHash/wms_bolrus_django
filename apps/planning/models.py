@@ -137,14 +137,6 @@ class PurchaseOrder(models.Model):
     gate_at = models.DateTimeField("Постановка на ворота", null=True, blank=True)
     receive_finished_at = models.DateTimeField("Окончание приёмки", null=True, blank=True)
     departed_at = models.DateTimeField("Убыл", null=True, blank=True)
-    printer = models.ForeignKey(
-        "printing.Printer",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="purchase_orders",
-        verbose_name="Принтер",
-    )
     revision = models.PositiveIntegerField("Версия", default=1)
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="purchase_orders_created")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -253,6 +245,14 @@ class Task(models.Model):
         on_delete=models.SET_NULL,
         related_name="assigned_tasks",
         verbose_name="Сотрудник",
+    )
+    printer = models.ForeignKey(
+        "printing.Printer",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tasks",
+        verbose_name="Принтер",
     )
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="tasks_created")
     created_at = models.DateTimeField(auto_now_add=True)

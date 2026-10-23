@@ -24,18 +24,18 @@
 <p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
 {% else %}
 <table class="sheet">
-  <tr><th>Партия</th><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Поставщик</th><th>Источник</th><th>Приход</th><th class="num">Свободно</th><th class="num">В резерве</th><th class="num">Отобрано</th></tr>
+  <tr><th>Партия</th><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Поставщик</th><th>Категория отгрузки</th><th>Источник</th><th>Приход</th><th class="num">Свободно</th><th class="num">В резерве</th><th class="num">Отобрано</th></tr>
   {% for row in rows %}
   <tr>
     <td><a href="/lots/{{ row.lot_id }}">{{ row.number }}</a></td>
     <td>{{ row.product }}</td><td>{{ row.caliber }}</td><td>{{ row.grade }}</td>
-    <td>{{ row.supplier }}</td><td>{{ row.source }}</td><td>{{ row.receipt }}</td>
+    <td>{{ row.supplier }}</td><td>{{ row.categories|default:"—" }}</td><td>{{ row.source }}</td><td>{{ row.receipt }}</td>
     <td class="num">{{ row.free_kg|kg }}</td>
     <td class="num">{% if row.reserved_kg %}<a href="/stock/{{ row.lot_id }}?product={{ product|urlencode }}&amp;supplier={{ supplier|urlencode }}">{{ row.reserved_kg|kg }}</a>{% else %}{{ row.reserved_kg|kg }}{% endif %}</td>
     <td class="num">{{ row.picked_kg|kg }}</td>
   </tr>
   {% empty %}
-  <tr><td colspan="10">{% if product or supplier %}Ничего не найдено.{% else %}Остатков нет{% endif %}</td></tr>
+  <tr><td colspan="11">{% if product or supplier %}Ничего не найдено.{% else %}Остатков нет{% endif %}</td></tr>
   {% endfor %}
 </table>
 {% endif %}

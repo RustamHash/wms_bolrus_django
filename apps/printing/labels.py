@@ -180,17 +180,17 @@ def pallet_labels(printer, pallet, copies: int = 2) -> bytes:
     return _job(printer, "pallet", [(chunk, pallet.barcode) for chunk in chunks], copies)
 
 
-def shipment_sticker(printer, shipment, groups) -> bytes:
+def ship_sticker(printer, paper, groups) -> bytes:
     total = sum((group.kg for group in groups), start=Decimal("0"))
     lines = [
-        shipment.seller_name,
-        shipment.client_name,
-        f"Накладная {shipment.number}",
+        paper.seller_name,
+        paper.client_name,
+        f"Задание {paper.number}",
         f"Нетто {format_kg(total)} кг",
     ]
     for group in groups[:6]:
         lines.append(f"{group.product} {group.caliber} {format_kg(group.kg)}кг")
-    return _job(printer, "shipment", [(lines, f"SH{shipment.id:06d}")])
+    return _job(printer, "shipment", [(lines, paper.barcode)])
 
 
 def test_label(printer) -> bytes:

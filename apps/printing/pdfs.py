@@ -71,16 +71,16 @@ def pallet_passport_pdf(pallet) -> bytes:
     return render_pallet_passport_pdf(pallet)
 
 
-def sticker_pdf(shipment, units) -> bytes:
+def sticker_pdf(paper, units) -> bytes:
     groups = group_units(units)
     sheet = Sheet(A5)
-    sheet.text(shipment.seller_name, 16, 18)
-    for line in (shipment.seller_requisites or "").splitlines():
+    sheet.text(paper.seller_name, 16, 18)
+    for line in (paper.seller_requisites or "").splitlines():
         if line.strip():
             sheet.text(line.strip(), 10, 12)
-    sheet.text(f"Клиент: {shipment.client_name}", 12, 16)
-    sheet.text(f"Накладная {shipment.number}", 12, 16)
-    sheet.barcode(f"SH{shipment.id:06d}")
+    sheet.text(f"Грузополучатель: {paper.client_name}", 12, 16)
+    sheet.text(f"Задание {paper.number}", 12, 16)
+    sheet.barcode(paper.barcode)
     total = 0
     for group in groups:
         sheet.text(
@@ -93,15 +93,16 @@ def sticker_pdf(shipment, units) -> bytes:
     return sheet.finish()
 
 
-def waybill_pdf(shipment, units) -> bytes:
+def waybill_pdf(paper, units) -> bytes:
     groups = group_units(units)
     sheet = Sheet(A4)
-    sheet.text(f"Отгрузочный лист {shipment.number}", 16, 20)
-    sheet.text(f"Заказ {shipment.order.number} от {shipment.order.ship_date.strftime('%d.%m.%Y')}")
-    sheet.text(f"Клиент: {shipment.client_name}")
-    sheet.text(f"Продавец: {shipment.seller_name}")
+    sheet.text(f"Отгрузочный лист {paper.number}", 16, 20)
+    if paper.order is not None and paper.order.ship_date:
+        sheet.text(f"Заказ {paper.order.number} от {paper.order.ship_date.strftime('%d.%m.%Y')}")
+    sheet.text(f"Грузополучатель: {paper.client_name}")
+    sheet.text(f"Продавец: {paper.seller_name}")
     sheet.text("Условия отгрузки:", 12, 16)
-    for line in (shipment.shipping_terms or "Не указаны").splitlines() or ["Не указаны"]:
+    for line in (paper.shipping_terms or "Не указаны").splitlines() or ["Не указаны"]:
         sheet.text(line, 11, 14)
     sheet.text("Состав:", 12, 16)
     total = 0

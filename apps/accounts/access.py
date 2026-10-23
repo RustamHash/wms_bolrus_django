@@ -59,9 +59,9 @@ WEB_SCREENS = (
     },
     {
         "key": "web_shipments",
-        "title": "Накладные",
-        "models": _models("shipping", "shipment", "shipmentunit", "allocation")
-        + _models("receiving", "receipt", "lot"),
+        "title": "Журналы",
+        "hint": "Приходы и движения",
+        "models": _models("shipping", "allocation") + _models("receiving", "receipt", "lot"),
     },
     {
         "key": "web_shift",
@@ -118,7 +118,7 @@ TSD_SCREENS = (
     {
         "key": "tsd_ship",
         "title": "На отгрузку",
-        "models": _models("planning", "task", "taskline") + _models("shipping", "shipment", "shipmentunit"),
+        "models": _models("planning", "task", "taskline"),
     },
     {
         "key": "tsd_move",
@@ -327,7 +327,6 @@ def screens_for_path(path: str) -> list[str]:
     if path.startswith("/shift"):
         return ["web_shift", "tsd_shift"]
     prefixes = (
-        ("/print/shipments", "web_shipments"),
         ("/print/units", "web_reports"),
         ("/print/printers", "web_masters"),
         ("/orders", "web_orders"),
@@ -341,7 +340,6 @@ def screens_for_path(path: str) -> list[str]:
         ("/inventory", "web_reports"),
         ("/transform", "web_reports"),
         ("/lots", "web_reports"),
-        ("/shipments", "web_shipments"),
         ("/receipts", "web_shipments"),
         ("/movements", "web_shipments"),
         ("/crossdock", "web_shipments"),

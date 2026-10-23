@@ -257,13 +257,13 @@ def order_printer(pallet):
 
     movement = (
         Movement.objects.filter(pallet=pallet, kind="in")
-        .select_related("task__purchase_order__printer")
+        .select_related("task__printer")
         .order_by("-id")
         .first()
     )
-    if movement is None or movement.task_id is None or movement.task.purchase_order_id is None:
+    if movement is None or movement.task_id is None:
         return None
-    return movement.task.purchase_order.printer
+    return movement.task.printer
 
 
 def print_pallet(pallet, target: str, printer=None) -> str:
@@ -325,17 +325,43 @@ def _accepted_passport_job(pallet_id: int, user_id: int | None) -> None:
         connections.close_all()
 
 
-def print_shipment(shipment, target: str, document: str) -> str:
-    units = list(shipment.units.all())
-    if document == "sticker" and target == "tsc":
-        printer = default_printer("tsc")
-        return send_tspl(printer, labels.shipment_sticker(printer, shipment, group_units(units)))
-    if document == "sticker" and target == "network":
-        printer = default_printer("network")
-        return send_pdf(printer, pdfs.sticker_pdf(shipment, units), f"sticker-{shipment.id}")
+def ship_paper(task):
+    order = task.order
+    seller = order.seller if order is not None and order.seller_id else None
+    consignee = order.consignee if order is not None and order.consignee_id else None
+
+    class Paper:
+        number = task.number or f"#{task.id}"
+        seller_name = seller.name if seller is not None else ""
+        seller_requisites = seller.requisites if seller is not None else ""
+        client_name = consignee.name if consignee is not None else ""
+        shipping_terms = order.shipping_terms if order is not None else ""
+        barcode = task.number or f"ZD{task.id:06d}"
+
+    paper = Paper()
+    paper.order = order
+    return paper
+
+
+def print_task_document(task, document: str) -> str:
+    from apps.shipping.services import shipped_units
+
+    if task.kind != "ship":
+        raise PrintError("Стикер и лист печатаются из задания на отгрузку")
+    printer = task.printer
+    if printer is None:
+        raise PrintError("Назначьте принтер на задание")
+    units = shipped_units(task)
+    if not units:
+        raise PrintError("В задании ещё нет отгруженных паллет")
+    paper = ship_paper(task)
+    groups = group_units(units)
+    if document == "sticker" and printer.printer_type == "tsc":
+        return send_tspl(printer, labels.ship_sticker(printer, paper, groups))
+    if document == "sticker":
+        return send_pdf(printer, pdfs.sticker_pdf(paper, units), f"sticker-{task.id}")
     if document == "waybill":
-        if target == "tsc":
-            raise PrintError("Отгрузочный лист печатается PDF на сетевой принтер")
-        printer = default_printer("network")
-        return send_pdf(printer, pdfs.waybill_pdf(shipment, units), f"waybill-{shipment.id}")
+        if printer.printer_type == "tsc":
+            raise PrintError("Отгрузочный лист печатается на сетевой принтер")
+        return send_pdf(printer, pdfs.waybill_pdf(paper, units), f"waybill-{task.id}")
     raise PrintError("Неизвестный документ")
