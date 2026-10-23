@@ -1,7 +1,7 @@
 ﻿{% load wms %}
-<div class="card grid" style="margin-bottom: 1rem;">
-  <label>Строка задания
-    <select name="task_line_id" required>
+<div class="card" style="margin-bottom: 1rem; width: 100%; box-sizing: border-box;">
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Строка задания
+    <select name="task_line_id" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
       <option value=""></option>
       {% for line in loose_lines %}
       <option value="{{ line.line.id }}">{{ line.line.product.name }} · {{ line.line.caliber.name|default:"без калибра" }} · {{ line.line.grade.name|default:"без сорта" }} (ост. {{ line.left|kg }} кг)</option>
@@ -9,15 +9,15 @@
     </select>
   </label>
 
-  <label>Вид паллета
-    <select name="pallet_type" required>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Вид паллета
+    <select name="pallet_type" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
       <option value="EUR" {% if last_pallet.pallet_type == 'EUR' %}selected{% endif %}>Евро</option>
       <option value="USA" {% if last_pallet.pallet_type == 'USA' %}selected{% endif %}>Американец</option>
     </select>
   </label>
 
-  <label>Упаковка
-    <select name="packaging_id" required>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Упаковка
+    <select name="packaging_id" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
       <option value=""></option>
       {% for pk in packagings %}
       <option value="{{ pk.id }}" {% if last_pallet.packaging_id == pk.id %}selected{% endif %}>{{ pk.name }}</option>
@@ -25,8 +25,8 @@
     </select>
   </label>
 
-  <label>Калибр
-    <select name="caliber_id" required>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Калибр
+    <select name="caliber_id" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
       <option value=""></option>
       {% for c in calibers %}
       <option value="{{ c.id }}" {% if last_pallet.caliber_id == c.id %}selected{% endif %}>{{ c.name }}</option>
@@ -34,8 +34,8 @@
     </select>
   </label>
 
-  <label>Сортность
-    <select name="grade_id" required>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Сортность
+    <select name="grade_id" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
       <option value=""></option>
       {% for g in grades %}
       <option value="{{ g.id }}" {% if last_pallet.grade_id == g.id %}selected{% endif %}>{{ g.name }}</option>
@@ -43,18 +43,27 @@
     </select>
   </label>
 
-  <label>Кол-во упаковок <input name="places" inputmode="numeric" required></label>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Кол-во упаковок 
+    <input name="places" inputmode="numeric" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
+  </label>
   
-  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
+  <label style="width: 100%; display: block; margin-bottom: 10px;">Грязный вес, кг 
+    <input name="gross" inputmode="decimal" required style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
+  </label>
   
-  <label class="check"><input type="checkbox" name="net_manual" value="1" onclick="document.getElementById('net-input').style.display = this.checked ? 'block' : 'none'"> Ввести чистый вес вручную</label>
-  <label id="net-input" style="display:none">Чистый вес, кг <input name="net" inputmode="decimal"></label>
+  <label class="check" style="width: 100%; display: block; margin-bottom: 10px;">
+    <input type="checkbox" name="net_manual" value="1" onclick="document.getElementById('net-input').style.display = this.checked ? 'block' : 'none'"> 
+    Ввести чистый вес вручную
+  </label>
+  <label id="net-input" style="display:none; width: 100%; display: block; margin-bottom: 10px;">Чистый вес, кг 
+    <input name="net" inputmode="decimal" style="width: 100%; max-width: 100%; box-sizing: border-box; display: block; margin-top: 4px;">
+  </label>
 
   {% if consignee_categories %}
-  <fieldset>
+  <fieldset style="width: 100%; max-width: 100%; box-sizing: border-box; margin-bottom: 10px;">
     <legend>Категории отгрузки (на выход)</legend>
     {% for cat in consignee_categories %}
-    <label class="check">
+    <label class="check" style="display: block; margin-bottom: 5px;">
       <input type="checkbox" name="category_id" value="{{ cat.id }}" 
              {% if last_pallet and cat.id in last_pallet.category_ids %}checked{% endif %}>
       {{ cat.name }}
@@ -65,5 +74,5 @@
 
   {% include "partials/cell_pick.html" %}
 
-  <div class="actions"><button type="submit">Принять паллету</button></div>
+  <div class="actions" style="margin-top: 10px;"><button type="submit" style="width: 100%;">Принять паллету</button></div>
 </div>
