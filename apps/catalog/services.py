@@ -5,7 +5,6 @@ from django.db.models import Case, F, IntegerField, Value, When
 
 from apps.catalog.models import (
     Caliber,
-    Client,
     Consignee,
     ConsigneeCategory,
     DeliveryZone,
@@ -22,7 +21,7 @@ from apps.common.exceptions import WarehouseError
 from apps.common.forms import optional_int, text
 from apps.common.kg import format_kg
 from apps.printing.models import Printer
-from apps.storage.models import Pallet
+from apps.storage.models import Pallet, WarehouseCell, WarehouseZone, cell_address
 
 NAV = [
     ("Товары", [
@@ -36,7 +35,6 @@ NAV = [
     ]),
     ("Контрагенты", [
         ("suppliers", "Поставщики"),
-        ("clients", "Контрагенты"),
         ("sellers", "Продавцы"),
         ("consignees", "Грузополучатели"),
         ("categories", "Категории"),
@@ -46,9 +44,12 @@ NAV = [
         ("zones", "Зоны доставки"),
         ("consignee-zones", "Грузополучатель — зона"),
     ]),
+    ("Склад", [
+        ("warehouse-zones", "Зоны склада"),
+        ("warehouse-cells", "Ячейки"),
+    ]),
     ("Пользователи и права", [
         ("users", "Пользователи"),
-        ("staff", "Сотрудники"),
         ("positions", "Должности"),
     ]),
     ("Печать", [
@@ -64,14 +65,28 @@ MODELS = {
     "grades": Grade,
     "packagings": Packaging,
     "suppliers": Supplier,
-    "clients": Client,
     "consignees": Consignee,
     "categories": ConsigneeCategory,
     "zones": DeliveryZone,
+    "warehouse-zones": WarehouseZone,
+    "warehouse-cells": WarehouseCell,
     "sellers": Seller,
     "printers": Printer,
 }
 TITLES = {key: label for _title, items in NAV for key, label in items}
+
+
+def _picked_grades(form) -> list[Grade]:
+    raw_ids = []
+    for raw in form.getlist("allowed_grade"):
+        try:
+            raw_ids.append(int(raw))
+        except (TypeError, ValueError) as exc:
+            raise WarehouseError("Выберите сортность") from exc
+    grades = list(Grade.objects.filter(pk__in=set(raw_ids)).order_by("sort_order", "name"))
+    if len(grades) != len(set(raw_ids)):
+        raise WarehouseError("Выберите сортность")
+    return grades
 
 
 def assign_consignee_grades(consignee, grade_ids: list[int]) -> str:
@@ -121,7 +136,6 @@ def load_refs() -> dict:
         "grades": list(Grade.objects.order_by("sort_order", "name")),
         "packagings": list(Packaging.objects.order_by("name")),
         "suppliers": list(Supplier.objects.order_by("name")),
-        "clients": list(Client.objects.order_by("name")),
         "consignees": list(Consignee.objects.select_related("category").order_by("name")),
         "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
         "sellers": list(Seller.objects.order_by("name")),
@@ -171,7 +185,11 @@ def master_rows(kind: str):
             .order_by(F("zone__name").asc(nulls_last=True), "delivery_rank", "name")
         )
     elif kind == "categories":
-        items = model.objects.select_related("grade").order_by("sort_order", "name")
+        items = model.objects.select_related("grade").prefetch_related("allowed_grades").order_by("sort_order", "name")
+    elif kind == "warehouse-cells":
+        items = model.objects.select_related("zone").order_by("zone__code", "code")
+    elif kind == "warehouse-zones":
+        items = model.objects.order_by("code")
     elif kind in ("groups", "zones"):
         items = model.objects.order_by("name")
     else:
@@ -184,8 +202,6 @@ def master_rows(kind: str):
             cells = [item.code, item.group.name if item.group_id else "", item.name]
         elif kind in ("calibers", "grades"):
             cells = [item.name, str(item.sort_order)]
-        elif kind == "clients":
-            cells = [item.code or "", item.name]
         elif kind == "suppliers":
             cells = [item.code or "", item.name]
         elif kind == "consignees":
@@ -200,11 +216,16 @@ def master_rows(kind: str):
                 terms,
             ]
         elif kind == "categories":
-            cells = [item.name, str(item.sort_order), item.grade.name]
+            allowed = ", ".join(grade.name for grade in item.allowed_grades.all())
+            cells = [item.name, str(item.sort_order), item.grade.name, allowed or "по грузополучателю"]
         elif kind == "sellers":
             cells = [item.code, item.name]
         elif kind == "packagings":
             cells = [item.name, format_kg(item.tare_kg)]
+        elif kind == "warehouse-zones":
+            cells = [item.code, item.name, item.barcode]
+        elif kind == "warehouse-cells":
+            cells = [item.label(), item.zone.code, item.code, item.barcode]
         elif kind == "printers":
             cells = [
                 item.name,
@@ -223,17 +244,79 @@ def master_rows(kind: str):
         "grades": ["Сортность", "Порядок"],
         "sellers": ["Код", "Название"],
         "packagings": ["Название", "Вес тары, кг"],
-        "clients": ["Код", "Контрагент"],
         "suppliers": ["Код", "Поставщик"],
         "consignees": ["Код", "Грузополучатель", "Категория", "Адрес", "Зона доставки", "Очередность", "Условия отгрузки"],
-        "categories": ["Категория", "Порядок", "Сортность"],
+        "categories": ["Категория", "Порядок", "Сортность", "Можно отгружать"],
         "zones": ["Зона доставки"],
+        "warehouse-zones": ["Код", "Зона склада", "QR"],
+        "warehouse-cells": ["Ячейка", "Зона", "Место", "QR"],
         "printers": ["Имя", "Тип", "Адрес", "По умолчанию"],
     }.get(kind, ["Название"])
     return headers, rows
 
 
+def _code(form, label: str, limit: int = 32) -> str:
+    value = " ".join(text(form, "code").split())
+    if not value:
+        raise WarehouseError(f"Укажите {label}")
+    if len(value) > limit:
+        raise WarehouseError(f"{label} длиннее {limit} символов")
+    return value
+
+
+def _save_warehouse_zone(item, form) -> None:
+    name = " ".join(text(form, "name").split())
+    code = _code(form, "код зоны")
+    if not name:
+        raise WarehouseError("Укажите название зоны")
+    if len(name) > 120:
+        raise WarehouseError("Название зоны длиннее 120 символов")
+    barcode_value = " ".join(text(form, "barcode").split()) or code
+    if len(barcode_value) > 64:
+        raise WarehouseError("QR зоны длиннее 64 символов")
+    others = WarehouseZone.objects.exclude(pk=item.pk or 0)
+    if others.filter(code__iexact=code).exists():
+        raise WarehouseError("Такой код зоны уже есть")
+    if others.filter(name__iexact=name).exists():
+        raise WarehouseError("Такая зона уже есть")
+    if others.filter(barcode__iexact=barcode_value).exists():
+        raise WarehouseError("Такой QR зоны уже есть")
+    item.code = code
+    item.name = name
+    item.barcode = barcode_value
+    item.save()
+
+
+def _save_warehouse_cell(item, form) -> None:
+    zone = WarehouseZone.objects.filter(pk=optional_int(form, "zone") or 0).first()
+    if zone is None:
+        raise WarehouseError("Выберите зону склада")
+    code = _code(form, "место")
+    name = " ".join(text(form, "name").split())
+    if len(name) > 120:
+        raise WarehouseError("Название ячейки длиннее 120 символов")
+    barcode_value = " ".join(text(form, "barcode").split()) or cell_address(zone.code, code)
+    if len(barcode_value) > 64:
+        raise WarehouseError("QR ячейки длиннее 64 символов")
+    same_zone = WarehouseCell.objects.filter(zone=zone).exclude(pk=item.pk or 0)
+    if same_zone.filter(code__iexact=code).exists():
+        raise WarehouseError("Такая ячейка уже есть в этой зоне")
+    if WarehouseCell.objects.exclude(pk=item.pk or 0).filter(barcode__iexact=barcode_value).exists():
+        raise WarehouseError("Такой QR ячейки уже есть")
+    item.zone = zone
+    item.code = code
+    item.name = name
+    item.barcode = barcode_value
+    item.save()
+
+
 def apply_master(kind: str, item, form) -> None:
+    if kind == "warehouse-zones":
+        _save_warehouse_zone(item, form)
+        return
+    if kind == "warehouse-cells":
+        _save_warehouse_cell(item, form)
+        return
     if kind == "printers":
         from apps.printing.services import apply_printer
 
@@ -287,10 +370,6 @@ def apply_master(kind: str, item, form) -> None:
         if group_id is not None and not ProductGroup.objects.filter(pk=group_id).exists():
             raise WarehouseError("Выберите группу")
         item.group_id = group_id
-    if kind == "clients":
-        item.code = text(form, "code") or None
-        if item.code and Client.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
-            raise WarehouseError("Такой код уже есть")
     if kind == "suppliers":
         item.code = text(form, "code") or None
         if item.code and Supplier.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
@@ -337,19 +416,13 @@ def apply_master(kind: str, item, form) -> None:
     if kind == "categories":
         from apps.catalog.grade_policy import fill_consignee_orders
 
-        for consignee in Consignee.objects.filter(category=item).prefetch_related("allowed_grades"):
+        item.allowed_grades.set(_picked_grades(form))
+        for consignee in Consignee.objects.filter(category=item).select_related("category").prefetch_related(
+            "allowed_grades", "category__allowed_grades"
+        ):
             fill_consignee_orders(consignee)
     if kind == "consignees":
-        raw_ids = []
-        for raw in form.getlist("allowed_grade"):
-            try:
-                raw_ids.append(int(raw))
-            except (TypeError, ValueError) as exc:
-                raise WarehouseError("Выберите сортность") from exc
-        grades = list(Grade.objects.filter(pk__in=raw_ids).order_by("sort_order", "name"))
-        if len(grades) != len(set(raw_ids)):
-            raise WarehouseError("Выберите сортность")
-        item.allowed_grades.set(grades)
+        item.allowed_grades.set(_picked_grades(form))
         from apps.catalog.grade_policy import fill_consignee_orders
 
         fill_consignee_orders(item)

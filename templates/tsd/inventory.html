@@ -12,7 +12,7 @@
 </form>
 {% if line %}
 <p>{% if line.pallet_id %}{{ line.pallet.number|default:line.pallet_id }}{% else %}Новая паллета{% endif %} · {% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</p>
-<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.location %} · {{ line.location }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
+<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.place %} · {{ line.place }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
 <form method="post" action="/tsd/inventory/{{ document.id }}">{% csrf_token %}
   <input type="hidden" name="line_id" value="{{ line.id }}">
   <label>Факт, кг
@@ -35,7 +35,7 @@
 <nav class="digit-menu">
   {% for item in lines %}
   <a class="btn menu" href="/tsd/inventory/{{ document.id }}?line={{ item.id }}">
-    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.location %} · {{ item.location }}{% endif %}</span>
+    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.place %} · {{ item.place }}{% endif %}</span>
   </a>
   {% empty %}
   <p>В снимке нет паллет. Добавьте те, что стоят на складе.</p>
@@ -75,7 +75,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>Место <input name="location" maxlength="120"></label>
+  {% include "partials/cell_pick.html" %}
   <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
   <button class="btn menu" type="submit">Добавить на остаток</button>
 </form>

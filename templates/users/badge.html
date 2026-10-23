@@ -3,9 +3,9 @@
 {% block title %}Бейдж {{ item.name }}{% endblock %}
 {% block content %}
 <h1>{{ item.name }}</h1>
-<p>{% if item.role == "employee" %}{{ item.access_title }}{% else %}{{ ROLE_LABELS|label:item.role }}{% endif %}</p>
+<p>{{ ROLE_LABELS|label:item.role }}{% if item.position %} · {{ item.position.name }}{% endif %}</p>
 {% if item.tsd_code %}<p>Код: {{ item.tsd_code }}</p>{% endif %}
 <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="280" height="280"></p>
 <p class="hint">Личный бейдж для входа в ТСД. QR-код сканируют на экране входа.</p>
-<p><button type="button" onclick="window.print()">Печать</button> <a href="{% if item.role == 'employee' %}/staff/{{ item.id }}{% else %}/users/{{ item.id }}{% endif %}">К карточке</a></p>
+<p><button type="button" onclick="window.print()">Печать</button> <a href="/users/{{ item.id }}">К карточке</a></p>
 {% endblock %}

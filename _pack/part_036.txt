@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: templates\masters\list.html
+### SIZE: 1778 bytes / 34 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">{{ title }} <span class="journal-count">{{ rows|length }}</span></div>
+      {% if can_change %}
+      <a class="icon-btn" href="/masters/{{ kind }}/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+      {% endif %}
+    </div>
+    {% include "masters/nav.html" %}
+  </div>
+  {% if kind == 'categories' %}
+  <p class="hint">Категория задаёт, какие сорта можно отгрузить её грузополучателям, и подставляет сортность в заказ. В самом заказе сорт можно сменить. Добавлять и менять категории может только администратор.</p>
+  {% endif %}
+  <div class="journal-table">
+<table class="sheet">
+  <tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}<th></th></tr>
+  {% for row in rows %}
+  <tr {% if can_change %}data-href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}"{% endif %}>
+    {% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}
+    <td>{% if can_change %}<a href="{% if row.href %}{{ row.href }}{% else %}/masters/{{ kind }}/{{ row.id }}{% endif %}">Изменить</a>{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="{{ headers|length|add:1 }}">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\masters\nav.html
+### SIZE: 2353 bytes / 54 lines
+==============================================================================
+
+{% load wms %}
+<nav class="catalog-nav by-groups" id="catalog-nav">
+  <label class="catalog-by-groups">
+    <input type="checkbox" id="catalog-by-groups" checked>
+    По группам
+  </label>
+  {% for title, items in nav %}
+  <div class="catalog-group{% for key, label in items %}{% if key == kind %} current{% endif %}{% endfor %}">
+    <button type="button" class="catalog-toggle" aria-expanded="false">{{ title }}</button>
+    <div class="catalog-items">
+      {% for key, label in items %}
+      <a class="{% if key == kind %}on{% endif %}" href="{% if key == 'users' %}/users{% elif key == 'staff' %}/staff{% elif key == 'positions' %}/positions{% else %}/masters/{{ key }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</nav>
+<script>
+(function () {
+  const nav = document.getElementById("catalog-nav");
+  const box = document.getElementById("catalog-by-groups");
+  if (!nav || !box) return;
+  let stored = null;
+  try { stored = localStorage.getItem("catalog-by-groups"); } catch (error) { stored = null; }
+  const grouped = stored === null ? true : stored === "1";
+  box.checked = grouped;
+  nav.classList.toggle("by-groups", grouped);
+  box.addEventListener("change", () => {
+    nav.classList.toggle("by-groups", box.checked);
+    nav.querySelectorAll(".catalog-group.open").forEach((group) => {
+      group.classList.remove("open");
+      const toggle = group.querySelector(".catalog-toggle");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
+    try { localStorage.setItem("catalog-by-groups", box.checked ? "1" : "0"); } catch (error) {}
+  });
+  nav.querySelectorAll(".catalog-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!nav.classList.contains("by-groups")) return;
+      const group = button.closest(".catalog-group");
+      const willOpen = !group.classList.contains("open");
+      nav.querySelectorAll(".catalog-group.open").forEach((item) => {
+        item.classList.remove("open");
+        const toggle = item.querySelector(".catalog-toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+      if (willOpen) {
+        group.classList.add("open");
+        button.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+})();
+</script>
+
+
+==============================================================================
+### FILE: templates\orders\_period.html
+### SIZE: 2806 bytes / 28 lines
+==============================================================================
+
+<div class="period-grid">
+  <span class="period-caption">{{ label }}</span>
+  <span class="from-word">от</span>
+  <select name="{{ prefix }}_from_type" class="period-type from-select" data-period-input="{{ prefix }}-from">
+    <option value="">—</option>
+    {% if tomorrow %}<option value="tomorrow" {% if bound.from_type == "tomorrow" %}selected{% endif %}>Завтра</option>{% endif %}
+    <option value="today" {% if bound.from_type == "today" %}selected{% endif %}>Сегодня</option>
+    <option value="yesterday" {% if bound.from_type == "yesterday" %}selected{% endif %}>Вчера</option>
+    <option value="start_of_week" {% if bound.from_type == "start_of_week" %}selected{% endif %}>С начала недели</option>
+    <option value="start_of_last_week" {% if bound.from_type == "start_of_last_week" %}selected{% endif %}>С начала прошлой недели</option>
+    <option value="start_of_month" {% if bound.from_type == "start_of_month" %}selected{% endif %}>С начала месяца</option>
+    <option value="start_of_last_month" {% if bound.from_type == "start_of_last_month" %}selected{% endif %}>С начала прошлого месяца</option>
+    <option value="custom" {% if bound.from_type == "custom" %}selected{% endif %}>Выбрать дату</option>
+  </select>
+  <input class="from-date" type="date" id="{{ prefix }}-from" name="{{ prefix }}_from" value="{{ bound.from_value }}" {% if bound.from_type != "custom" %}hidden disabled{% endif %}>
+  <span class="to-word">до</span>
+  <select name="{{ prefix }}_to_type" class="period-type to-select" data-period-input="{{ prefix }}-to">
+    <option value="">—</option>
+    <option value="tomorrow" {% if bound.to_type == "tomorrow" %}selected{% endif %}>Завтра</option>
+    <option value="today" {% if bound.to_type == "today" %}selected{% endif %}>Сегодня</option>
+    <option value="end_of_week" {% if bound.to_type == "end_of_week" %}selected{% endif %}>До конца недели</option>
+    <option value="end_of_last_week" {% if bound.to_type == "end_of_last_week" %}selected{% endif %}>До конца прошлой недели</option>
+    <option value="end_of_month" {% if bound.to_type == "end_of_month" %}selected{% endif %}>До конца месяца</option>
+    <option value="end_of_last_month" {% if bound.to_type == "end_of_last_month" %}selected{% endif %}>До конца прошлого месяца</option>
+    <option value="custom" {% if bound.to_type == "custom" %}selected{% endif %}>Выбрать дату</option>
+  </select>
+  <input class="to-date" type="date" id="{{ prefix }}-to" name="{{ prefix }}_to" value="{{ bound.to_value }}" {% if bound.to_type != "custom" %}hidden disabled{% endif %}>
+</div>
+
+
+==============================================================================
+### FILE: templates\orders\customers.html
+### SIZE: 7874 bytes / 149 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Заказы{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/customers" id="customers-filter">
+      <div class="journal-title">Заказы <span class="journal-count">{{ rows|length }}</span></div>
+      {% include "orders/_period.html" with prefix="ship" label="Дата отгрузки" bound=ship_range tomorrow=1 %}
+      <div class="field-grid">
+        <span>Поиск</span>
+        <input type="search" name="search" value="{{ search }}" placeholder="Номер, грузополучатель, адрес, зона">
+        <span>Водитель</span>
+        <select name="driver">
+          <option value="">Все</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
+        <span>Статус</span>
+        <select name="status">
+          <option value="" {% if not status %}selected{% endif %}>Все</option>
+          {% for key, label in DOC_STATUS.items %}
+          <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/customers" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+        {% if user.is_office %}
+        <a class="icon-btn" href="/orders/new" data-tip="Создать" aria-label="Создать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
+        {% endif %}
+      </span>
+    </form>
+    {% if user.is_office %}
+    <form class="journal-bar" method="post" action="/orders/customers/import" data-onec-import data-onec-title="Импорт заказов покупателей из 1С">{% csrf_token %}
+      <div class="journal-fields">
+        <label>Отгрузка из 1С
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ import_from }}" data-period required>
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ import_to }}" data-period required>
+          </span>
+        </label>
+        <label>Номер 1С
+          <input name="order_number" placeholder="НФНФ-000000" disabled>
+        </label>
+        <span class="import-flags">
+          <input type="checkbox" name="by_number" value="1" title="По номеру" aria-label="По номеру" data-tip="По номеру" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          <input type="checkbox" name="update" value="1" title="Обновить" aria-label="Обновить" data-tip="Обновить">
+        </span>
+        <button class="icon-btn" type="submit" data-tip="Импорт" aria-label="Импорт">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>
+        </button>
+      </div>
+    </form>
+    {% endif %}
+    <div class="tool-box stack">
+      <a class="icon-btn" href="/orders/customers/revisions" data-tip="Расхождения" aria-label="Расхождения">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
+      </a>
+    </div>
+    {% if user.is_office %}
+    <form id="customers-bulk" class="journal-bar" method="post" action="/orders/customers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
+      <div class="journal-fields">
+        <span class="bulk-count" data-bulk-count="customers-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="task">Создать задание</option>
+            {% if user.role == "admin" %}<option value="delete">Удалить</option>{% endif %}
+          </select>
+        </label>
+        <label>Вид
+          <select name="kind">
+            <option value="pick">Отбор</option>
+            <option value="ship">Отгрузка</option>
+          </select>
+        </label>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  <div class="journal-table">
+<table class="sheet" {% if user.is_office %}data-bulk="customers-bulk"{% endif %}>
+  <tr>
+    <th>Номер</th>
+    <th>Версия</th>
+    <th>Дата заказа</th>
+    <th>Дата отгрузки</th>
+    <th>Грузополучатель</th>
+    <th>Адрес доставки</th>
+    <th>Зона доставки</th>
+    <th>Продавец</th>
+    <th>Водитель</th>
+    <th class="num">Кг</th>
+    <th>Статус</th>
+  </tr>
+  {% for row in rows %}
+  <tr data-href="/orders/{{ row.order.id }}" data-id="{{ row.order.id }}">
+    <td><a href="/orders/{{ row.order.id }}">{{ row.order.number }}</a></td>
+    <td>{% if row.order.revision > 1 %}<a href="/orders/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
+    <td>{{ row.order.created_at|date:"d.m.Y" }}</td>
+    <td>{{ row.order.ship_date|date:"d.m.Y" }}</td>
+    <td>{{ row.order.consignee.name }}</td>
+    <td>{% if row.order.consignee_id %}{{ row.order.consignee.address }}{% endif %}</td>
+    <td>{% if row.order.consignee_id and row.order.consignee.zone_id %}{{ row.order.consignee.zone.name }}{% endif %}</td>
+    <td>{{ row.order.seller.name }}</td>
+    <td>{{ row.driver }}</td>
+    <td class="num">{{ row.kg|kg }}</td>
+    <td>{{ DOC_STATUS|label:row.order.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="12">Заказов нет</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll("#customers-filter select.period-type").forEach((select) => {
+    const input = document.getElementById(select.dataset.periodInput);
+    select.addEventListener("change", () => {
+      const custom = select.value === "custom";
+      input.hidden = !custom;
+      input.disabled = !custom;
+      if (!custom) select.form.requestSubmit();
+      else input.focus();
+    });
+    input.addEventListener("change", () => {
+      if (input.value) select.form.requestSubmit();
+    });
+  });
+  const driver = document.querySelector("#customers-filter select[name=driver]");
+  if (driver) driver.addEventListener("change", () => driver.form.requestSubmit());
+  const status = document.querySelector("#customers-filter select[name=status]");
+  if (status) status.addEventListener("change", () => status.form.requestSubmit());
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\detail.html
+### SIZE: 17172 bytes / 334 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{% if order %}{{ order.number }}{% else %}Заказ{% endif %}{% endblock %}
+{% block content %}
+<h1>Заказ{% if order %} {{ order.number }} от {{ order.ship_date|date:"d.m.Y" }}{% endif %}</h1>
+{% if order and order.revision > 1 %}
+<p class="hint">Версия {{ order.revision }}. <a href="/orders/{{ order.id }}/revisions">Расхождения</a></p>
+{% endif %}
+<div class="doc-bar">
+  {% if can_status %}<button form="customer-order">Записать</button>{% endif %}
+  {% if order and can_status and order.status != 'closed' and tasks %}
+  <form class="inline" method="post" action="/tasks/{{ tasks.0.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
+  {% endif %}
+  {% if order and can_status and order.status != 'closed' %}
+  <form class="inline" method="post" action="/orders/{{ order.id }}/tasks">{% csrf_token %}
+    <select name="kind">
+      <option value="pick">Отбор</option>
+      <option value="ship">Отгрузка</option>
+    </select>
+    <button>Создать задание</button>
+  </form>
+  {% endif %}
+  {% if order and tasks %}
+  <span class="hint">Задание
+    {% for task in tasks %}<a href="/tasks/{{ task.id }}">{{ task.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+  </span>
+  {% endif %}
+</div>
+{% if party_grades %}
+<p class="hint">Грузополучателю можно только: {{ party_grades }}.</p>
+{% endif %}
+{% if reserves %}
+<p class="hint">В резерве на складе: {% for item in reserves %}{{ item.title }} — {{ item.kg|kg }} кг{% if not forloop.last %}; {% endif %}{% endfor %}.</p>
+{% endif %}
+{% if unmapped %}
+<p class="hint">Нет соответствия: {% for line in unmapped %}{{ line.external_title }}{% if not forloop.last %}, {% endif %}{% endfor %}. Сначала сопоставьте номенклатуру 1С с номенклатурой в <a href="/masters/aliases">соответствиях</a>. Пока этого нет, задание по заказу не создаётся.</p>
+{% endif %}
+<form id="customer-order" method="post" action="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}">{% csrf_token %}
+  <div class="doc-head">
+    <label>Номер
+      <input name="number" value="{% if order %}{{ order.number }}{% endif %}" placeholder="Номер 1С" {% if not editable %}disabled{% endif %}>
+    </label>
+    <label>Грузополучатель
+      <select name="consignee_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        <option value=""></option>
+        {% for item in consignees %}
+        <option value="{{ item.id }}" data-grade="{% if item.category_id %}{{ item.category.grade_id }}{% endif %}" {% if order and order.consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+      {% if order and order.consignee %}
+      {% if order.consignee.category_id %}<span class="hint">Категория: {{ order.consignee.category.name }}{% if category_grade_id %}. Сортность в новых строках берётся из неё, в этом заказе сорт можно сменить{% endif %}.</span>{% endif %}
+      {% if order.consignee.address %}<span class="hint">Адрес: {{ order.consignee.address }}</span>{% endif %}
+      {% if order.consignee.zone_id %}<span class="hint">Зона: {{ order.consignee.zone.name }}</span>{% endif %}
+      {% endif %}
+    </label>
+    <label>Продавец
+      <select name="seller_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        {% for item in sellers %}
+        <option value="{{ item.id }}" {% if order and order.seller_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Дата отгрузки
+      <input type="date" name="ship_date" value="{% if order %}{{ order.ship_date|date:"Y-m-d" }}{% else %}{{ today }}{% endif %}" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+    </label>
+    <label>Статус
+      <select name="status" {% if not can_status %}disabled{% endif %}>
+        {% for key, label in DOC_STATUS.items %}
+        <option value="{{ key }}" {% if order and order.status == key or not order and key == 'open' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="wide">Условия отгрузки
+      <input name="shipping_terms" value="{% if order %}{{ order.shipping_terms }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
+    </label>
+  </div>
+  {% if order %}
+  <div class="settings-tabs" id="order-tabs">
+    <button type="button" class="settings-tab on" data-order-tab="plan">План</button>
+    <button type="button" class="settings-tab" data-order-tab="fact">Факт</button>
+    <button type="button" class="settings-tab" data-order-tab="lots">Партии</button>
+  </div>
+  {% endif %}
+  <div data-order-pane="plan">
+  <div class="doc-bar">
+    {% if editable %}<button type="button" class="slim" id="add-line">+</button>{% endif %}
+  </div>
+  {% if editable and order %}
+  <p class="hint">Калибр и сортность можно поменять, пока по строке нет прихода и отбора. Открытое задание получит те же значения.</p>
+  {% endif %}
+  <table class="sheet" id="lines">
+    <tr>
+      <th>№</th><th>Номенклатура 1С</th><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">Количество</th><th>Ед.</th>
+      {% if editable %}<th></th>{% endif %}
+    </tr>
+    {% if editable %}
+    {% for line in order.lines.all %}
+    <tr>
+      <td class="n"></td>
+      <td>{% if line.external_title %}{{ line.external_title }}{% else %}—{% endif %}</td>
+      {% if line.id in posted_ids or not line.for_task %}
+      <td>{% if not line.for_task %}Не в задание{% elif line.warehouse_product %}{{ line.warehouse_product.name }}{% elif line.external_product_id %}<a href="/masters/aliases">Нет соответствия</a>{% elif line.product %}{{ line.product.name }}{% endif %}<input type="hidden" name="line_id" value="{{ line.id }}"><input type="hidden" name="keep" value="1"><input type="hidden" name="product" value=""><input type="hidden" name="caliber" value=""><input type="hidden" name="grade" value=""></td>
+      <td>{% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}{{ line.caliber_from.name }}–{{ line.caliber_to.name }}{% elif line.caliber %}{{ line.caliber.name }}{% endif %}</td>
+      <td>{{ line.grades|join_attr:'name' }}</td>
+      {% else %}
+      <td>
+        <input type="hidden" name="line_id" value="{{ line.id }}">
+        <input type="hidden" name="keep" value="0">
+        {% if line.external_product_id %}
+          {% if line.warehouse_product %}{{ line.warehouse_product.name }}{% else %}<a href="/masters/aliases">Нет соответствия</a>{% endif %}
+          <input type="hidden" name="product" value="">
+        {% elif line.task_lines.all %}
+        {{ line.product.name }}
+        <input type="hidden" name="product" value="{{ line.product_id }}">
+        {% else %}
+        <select name="product" data-line-product required>
+          {% for item in products %}<option value="{{ item.id }}" {% if item.id == line.product_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+      </td>
+      <td>
+        <select name="caliber" {% if line.task_lines.all %}required{% endif %}>
+          {% if not line.task_lines.all %}<option value=""></option>{% endif %}
+          {% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}
+          <option value="range" selected>{{ line.caliber_from.name }}–{{ line.caliber_to.name }}</option>
+          {% endif %}
+          {% for item in calibers %}<option value="{{ item.id }}" {% if line.caliber_mode == 'exact' and line.caliber_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade" required {% if line.grades|length == 0 %}data-fresh{% endif %}>
+          {% if line.grades|length != 1 %}
+            {% if line.grades|length != 0 or not category_grade_id %}
+            <option value="keep" selected>{{ line.grades|join_attr:'name' }}</option>
+            {% endif %}
+          {% endif %}
+          {% for item in grades %}<option value="{{ item.id }}" {% if line.grades|length == 1 and line.grades.all.0.id == item.id %}selected{% elif line.grades|length == 0 and category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      {% endif %}
+      <td class="num"><input name="qty" value="{{ line.qty_kg|kg }}" required></td>
+      <td>{% if line.for_task %}кг{% else %}{{ line.unit }}{% endif %}</td>
+      <td>{% if line.for_task and not line.task_lines.all %}<button type="button" class="slim ghost" data-remove>✕</button>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td class="n"></td>
+      <td>—</td>
+      <td>
+        <input type="hidden" name="line_id" value="">
+        <input type="hidden" name="keep" value="0">
+        <select name="product" data-line-product>
+          {% for item in products %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+      </td>
+      <td>
+        <select name="grade" data-fresh>{% for item in grades %}<option value="{{ item.id }}" {% if category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+      </td>
+      <td class="num"><input name="qty"></td>
+      <td>кг</td>
+      <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    {% for line in order.lines.all %}
+    <tr>
+      <td class="n"></td>
+      <td>{% if line.external_title %}{{ line.external_title }}{% else %}—{% endif %}</td>
+      <td>{% if not line.for_task %}Не в задание{% elif line.warehouse_product %}{{ line.warehouse_product.name }}{% elif line.external_product_id %}Нет соответствия{% elif line.product %}{{ line.product.name }}{% endif %}</td>
+      <td>{% if line.caliber_mode == 'range' and line.caliber_from and line.caliber_to %}{{ line.caliber_from.name }}–{{ line.caliber_to.name }}{% elif line.caliber %}{{ line.caliber.name }}{% endif %}</td>
+      <td>{{ line.grades|join_attr:'name' }}</td>
+      <td class="num">{{ line.qty_kg|kg }}</td>
+      <td>{% if line.for_task %}кг{% else %}{{ line.unit }}{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">Строк нет</td></tr>
+    {% endfor %}
+    {% endif %}
+  </table>
+  <p class="doc-total">Итого <b>{% if order %}{{ order.lines.all|goods_kg|kg }}{% else %}0,000{% endif %}</b> кг</p>
+  </div>
+  {% if order %}
+  <div data-order-pane="fact" hidden>
+    <p class="hint">Факт собран из движений отбора. Неотобранное остаётся в плане и с остатка не списывается.</p>
+    <table class="sheet">
+      <tr><th>Номенклатура</th><th class="num">План, кг</th><th class="num">Факт, кг</th><th class="num">Расхождение, кг</th></tr>
+      {% for row in fact_rows %}
+      <tr>
+        <td>{{ row.line.product_title }}</td>
+        <td class="num">{{ row.plan|kg }}</td>
+        <td class="num">{{ row.fact|kg }}</td>
+        <td class="num">{{ row.gap|kg }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">Строк плана нет</td></tr>
+      {% endfor %}
+    </table>
+    <p class="doc-total">План <b>{{ plan_total|kg }}</b> кг · факт <b>{{ fact_total|kg }}</b> кг · не отобрано <b>{{ gap_total|kg }}</b> кг</p>
+  </div>
+  <div data-order-pane="lots" hidden>
+    <p class="hint">Каждая строка — движение отбора: какой товар и из какой партии ушёл в заказ.</p>
+    <table class="sheet">
+      <tr><th>Партия</th><th>Товар</th><th>Калибр</th><th>Сорт</th><th>Поставщик</th><th>Паллета</th><th>Задание</th><th class="num">Кг</th></tr>
+      {% for movement in pick_lots %}
+      <tr>
+        <td>{% if movement.lot.number %}{{ movement.lot.number }}{% else %}#{{ movement.lot_id }}{% endif %}</td>
+        <td>{{ movement.lot.product.name }}</td>
+        <td>{{ movement.lot.caliber.name }}</td>
+        <td>{{ movement.lot.grade.name }}</td>
+        <td>{{ movement.lot.supplier.name }}</td>
+        <td>{% if movement.pallet_id %}{{ movement.pallet.number }}{% endif %}</td>
+        <td>{% if movement.task_id %}<a href="/tasks/{{ movement.task_id }}">{{ movement.task.number }}</a>{% endif %}</td>
+        <td class="num">{{ movement.qty_kg|kg }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Отбора ещё нет</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+  {% if can_status %}<button>Записать</button>{% endif %}
+</form>
+<template id="customer-line">
+  <tr>
+    <td class="n"></td>
+    <td>—</td>
+    <td>
+      <input type="hidden" name="line_id" value="">
+      <input type="hidden" name="keep" value="0">
+      <select name="product" data-line-product>
+        {% for item in products %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+      </select>
+    </td>
+    <td>
+      <select name="caliber"><option value=""></option>{% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select>
+    </td>
+    <td>
+      <select name="grade" data-fresh>{% for item in grades %}<option value="{{ item.id }}" {% if category_grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+    </td>
+    <td class="num"><input name="qty"></td>
+    <td>кг</td>
+    <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+  </tr>
+</template>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll("[data-order-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const name = button.dataset.orderTab;
+      document.querySelectorAll("[data-order-tab]").forEach((item) => item.classList.toggle("on", item === button));
+      document.querySelectorAll("[data-order-pane]").forEach((pane) => {
+        pane.hidden = pane.dataset.orderPane !== name;
+      });
+    });
+  });
+  const table = document.getElementById("lines");
+
+  function renumber() {
+    let index = 1;
+    table.querySelectorAll("tr").forEach((row) => {
+      const cell = row.querySelector(".n");
+      if (!cell) return;
+      cell.textContent = index;
+      index += 1;
+    });
+  }
+
+  function bindRow(row) {
+    const remove = row.querySelector("[data-remove]");
+    if (remove) {
+      remove.addEventListener("click", () => {
+        const rows = table.querySelectorAll("tr .n");
+        if (rows.length <= 1) {
+          row.querySelectorAll("input").forEach((input) => {
+            if (input.name !== "keep") input.value = "";
+          });
+          return;
+        }
+        row.remove();
+        renumber();
+      });
+    }
+  }
+
+  function consigneeGrade() {
+    const party = document.querySelector("[name=consignee_id]");
+    if (!party) return "";
+    const option = party.options[party.selectedIndex];
+    return option && option.dataset.grade ? option.dataset.grade : "";
+  }
+
+  function fillFreshGrade(select) {
+    if (!select || select.dataset.touched === "1") return;
+    const grade = consigneeGrade();
+    if (!grade) return;
+    const has = Array.from(select.options).some((item) => item.value === grade);
+    if (has) select.value = grade;
+  }
+
+  function watchGrade(select) {
+    if (!select || select.dataset.watched === "1") return;
+    select.dataset.watched = "1";
+    select.addEventListener("change", () => {
+      select.dataset.touched = "1";
+    });
+  }
+
+  document.querySelectorAll("#lines tr").forEach(bindRow);
+  document.querySelectorAll("[name=grade][data-fresh]").forEach(watchGrade);
+  renumber();
+  const party = document.querySelector("[name=consignee_id]");
+  if (party) {
+    party.addEventListener("change", () => {
+      document.querySelectorAll("[name=grade][data-fresh]").forEach(fillFreshGrade);
+    });
+  }
+  const add = document.getElementById("add-line");
+  if (add) {
+    add.addEventListener("click", () => {
+      const row = document.getElementById("customer-line").content.firstElementChild.cloneNode(true);
+      table.appendChild(row);
+      bindRow(row);
+      const grade = row.querySelector("[name=grade]");
+      watchGrade(grade);
+      fillFreshGrade(grade);
+      renumber();
+    });
+  }
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\form.html
+### SIZE: 1031 bytes / 24 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Новый заказ{% endblock %}
+{% block content %}
+<h1>Новый заказ</h1>
+<p class="hint">Продавец попадёт только на стикер отгрузки и не делит складской остаток.</p>
+<form method="post" action="/orders" class="card grid">{% csrf_token %}
+  <label>Клиент
+    <select name="client_id" data-client required>
+      {% for client in clients %}
+      <option value="{{ client.id }}">{{ client.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Продавец
+    <select name="seller_id" required>
+      {% for seller in sellers %}<option value="{{ seller.id }}">{{ seller.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Дата отгрузки <input type="date" name="ship_date" required></label>
+  <label>Условия отгрузки <textarea name="shipping_terms" data-terms></textarea></label>
+  <button>Создать</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\import_result.html
+### SIZE: 3954 bytes / 90 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p><a class="btn slim" href="{{ list_href }}">К списку</a></p>
+{% if report.log %}
+<h2>Журнал</h2>
+<pre class="import-log">{% for line in report.log %}{{ line }}
+{% endfor %}</pre>
+{% endif %}
+<h2>Создано {{ report.created|length }}</h2>
+<table class="sheet">
+  <tr><th>Номер</th><th>Номер 1С</th><th>{{ party_label }}</th><th class="num">Строк</th></tr>
+  {% for item in report.created %}
+  <tr>
+    <td><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a></td>
+    <td>{{ item.external }}</td>
+    <td>{{ item.party }}</td>
+    <td class="num">{{ item.lines }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">Новых заказов нет</td></tr>
+  {% endfor %}
+</table>
+{% if report.updated %}
+<h2>Обновлено {{ report.updated|length }}</h2>
+{% for item in report.updated %}
+{% if item.revision %}
+<h3><a href="{% if revisions_href %}{{ revisions_href }}{{ item.id }}/revisions{% else %}/orders/{{ item.id }}/revisions{% endif %}">{{ item.number }}</a> {{ item.external }} · версия {{ item.revision }}</h3>
+<p>{{ item.party }}. {{ item.summary }}</p>
+{% include "orders/revision_diff.html" with changes=item.changes %}
+{% else %}
+<p><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }} · {{ item.party }}</p>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if report.unchanged %}
+<h2>Без изменений {{ report.unchanged|length }}</h2>
+<ul>{% for item in report.unchanged %}<li><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</li>{% endfor %}</ul>
+{% endif %}
+{% if report.closed %}
+<h2>Не обновлены</h2>
+{% for item in report.closed %}
+<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</h3>
+<p>{{ item.summary }}</p>
+{% if item.changes %}{% include "orders/revision_diff.html" with changes=item.changes %}{% endif %}
+{% endfor %}
+{% endif %}
+{% if report.blocked %}
+<h2>Расхождение есть, заказ не изменился</h2>
+{% for item in report.blocked %}
+<h3><a href="{{ item_href }}{{ item.id }}">{{ item.number }}</a> {{ item.external }}</h3>
+{% include "orders/revision_diff.html" with changes=item.changes %}
+{% endfor %}
+{% endif %}
+{% if report.duplicates %}
+<h2>Уже были</h2>
+<p class="hint">Отметьте «Обновить существующие», чтобы записать новую версию и показать расхождения.</p>
+<ul>{% for item in report.duplicates %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
+{% if report.missing_files %}
+<h2>Нет файла детализации</h2>
+<ul>{% for item in report.missing_files %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
+{% if report.empty %}
+<h2>Файл есть, строк с известной номенклатурой нет</h2>
+<ul>{% for item in report.empty %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
+{% if report.missing_codes %}
+<h2>Код не найден в справочнике</h2>
+<table class="sheet">
+  <tr><th>Заказ 1С</th><th>Код</th><th>Имя 1С</th></tr>
+  {% for item in report.missing_codes %}
+  <tr><td>{{ item.order }}</td><td>{{ item.code }}</td><td>{{ item.name }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if report.skipped_units %}
+<h2>Пропущены не килограммы</h2>
+<table class="sheet">
+  <tr><th>Заказ 1С</th><th>Имя</th><th>Ед.</th></tr>
+  {% for item in report.skipped_units %}
+  <tr><td>{{ item.order }}</td><td>{{ item.name }}</td><td>{{ item.unit }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if report.other_status %}
+<p class="hint">Строк с другим состоянием: {{ report.other_status }}</p>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\list.html
+### SIZE: 783 bytes / 21 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Заказы{% endblock %}
+{% block content %}
+<h1>Заказы</h1>
+{% if user.is_office %}<p><a class="btn" href="/orders/new">Новый заказ</a></p>{% endif %}
+<table>
+  <tr><th>Номер</th><th>Грузополучатель</th><th>Продавец</th><th>Дата</th><th>Статус</th></tr>
+  {% for order in orders %}
+  <tr>
+    <td><a href="/orders/{{ order.id }}">{{ order.number }}</a></td>
+    <td>{{ order.consignee.name }}</td>
+    <td>{{ order.seller.name }}</td>
+    <td>{{ order.ship_date|date:"d.m.Y" }}</td>
+    <td>{{ DOC_STATUS|label:order.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Заказов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\purchase_revision_detail.html
+### SIZE: 1661 bytes / 28 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Версии {{ order.number }}{% endblock %}
+{% block content %}
+<h1>Версии {{ order.number }}{% if order.external_number %} · {{ order.external_number }}{% endif %}</h1>
+<p>
+  <a class="btn slim" href="/orders/suppliers/{{ order.id }}">К заказу</a>
+  <a class="btn slim" href="/orders/suppliers/revisions">Все расхождения</a>
+</p>
+{% for row in revisions %}
+<h2>Версия {{ row.revision.revision }} · {{ row.summary }}</h2>
+<p class="hint">{{ row.revision.created_at|date:"d.m.Y H:i" }}{% if row.revision.created_by %} · {{ row.revision.created_by.name }}{% endif %}. Поставщик {{ row.revision.supplier_name }}, поступление {% if row.revision.receipt_date %}{{ row.revision.receipt_date|date:"d.m.Y" }}{% else %}—{% endif %}.</p>
+{% if row.revision.changes.header or row.revision.changes.added or row.revision.changes.removed or row.revision.changes.changed or row.revision.changes.blocked %}
+{% include "orders/revision_diff.html" with changes=row.revision.changes %}
+{% else %}
+<table class="sheet">
+  <tr><th>Номенклатура</th><th class="num">Кг</th></tr>
+  {% for line in row.revision.lines %}
+  <tr><td>{{ line.name }}</td><td class="num">{{ line.qty|kg }}</td></tr>
+  {% empty %}
+  <tr><td colspan="2">Строк нет</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% empty %}
+<p>Версий ещё нет. Они появятся при импорте с обновлением, если заказ в файле отличается от записанного.</p>
+{% endfor %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\purchase_revisions.html
+### SIZE: 2176 bytes / 40 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Расхождения приходов{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/suppliers/revisions">
+      <div class="journal-title">Расхождения приходов {% if built %}<span class="journal-count">{{ rows|length }}</span>{% endif %}</div>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" name="run" value="1" data-tip="Сформировать" aria-label="Сформировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M18 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6"/><path d="M6 21v-5h5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/suppliers" data-tip="К заказам" aria-label="К заказам">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </a>
+      </span>
+    </form>
+  </div>
+  {% if not built %}
+  <p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+  {% else %}
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>Когда</th><th>Заказ</th><th>Номер 1С</th><th>Поставщик</th><th>Версия</th><th>Что изменилось</th></tr>
+  {% for row in rows %}
+  <tr data-href="/orders/suppliers/{{ row.revision.order_id }}/revisions">
+    <td>{{ row.revision.created_at|date:"d.m.Y H:i" }}</td>
+    <td><a href="/orders/suppliers/{{ row.revision.order_id }}/revisions">{{ row.revision.order.number }}</a></td>
+    <td>{{ row.revision.order.external_number|default:"" }}</td>
+    <td>{{ row.revision.supplier_name }}</td>
+    <td>{{ row.revision.revision }}</td>
+    <td>{{ row.summary }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Расхождений нет</td></tr>
+  {% endfor %}
+</table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\revision_detail.html
+### SIZE: 1640 bytes / 28 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Версии {{ order.number }}{% endblock %}
+{% block content %}
+<h1>Версии {{ order.number }}{% if order.external_number %} · {{ order.external_number }}{% endif %}</h1>
+<p>
+  <a class="btn slim" href="/orders/{{ order.id }}">К заказу</a>
+  <a class="btn slim" href="/orders/customers/revisions">Все расхождения</a>
+</p>
+{% for row in revisions %}
+<h2>Версия {{ row.revision.revision }} · {{ row.summary }}</h2>
+<p class="hint">{{ row.revision.created_at|date:"d.m.Y H:i" }}{% if row.revision.created_by %} · {{ row.revision.created_by.name }}{% endif %}. Грузополучатель {{ row.revision.consignee_name }}, отгрузка {{ row.revision.ship_date|date:"d.m.Y" }}.</p>
+{% if row.revision.changes.header or row.revision.changes.added or row.revision.changes.removed or row.revision.changes.changed or row.revision.changes.blocked %}
+{% include "orders/revision_diff.html" with changes=row.revision.changes %}
+{% else %}
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Кг</th></tr>
+  {% for line in row.revision.lines %}
+  <tr><td>{{ line.code }}</td><td>{{ line.name }}</td><td class="num">{{ line.qty|kg }}</td></tr>
+  {% empty %}
+  <tr><td colspan="3">Строк нет</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% empty %}
+<p>Версий ещё нет. Они появятся при импорте с обновлением, если заказ в файле отличается от записанного.</p>
+{% endfor %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\revision_diff.html
+### SIZE: 1695 bytes / 48 lines
+==============================================================================
+
+{% load wms %}
+{% if changes.header %}
+<table class="sheet">
+  <tr><th>Поле</th><th>Было</th><th>Стало</th></tr>
+  {% for item in changes.header %}
+  <tr><td>{{ item.field }}</td><td>{{ item.before }}</td><td>{{ item.after }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.changed %}
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Было, кг</th><th class="num">Стало, кг</th></tr>
+  {% for item in changes.changed %}
+  <tr>
+    <td>{{ item.code }}</td>
+    <td>{% if item.before_name != item.name %}{{ item.before_name }} → {{ item.name }}{% else %}{{ item.name }}{% endif %}</td>
+    <td class="num">{{ item.before|kg }}</td>
+    <td class="num">{{ item.after|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.added %}
+<p>Добавлено</p>
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Кг</th></tr>
+  {% for item in changes.added %}
+  <tr><td>{{ item.code }}</td><td>{{ item.name }}</td><td class="num">{{ item.qty|kg }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.removed %}
+<p>Снято</p>
+<table class="sheet">
+  <tr><th>Код</th><th>Номенклатура 1С</th><th class="num">Кг</th></tr>
+  {% for item in changes.removed %}
+  <tr><td>{{ item.code }}</td><td>{{ item.name }}</td><td class="num">{{ item.qty|kg }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if changes.blocked %}
+<p>Не применено</p>
+<ul>
+  {% for item in changes.blocked %}
+  <li>{{ item.code }} {{ item.name }}: {{ item.text }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+
+==============================================================================
+### FILE: templates\orders\revisions.html
+### SIZE: 2222 bytes / 40 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Расхождения заказов{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/customers/revisions">
+      <div class="journal-title">Расхождения заказов {% if built %}<span class="journal-count">{{ rows|length }}</span>{% endif %}</div>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" name="run" value="1" data-tip="Сформировать" aria-label="Сформировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M18 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6"/><path d="M6 21v-5h5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/customers" data-tip="К заказам" aria-label="К заказам">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </a>
+      </span>
+    </form>
+  </div>
+  {% if not built %}
+  <p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+  {% else %}
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>Когда</th><th>Заказ</th><th>Номер 1С</th><th>Грузополучатель</th><th>Версия</th><th>Что изменилось</th></tr>
+  {% for row in rows %}
+  <tr data-href="/orders/{{ row.revision.order_id }}/revisions">
+    <td>{{ row.revision.created_at|date:"d.m.Y H:i" }}</td>
+    <td><a href="/orders/{{ row.revision.order_id }}/revisions">{{ row.revision.order.number }}</a></td>
+    <td>{{ row.revision.order.external_number|default:"" }}</td>
+    <td>{% if row.revision.order.consignee_id %}{{ row.revision.order.consignee.name }}{% endif %}</td>
+    <td>{{ row.revision.revision }}</td>
+    <td>{{ row.summary }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Расхождений нет</td></tr>
+  {% endfor %}
+</table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\supplier.html
+### SIZE: 12373 bytes / 254 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{% if order %}{{ order.number }}{% else %}Заказ поставщику{% endif %}{% endblock %}
+{% block content %}
+<h1>Заказ поставщику{% if order %} {{ order.number }} от {{ order.doc_date|date:"d.m.Y" }}{% endif %}</h1>
+<div class="doc-bar">
+  {% if can_status %}<button form="purchase-order">Записать</button>{% endif %}
+  {% if order and can_status and order.status != 'closed' %}
+  <form class="inline" method="post" action="/orders/suppliers/{{ order.id }}/task">{% csrf_token %}<button>Создать задание</button></form>
+  {% if tasks %}
+  <form class="inline" method="post" action="/tasks/{{ tasks.0.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
+  {% endif %}
+  {% endif %}
+  {% if order %}<a class="btn" href="/orders/suppliers/{{ order.id }}/fact">Подтвердить</a>{% endif %}
+  {% if order and tasks %}
+  <span class="hint">Задание
+    {% for task in tasks %}<a href="/tasks/{{ task.id }}">{{ task.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+  </span>
+  {% endif %}
+</div>
+<form id="purchase-order" method="post" action="{% if order %}/orders/suppliers/{{ order.id }}{% else %}/orders/suppliers{% endif %}">{% csrf_token %}
+  <div class="doc-head">
+    <label>Поставщик
+      <select name="supplier_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        {% for item in suppliers %}
+        <option value="{{ item.id }}" {% if order and order.supplier_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Дата
+      <input type="date" name="doc_date" value="{% if order %}{{ order.doc_date|date:"Y-m-d" }}{% else %}{{ today }}{% endif %}" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+    </label>
+    <label>Дата поступления
+      <input type="date" name="receipt_date" value="{% if order and order.receipt_date %}{{ order.receipt_date|date:"Y-m-d" }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
+    </label>
+    <label>Принтер
+      <select name="printer_id" {% if not editable %}disabled{% endif %}>
+        {% for item in printers %}
+        <option value="{{ item.id }}" {% if order and order.printer_id == item.id or not order and item.id == default_printer_id %}selected{% endif %}>{{ item.name }} · {% if item.printer_type == 'tsc' %}термо, 2 копии{% else %}A4{% endif %}</option>
+        {% empty %}
+        <option value="">Нет принтера</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Статус
+      <select name="status" {% if not can_status %}disabled{% endif %}>
+        {% for key, label in PURCHASE_STATUS.items %}
+        <option value="{{ key }}" {% if order and order.status == key or not order and key == 'draft' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="wide">Комментарий
+      <input name="comment" value="{% if order %}{{ order.comment }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
+    </label>
+  </div>
+  <div class="doc-bar">
+    {% if editable %}<button type="button" class="slim" id="add-line">+</button>{% endif %}
+  </div>
+  {% if unmapped %}
+  <p class="hint">Номенклатура не записана: {% for line in unmapped %}{{ line.external_title }}{% if not forloop.last %}, {% endif %}{% endfor %}. При создании задания подставится складское название. Здесь можно выбрать другое.</p>
+  {% endif %}
+  <table class="sheet lines" id="lines">
+    <tr><th>№</th><th>Номенклатура</th><th>Под заказ</th><th>Калибр</th><th>Сортность</th><th class="num">Количество</th><th>Ед.</th>{% if editable %}<th></th>{% endif %}</tr>
+    {% if editable %}
+    {% for line in purchase_lines %}
+    <tr>
+      <td class="n"></td>
+      <td>
+        {% if line.external_code %}<div class="hint">{{ line.external_title }}</div>{% endif %}
+        <select name="product" data-line-product {% if not line.external_code %}required{% endif %}>
+          <option value=""></option>
+          {% for item in products %}<option value="{{ item.id }}" {% if item.id == line.product_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        <input type="hidden" name="external_code" value="{{ line.external_code }}">
+        <input type="hidden" name="external_name" value="{{ line.external_name }}">
+        <input type="hidden" name="external_product" value="{% if line.external_product_id %}{{ line.external_product_id }}{% endif %}">
+        <input type="hidden" name="unit" value="{{ line.unit }}">
+        <input type="hidden" name="for_task" value="{% if line.for_task %}1{% else %}0{% endif %}">
+      </td>
+      <td>
+        <select name="customer_line" data-customer-line data-selected="{{ line.customer_line_id }}">
+          <option value="">Свободный склад</option>
+          {% if line.customer_line %}
+          <option value="{{ line.customer_line_id }}" selected>{{ line.customer_line.order.number }} · {{ line.customer_line.order.consignee.name }} · {{ line.customer_line.product_title }}</option>
+          {% endif %}
+        </select>
+        <input name="reserve_kg" value="{% if line.reserve_kg != None %}{{ line.reserve_kg|kg }}{% endif %}" placeholder="План, кг">
+        {% if line.customer_line_id %}<div class="hint reserve-hint">На складе {{ held|get_item:line.customer_line_id|kg }} из {{ plans|get_item:line.id|kg }} кг</div>{% endif %}
+      </td>
+      <td>
+        <select name="caliber">
+          <option value=""></option>
+          {% for item in calibers %}<option value="{{ item.id }}" {% if line.caliber_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade">
+          <option value=""></option>
+          {% for item in grades %}<option value="{{ item.id }}" {% if line.grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td class="num"><input name="qty" value="{{ line.qty_kg|kg }}" required></td>
+      <td>{{ line.unit }}</td>
+      <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td class="n"></td>
+      <td>
+        <select name="product" data-line-product required>
+          <option value=""></option>
+          {% for item in products %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+        </select>
+        <input type="hidden" name="external_code" value="">
+        <input type="hidden" name="external_name" value="">
+        <input type="hidden" name="external_product" value="">
+        <input type="hidden" name="unit" value="кг">
+        <input type="hidden" name="for_task" value="1">
+      </td>
+      <td>
+        <select name="customer_line" data-customer-line>
+          <option value="">Свободный склад</option>
+        </select>
+        <input name="reserve_kg" placeholder="План, кг">
+      </td>
+      <td>
+        <select name="caliber">
+          <option value=""></option>
+          {% for item in calibers %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade">
+          <option value=""></option>
+          {% for item in grades %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td class="num"><input name="qty"></td>
+      <td>кг</td>
+      <td><button type="button" class="slim ghost" data-remove>✕</button></td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    {% for line in purchase_lines %}
+    <tr>
+      <td class="n"></td>
+      <td>{% if line.product %}{{ line.product.name }}{% else %}{{ line.external_title }}{% endif %}</td>
+      <td>{% if line.customer_line %}{{ line.customer_line.order.number }} · {{ line.customer_line.order.consignee.name }}{% else %}—{% endif %}</td>
+      <td>{% if line.caliber %}{{ line.caliber.name }}{% else %}{% endif %}</td>
+      <td>{% if line.grade %}{{ line.grade.name }}{% else %}{% endif %}</td>
+      <td class="num">{{ line.qty_kg|kg }}</td>
+      <td>{{ line.unit }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">Строк нет</td></tr>
+    {% endfor %}
+    {% endif %}
+  </table>
+  <p class="doc-total">Итого <b id="total-kg">{{ purchase_lines|sum_attr:'qty_kg'|kg }}</b> кг</p>
+</form>
+{% endblock %}
+{% block scripts %}
+{{ customer_lines|json_script:"customer-line-data" }}
+<script>
+  const table = document.getElementById("lines");
+  const customerCatalog = JSON.parse(document.getElementById("customer-line-data").textContent || "[]");
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char]));
+  }
+
+  function fillCustomer(select) {
+    const row = select.closest("tr");
+    const product = row ? row.querySelector("[data-line-product]") : null;
+    const productId = product ? product.value : "";
+    const selected = select.value || select.dataset.selected || "";
+    const options = ['<option value="">Свободный склад</option>'];
+    customerCatalog.forEach((item) => {
+      const sameProduct = !productId || !item.product_id || String(item.product_id) === String(productId);
+      if (!sameProduct && String(item.id) !== String(selected)) return;
+      const mark = String(item.id) === String(selected) ? " selected" : "";
+      options.push(`<option value="${item.id}"${mark}>${escapeHtml(item.label)}</option>`);
+    });
+    select.innerHTML = options.join("");
+  }
+
+  function renumber() {
+    let index = 1;
+    table.querySelectorAll("tbody tr, tr").forEach((row) => {
+      const cell = row.querySelector(".n");
+      if (!cell) return;
+      cell.textContent = index;
+      index += 1;
+    });
+  }
+
+  function bindRow(row) {
+    const customer = row.querySelector("[data-customer-line]");
+    const product = row.querySelector("[data-line-product]");
+    if (customer && !customer.dataset.bound) {
+      customer.dataset.bound = "1";
+      customer.addEventListener("focus", () => fillCustomer(customer));
+    }
+    if (product && !product.dataset.bound) {
+      product.dataset.bound = "1";
+      product.addEventListener("change", () => {
+        const select = row.querySelector("[data-customer-line]");
+        if (select) fillCustomer(select);
+      });
+    }
+    const remove = row.querySelector("[data-remove]");
+    if (!remove) return;
+    remove.addEventListener("click", () => {
+      const rows = table.querySelectorAll("tr .n");
+      if (rows.length <= 1) {
+        row.querySelectorAll("input").forEach((input) => { input.value = ""; });
+        return;
+      }
+      row.remove();
+      renumber();
+    });
+  }
+
+  document.querySelectorAll("#lines tr").forEach(bindRow);
+  renumber();
+  const add = document.getElementById("add-line");
+  if (add) {
+    add.addEventListener("click", () => {
+      const rows = [...table.querySelectorAll("tr")].filter((row) => row.querySelector(".n"));
+      const copy = rows[rows.length - 1].cloneNode(true);
+      copy.querySelectorAll("input").forEach((input) => {
+        if (input.name === "unit") input.value = "кг";
+        else if (input.name === "for_task") input.value = "1";
+        else input.value = "";
+      });
+      const product = copy.querySelector("[data-line-product]");
+      if (product) product.required = true;
+      const customer = copy.querySelector("[name=customer_line]");
+      if (customer) {
+        customer.dataset.selected = "";
+        customer.dataset.bound = "";
+        customer.innerHTML = '<option value="">Свободный склад</option>';
+      }
+      const copiedProduct = copy.querySelector("[data-line-product]");
+      if (copiedProduct) copiedProduct.dataset.bound = "";
+      const hint = copy.querySelector(".reserve-hint");
+      if (hint) hint.remove();
+      table.appendChild(copy);
+      bindRow(copy);
+      renumber();
+    });
+  }
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\orders\suppliers.html
+### SIZE: 6624 bytes / 113 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Заказы поставщикам{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/orders/suppliers">
+      <div class="journal-title">Заказы поставщикам <span class="journal-count">{{ rows|length }}</span></div>
+      <label>Период
+        <span class="dates">
+          <input type="date" name="date_from" value="{{ date_from }}">
+          <span class="sep">—</span>
+          <input type="date" name="date_to" value="{{ date_to }}">
+        </span>
+      </label>
+      <label>Поставщик
+        <select name="supplier_id">
+          <option value=""></option>
+          {% for item in suppliers %}
+          <option value="{{ item.id }}" {% if supplier_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Статус
+        <select name="status">
+          <option value="" {% if status == "" %}selected{% endif %}>Кроме закрытых</option>
+          <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
+          {% for key, label in PURCHASE_STATUS.items %}
+          <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/orders/suppliers" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+        {% if user.is_office %}
+        <a class="icon-btn" href="/orders/suppliers/new" data-tip="Создать" aria-label="Создать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
+        {% endif %}
+      </span>
+    </form>
+    {% if user.is_office %}
+    <form class="journal-bar" method="post" action="/orders/suppliers/import" data-onec-import data-onec-title="Импорт заказов поставщикам из 1С">{% csrf_token %}
+      <div class="journal-fields">
+        <label>Поступление из 1С
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ import_from }}" data-period required>
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ import_to }}" data-period required>
+          </span>
+        </label>
+        <label>Номер 1С
+          <input name="order_number" placeholder="НФНФ-000000" disabled>
+        </label>
+        <span class="import-flags">
+          <input type="checkbox" name="by_number" value="1" title="По номеру" aria-label="По номеру" data-tip="По номеру" onchange="var on=this.checked; this.form.querySelectorAll('[data-period]').forEach(function(i){i.required=!on;}); this.form.order_number.required=on; this.form.order_number.disabled=!on; if(!on) this.form.order_number.value='';">
+          <input type="checkbox" name="update" value="1" title="Обновить" aria-label="Обновить" data-tip="Обновить">
+        </span>
+        <button class="icon-btn" type="submit" data-tip="Импорт" aria-label="Импорт">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>
+        </button>
+      </div>
+    </form>
+    {% endif %}
+    <div class="tool-box stack">
+      <a class="icon-btn" href="/orders/suppliers/revisions" data-tip="Расхождения" aria-label="Расхождения">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V4h11v14h-3"/><path d="M5 7h11v14H5z"/><path d="M8 12h5M8 16h3"/></svg>
+      </a>
+    </div>
+    {% if user.is_office %}
+    <form id="suppliers-bulk" class="journal-bar" method="post" action="/orders/suppliers/tasks" onsubmit="var act=this.querySelector('[name=action]'); return !act || act.value !== 'delete' || confirm('Удалить выбранные заказы?');">{% csrf_token %}
+      <div class="journal-fields">
+        <span class="bulk-count" data-bulk-count="suppliers-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="task">Создать задание</option>
+            {% if user.role == "admin" %}<option value="delete">Удалить</option>{% endif %}
+          </select>
+        </label>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  <div class="journal-table">
+<table class="sheet" {% if user.is_office %}data-bulk="suppliers-bulk"{% endif %}>
+  <tr><th>Номер</th><th>Номер 1С</th><th>Версия</th><th>Дата</th><th>Поставщик</th><th>Поступление</th><th class="num">Кг</th><th>Статус</th><th>Комментарий</th></tr>
+  {% for row in rows %}
+  <tr data-href="/orders/suppliers/{{ row.order.id }}" data-id="{{ row.order.id }}">
+    <td><a href="/orders/suppliers/{{ row.order.id }}">{{ row.order.number }}</a></td>
+    <td>{{ row.order.external_number|default:"" }}</td>
+    <td>{% if row.order.revision > 1 %}<a href="/orders/suppliers/{{ row.order.id }}/revisions">{{ row.order.revision }}</a>{% else %}{{ row.order.revision }}{% endif %}</td>
+    <td>{{ row.order.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ row.order.supplier.name }}</td>
+    <td>{% if row.order.receipt_date %}{{ row.order.receipt_date|date:"d.m.Y" }}{% endif %}</td>
+    <td class="num">{{ row.kg|kg }}</td>
+    <td>{{ PURCHASE_STATUS|label:row.order.status }}</td>
+    <td class="comment">{{ row.order.comment|default:"—" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">Заказов нет</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\pallets\detail.html
+### SIZE: 3373 bytes / 55 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ pallet.number }}{% endblock %}
+{% block content %}
+<h1>{{ pallet.number }}</h1>
+<p>{{ PALLET_KIND|label:pallet.kind }}, {{ PALLET_STATUS|label:pallet.status }}, штрихкод {{ pallet.barcode }}</p>
+{% if spent and spent.transform_document_id %}
+<p>Списана документом <a href="/transform/{{ spent.transform_document_id }}">{{ spent.transform_document.number }}</a>.</p>
+{% endif %}
+{% if pallet.order %}<p>{% if pallet.kind == "inbound" %}Резерв{% else %}Заказ{% endif %} <a href="/orders/{{ pallet.order.id }}">{{ pallet.order.number }}</a>, {{ pallet.order.consignee.name }}</p>{% elif pallet.reserved_consignee %}<p>Резерв под грузополучателя {{ pallet.reserved_consignee.name }}. Ждёт его заказ.</p>{% endif %}
+<p>Категории отгрузки: {% for item in pallet.allowed_categories.all %}{{ item.name }}{% if not forloop.last %}, {% endif %}{% empty %}любая{% endfor %}.</p>
+{% if pallet.kind == "inbound" %}<p class="hint">На входе паллета однородная: один товар, калибр и сортность.</p>{% else %}<p class="hint">На выходе можно смешивать места этого заказа.</p>{% endif %}
+<form method="post" action="/pallets/{{ pallet.id }}/location" class="row">{% csrf_token %}
+  {% include "partials/cell_pick.html" %}
+  <button>Сохранить</button>
+</form>
+<div class="actions">
+  <a class="btn" href="/print/pallets/{{ pallet.id }}.pdf" target="_blank">Паспорт PDF</a>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Паспорт на сетевой</button></form>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>Паспорт на TSC</button></form>
+  {% if pallet.status == "open" %}
+  <form method="post" action="/pallets/{{ pallet.id }}/close">{% csrf_token %}<button>Закрыть паллету</button></form>
+  {% endif %}
+</div>
+{% if groups %}
+<h2>Сводка</h2>
+<table>
+  <tr><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Мест</th><th>Кг</th></tr>
+  {% for group in groups %}
+  <tr>
+    <td>{{ group.product }}</td><td>{{ group.caliber }}</td><td>{{ group.grade }}</td><td>{{ group.count }}</td><td>{{ group.kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if pallet.status == "open" %}
+<form method="post" action="/pallets/{{ pallet.id }}/units" class="card row">{% csrf_token %}
+  <label>Штрихкод места <input name="barcode" autofocus autocomplete="off"></label>
+  <button>Положить</button>
+</form>
+{% endif %}
+<table>
+  <tr><th>Место</th><th>Спецификация</th><th>Нетто, кг</th><th>Статус</th></tr>
+  {% for unit in units %}
+  <tr>
+    <td><a href="/units/{{ unit.id }}">{{ unit.barcode }}</a></td>
+    <td><a href="/lots/{{ unit.lot_id }}">{{ unit.lot.number }}</a> · {{ unit.lot.product.name }} {{ unit.lot.caliber.name }} / {{ unit.grade.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+    <td>{{ UNIT_STATUS|label:unit.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">Пусто</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\pallets\list.html
+### SIZE: 1571 bytes / 41 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Паллеты{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Паллеты</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/pallets">
+      <div class="filter-row">
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+    </form>
+    <form class="doc-filter" method="post" action="/pallets">{% csrf_token %}
+      <div class="filter-row">
+        {% include "partials/cell_pick.html" %}
+        <button class="slim">Новая входная паллета</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<table class="sheet">
+  <tr><th>Номер</th><th>Вид</th><th>Статус</th><th>Заказ</th><th>Место</th></tr>
+  {% for pallet in pallets %}
+  <tr data-href="/pallets/{{ pallet.id }}">
+    <td><a href="/pallets/{{ pallet.id }}">{{ pallet.number }}</a></td>
+    <td>{{ PALLET_KIND|label:pallet.kind }}</td>
+    <td>{{ PALLET_STATUS|label:pallet.status }}</td>
+    <td>{% if pallet.order %}{{ pallet.order.number }}{% elif pallet.reserved_consignee %}{{ pallet.reserved_consignee.name }}{% endif %}</td>
+    <td>{{ pallet.location }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Паллет нет</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\partials\accept_loose.html
+### SIZE: 1670 bytes / 32 lines
+==============================================================================
+
+{% load wms %}
+<form method="post" action="/tasks/{{ task.id }}/receive" class="card">{% csrf_token %}
+  <input type="hidden" name="next" value="/tasks/{{ task.id }}">
+  <h2>Весь приход без паллета</h2>
+  <p class="hint">Количество подставлено по плану. Паллета, тара и грязный вес не нужны. Пустую строку приёмка пропустит.</p>
+  <table class="sheet">
+    <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">Кг</th></tr>
+    {% for item in loose_lines %}
+    <tr>
+      <td>{{ item.line.product.name }}<input type="hidden" name="line" value="{{ item.line.id }}"></td>
+      <td>
+        <select name="caliber-{{ item.line.id }}">
+          <option value=""></option>
+          {% for caliber in calibers %}
+          <option value="{{ caliber.id }}" {% if item.line.caliber_id == caliber.id %}selected{% endif %}>{{ caliber.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="grade-{{ item.line.id }}">
+          <option value=""></option>
+          {% for grade in grades %}
+          <option value="{{ grade.id }}" {% if item.line.grade_id == grade.id %}selected{% endif %}>{{ grade.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="num"><input name="qty-{{ item.line.id }}" value="{% if item.left > 0 %}{{ item.left|kg }}{% endif %}" inputmode="decimal"></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button name="action" value="loose">Принять без паллета</button>
+</form>
+
+
+==============================================================================
+### FILE: templates\partials\accept_pallet.html
+### SIZE: 12548 bytes / 230 lines
+==============================================================================
+
+{% load wms %}
+<form method="post" action="/tasks/{{ task.id }}/receive" data-accept class="card">{% csrf_token %}
+  <input type="hidden" name="next" value="{% if request.path|startswith:'/tsd' %}/tsd/tasks/{{ task.id }}{% else %}/tasks/{{ task.id }}?tab=manual{% endif %}">
+  <label>Строка
+    <select name="task_line_id" data-task-line required>
+      {% for line in task.lines.all %}
+      {% with memory=defaults|lookup:line.product_id info=reserve|get_item:line.id %}
+      <option value="{{ line.id }}"
+        data-product="{{ line.product_id }}"
+        data-caliber="{{ line.caliber_id }}"
+        data-grade="{{ line.grade_id }}"
+        data-pallet="{% if memory %}{{ memory.pallet_type }}{% endif %}"
+        data-packaging="{% if memory %}{{ memory.packaging_id }}{% endif %}"
+        {% if info %}data-reserve-label="{{ info.label }}" data-reserve-plan="{{ info.plan }}" data-reserve-held="{{ info.held }}"{% endif %}>
+        {{ line.product.name }} · план {{ line.qty_kg|kg }} · принято {{ received|get_item:line.id|kg }}
+      </option>
+      {% endwith %}
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for item in calibers %}<option value="{{ item.id }}" {% if current and item.id == current.caliber_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Сортность
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for item in grades %}<option value="{{ item.id }}" {% if current and item.id == current.grade_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Вид паллета
+    <select name="pallet_type" required>
+      <option value=""></option>
+      {% for key, name in PALLET_TYPE.items %}
+      <option value="{{ key }}" data-tare="{% pallet_tare key %}" {% if memory and memory.pallet_type == key %}selected{% endif %}>{% pallet_label key %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Упаковка
+    <select name="packaging_id" required>
+      <option value=""></option>
+      {% for item in packagings %}
+      <option value="{{ item.id }}" data-tare="{{ item.tare_kg }}" {% if memory and memory.packaging_id == item.id %}selected{% endif %}>{{ item.name }} ({{ item.tare_kg|kg }} кг)</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Упаковок <input name="places" inputmode="numeric" required></label>
+  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
+  <label>Чистый вес, кг <input name="net" inputmode="decimal" required></label>
+  <input type="hidden" name="net_manual" value="0">
+  <p class="hint">Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок. Поле можно поправить.</p>
+  {% if consignee_categories %}
+  <fieldset>
+    <legend>Категории отгрузки</legend>
+    {% for item in consignee_categories %}
+    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}"> {{ item.name }}</label>
+    {% endfor %}
+    <p class="hint">Ничего не отмечено — паллету можно отдать любой категории. Отмеченные категории ограничивают, кому её можно отгрузить.</p>
+  </fieldset>
+  {% endif %}
+  {% if consignees %}
+  <label data-client-box>Грузополучатель
+    <span class="client-pick" data-client-pick>
+      <input type="hidden" name="consignee_id" value="">
+      <input type="text" data-client-query autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Свободный остаток" enterkeyhint="search">
+      <ul data-client-list hidden>
+        <li><button type="button" data-id="">Свободный остаток</button></li>
+        {% for item in consignees %}<li><button type="button" data-id="{{ item.id }}">{{ item.name }}</button></li>{% endfor %}
+      </ul>
+    </span>
+  </label>
+  <p class="hint" data-client-hint>Начните вводить имя. Пусто — паллета в общий остаток. Грузополучатель — паллета ждёт его заказ и другим не отдаётся.</p>
+  {% endif %}
+  <label class="check" data-reserve-box hidden>
+    <input type="checkbox" name="reserve" value="1">
+    Резерв под <span data-reserve-caption></span>
+  </label>
+  <p class="hint" data-reserve-progress hidden></p>
+  <button class="btn menu">Принять паллету</button>
+</form>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("form[data-accept]").forEach((form) => {
+      const line = form.querySelector("[data-task-line]");
+      const net = form.querySelector("[name=net]");
+      const manual = form.querySelector("[name=net_manual]");
+      if (!net) return;
+      let netTouched = false;
+      const setManual = (touched) => {
+        netTouched = touched;
+        if (manual) manual.value = touched ? "1" : "0";
+      };
+      net.addEventListener("input", () => { setManual(true); });
+      const readTare = (name) => {
+        const option = form.querySelector(`[name=${name}] option:checked`);
+        const raw = option && option.dataset.tare ? option.dataset.tare : "0";
+        const value = Number(String(raw).replace(",", "."));
+        return Number.isFinite(value) ? value : 0;
+      };
+      const recalc = () => {
+        if (netTouched) return;
+        const gross = Number(String(form.querySelector("[name=gross]").value).replace(",", "."));
+        const places = Number(form.querySelector("[name=places]").value);
+        if (!gross || !places) {
+          net.value = "";
+          return;
+        }
+        const value = gross - readTare("pallet_type") - readTare("packaging_id") * places;
+        net.value = value > 0 ? value.toFixed(3).replace(".", ",") : "";
+      };
+      const reserveBox = form.querySelector("[data-reserve-box]");
+      const reserveProgress = form.querySelector("[data-reserve-progress]");
+      const clientBox = form.querySelector("[data-client-box]");
+      const clientHint = form.querySelector("[data-client-hint]");
+      const pick = form.querySelector("[data-client-pick]");
+      const clientValue = pick ? pick.querySelector("[name=consignee_id]") : null;
+      const clientQuery = pick ? pick.querySelector("[data-client-query]") : null;
+      const clientList = pick ? pick.querySelector("[data-client-list]") : null;
+      const clientButtons = clientList ? [...clientList.querySelectorAll("button")] : [];
+      let clientChosen = "";
+      const clientLabel = (id) => {
+        const button = clientButtons.find((item) => item.dataset.id === id);
+        return button && id ? button.textContent.trim() : "";
+      };
+      const paintClients = () => {
+        const needle = clientQuery.value.trim().toLocaleLowerCase("ru");
+        let marked = null;
+        clientButtons.forEach((button) => {
+          const name = button.textContent.trim().toLocaleLowerCase("ru");
+          const match = !needle || name.includes(needle);
+          button.parentElement.hidden = !match;
+          button.classList.remove("mark");
+          if (match && !marked && button.dataset.id) marked = button;
+        });
+        if (!needle) marked = clientButtons[0];
+        if (marked) marked.classList.add("mark");
+      };
+      const chooseClient = (id) => {
+        clientChosen = id || "";
+        clientValue.value = clientChosen;
+        clientQuery.value = clientLabel(clientChosen);
+        clientList.hidden = true;
+      };
+      const openClients = () => {
+        paintClients();
+        clientList.hidden = false;
+      };
+      if (clientQuery) {
+        clientQuery.addEventListener("focus", openClients);
+        clientQuery.addEventListener("input", openClients);
+        clientQuery.addEventListener("keydown", (event) => {
+          const visible = clientButtons.filter((button) => !button.parentElement.hidden);
+          const index = visible.findIndex((button) => button.classList.contains("mark"));
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            if (clientList.hidden) openClients();
+            const next = visible[index + (event.key === "ArrowDown" ? 1 : -1)] || visible[0];
+            if (!next) return;
+            visible.forEach((button) => button.classList.remove("mark"));
+            next.classList.add("mark");
+            next.scrollIntoView({ block: "nearest" });
+          }
+          if (event.key === "Enter" && !clientList.hidden) {
+            const marked = visible.find((button) => button.classList.contains("mark"));
+            if (!marked) return;
+            event.preventDefault();
+            chooseClient(marked.dataset.id);
+          }
+          if (event.key === "Escape") clientList.hidden = true;
+        });
+        clientQuery.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            clientList.hidden = true;
+            if (!clientQuery.value.trim()) {
+              chooseClient("");
+              return;
+            }
+            const exact = clientButtons.find((button) => button.dataset.id && button.textContent.trim().toLocaleLowerCase("ru") === clientQuery.value.trim().toLocaleLowerCase("ru"));
+            if (exact) chooseClient(exact.dataset.id);
+            else clientQuery.value = clientLabel(clientChosen);
+          }, 150);
+        });
+        clientButtons.forEach((button) => {
+          button.addEventListener("mousedown", (event) => event.preventDefault());
+          button.addEventListener("click", () => chooseClient(button.dataset.id));
+        });
+      }
+      const applyLine = () => {
+        if (!line) return;
+        const option = line.selectedOptions[0];
+        if (!option) return;
+        form.querySelector("[name=caliber_id]").value = option.getAttribute("data-caliber") || "";
+        form.querySelector("[name=grade_id]").value = option.getAttribute("data-grade") || "";
+        form.querySelector("[name=pallet_type]").value = option.getAttribute("data-pallet") || "";
+        form.querySelector("[name=packaging_id]").value = option.getAttribute("data-packaging") || "";
+        const caption = option.getAttribute("data-reserve-label") || "";
+        if (clientBox) clientBox.hidden = !!caption;
+        if (clientHint) clientHint.hidden = !!caption;
+        if (caption && clientValue) chooseClient("");
+        if (reserveBox) {
+          reserveBox.hidden = !caption;
+          reserveBox.querySelector("[data-reserve-caption]").textContent = caption;
+          const plan = Number(option.getAttribute("data-reserve-plan") || "0");
+          const held = Number(option.getAttribute("data-reserve-held") || "0");
+          const box = reserveBox.querySelector("[name=reserve]");
+          if (box) box.checked = caption && held < plan;
+          if (reserveProgress) {
+            reserveProgress.hidden = !caption;
+            const format = (value) => value.toFixed(3).replace(".", ",");
+            reserveProgress.textContent = caption ? `Уже в резерве ${format(held)} из ${format(plan)} кг. Сверх плана паллета остаётся свободной, если галочку снять.` : "";
+          }
+        }
+        setManual(false);
+        recalc();
+      };
+      const packaging = form.querySelector("[name=packaging_id]");
+      const palletType = form.querySelector("[name=pallet_type]");
+      const places = form.querySelector("[name=places]");
+      const gross = form.querySelector("[name=gross]");
+      if (line) line.addEventListener("change", applyLine);
+      if (palletType) palletType.addEventListener("change", () => { setManual(false); recalc(); });
+      packaging.addEventListener("change", () => { setManual(false); recalc(); });
+      places.addEventListener("input", () => { setManual(false); recalc(); });
+      gross.addEventListener("input", () => { setManual(false); recalc(); });
+      if (line) applyLine();
+    });
+  });
+</script>
+
+
+==============================================================================
+### FILE: templates\partials\cell_pick.html
+### SIZE: 5673 bytes / 131 lines
+==============================================================================
+
+<div data-place>
+  <label>Ячейка
+    <span class="client-pick" data-cell-pick>
+      <input type="hidden" name="cell_id" value="{{ selected_cell_id|default:'' }}" data-cell-id>
+      <input type="text" data-cell-query autocomplete="off" autocorrect="off" spellcheck="false" placeholder="А-01" enterkeyhint="search">
+      <ul data-cell-list hidden>
+        {% for cell in warehouse_cells %}
+        <li><button type="button" data-id="{{ cell.id }}" data-code="{{ cell.code }}" data-barcode="{{ cell.barcode }}" data-label="{{ cell.label }}" data-search="{{ cell.zone.code }} {{ cell.code }} {{ cell.label }} {{ cell.name }} {{ cell.barcode }}">{{ cell.label }}</button></li>
+        {% endfor %}
+      </ul>
+    </span>
+  </label>
+  {% if not warehouse_cells %}
+  <p class="hint">Справочник пуст. Сначала заведите <a href="/masters/warehouse-zones">зону</a> и <a href="/masters/warehouse-cells">место</a>: вместе они дают адрес вроде А-01.</p>
+  {% endif %}
+<script>
+(function () {
+  var root = document.currentScript.parentElement;
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = "1";
+  var hidden = root.querySelector("[data-cell-id]");
+  var query = root.querySelector("[data-cell-query]");
+  var list = root.querySelector("[data-cell-list]");
+  var buttons = list ? Array.prototype.slice.call(list.querySelectorAll("button")) : [];
+  function norm(value) { return (value || "").replace(/[\u0000-\u001f]/g, "").trim().toLowerCase(); }
+  function compact(value) { return norm(value).replace(/[-\s]/g, ""); }
+  function exact(raw) {
+    var key = norm(raw);
+    if (!key) return null;
+    var folded = compact(raw);
+    var byBarcode = buttons.filter(function (button) { return norm(button.dataset.barcode) === key; });
+    if (byBarcode.length === 1) return byBarcode[0];
+    var byLabel = buttons.filter(function (button) {
+      return norm(button.dataset.label) === key || compact(button.dataset.label) === folded;
+    });
+    if (byLabel.length === 1 && folded.length >= compact(byLabel[0].dataset.label).length) return byLabel[0];
+    return null;
+  }
+  function choose(button) {
+    if (!button) return;
+    hidden.value = button.dataset.id;
+    query.value = (button.dataset.label || button.textContent).trim();
+    list.hidden = true;
+  }
+  function paint() {
+    var needle = norm(query.value);
+    var folded = compact(query.value);
+    var marked = null;
+    buttons.forEach(function (button) {
+      var search = norm((button.dataset.search || "") + " " + button.textContent);
+      var match = !needle || search.indexOf(needle) !== -1 || compact(search).indexOf(folded) !== -1;
+      button.parentElement.hidden = !match;
+      button.classList.remove("mark");
+      if (match && !marked) marked = button;
+    });
+    if (marked) marked.classList.add("mark");
+    return marked;
+  }
+  function openList() {
+    var marked = paint();
+    list.hidden = !marked;
+  }
+  function syncText() {
+    var hit = exact(query.value);
+    if (hit) {
+      choose(hit);
+      return;
+    }
+    var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+    if (current && norm(query.value) === norm(current.dataset.label)) {
+      list.hidden = true;
+      return;
+    }
+    hidden.value = "";
+    openList();
+  }
+  if (!query) return;
+  var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+  if (current) query.value = current.dataset.label;
+  query.addEventListener("focus", openList);
+  query.addEventListener("input", syncText);
+  query.addEventListener("keydown", function (event) {
+    var visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
+    var index = visible.findIndex(function (button) { return button.classList.contains("mark"); });
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (list.hidden) openList();
+      visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
+      var next = visible[index + (event.key === "ArrowDown" ? 1 : -1)] || visible[0];
+      if (!next) return;
+      visible.forEach(function (button) { button.classList.remove("mark"); });
+      next.classList.add("mark");
+      next.scrollIntoView({ block: "nearest" });
+    }
+    if (event.key === "Enter") {
+      var hit = exact(query.value);
+      var marked = visible.filter(function (button) { return button.classList.contains("mark"); })[0];
+      if (hit || (!list.hidden && marked)) {
+        event.preventDefault();
+        choose(hit || marked);
+      }
+    }
+    if (event.key === "Escape") list.hidden = true;
+  });
+  query.addEventListener("blur", function () {
+    window.setTimeout(function () {
+      list.hidden = true;
+      var hit = exact(query.value);
+      if (hit) {
+        choose(hit);
+        return;
+      }
+      var selected = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+      query.value = selected ? selected.dataset.label : "";
+      if (!selected) hidden.value = "";
+    }, 150);
+  });
+  buttons.forEach(function (button) {
+    button.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    button.addEventListener("click", function () { choose(button); });
+  });
+  var form = root.closest("form");
+  if (form) {
+    form.addEventListener("submit", function () {
+      var hit = exact(query.value);
+      if (hit) choose(hit);
+    });
+  }
+})();
+</script>
+</div>
+
+
+==============================================================================
+### FILE: templates\partials\demand_nodes.html
+### SIZE: 2480 bytes / 22 lines
+==============================================================================
+
+{% load wms %}
+{% for item in nodes %}
+{% if item.title %}
+<tr class="group" data-level="{{ item.level }}" data-open="1">
+  {% for col in columns %}
+  <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and item.short_kg > 0 %} short{% endif %}"{% if col.total_label %} style="padding-left: {{ item.pad }}px"{% endif %}>{% if col.total_label %}<span class="fold">−</span> {{ item.title }}{% elif col.key == "ordered" %}{{ item.ordered_kg|kg }}{% elif col.key == "picked" %}{{ item.picked_kg|kg }}{% elif col.key == "reserve" %}{{ item.reserve_kg|kg }}{% elif col.key == "free" %}{{ item.free_kg|kg }}{% elif col.key == "blocked" %}{{ item.blocked_kg|kg }}{% elif col.key == "stock" %}{{ item.stock_kg|kg }}{% elif col.key == "incoming" %}{{ item.incoming_kg|kg }}{% elif col.key == "short" %}{{ item.short_kg|kg }}{% endif %}</td>
+  {% empty %}
+  <td style="padding-left: {{ item.pad }}px"><span class="fold">−</span> {{ item.title }}</td>
+  {% endfor %}
+</tr>
+{% endif %}
+{% if item.children %}{% include "partials/demand_nodes.html" with nodes=item.children %}{% endif %}
+{% for row in item.rows %}
+<tr data-href="/orders/{{ row.order_id }}" data-level="{{ item.level }}">
+  {% for col in columns %}
+  <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and row.short_kg > 0 %} short{% endif %}">{% if col.key == "order" %}<a href="/orders/{{ row.order_id }}">{{ row.order_number }}</a>{% elif col.key == "ship_date" %}{{ row.ship_date|date:"d.m.Y" }}{% elif col.key == "consignee" %}{{ row.consignee }}{% elif col.key == "category" %}{{ row.category }}{% elif col.key == "product" %}{{ row.product }}{% elif col.key == "grade" %}{{ row.grade }}{% elif col.key == "spec" %}{{ row.spec }}{% elif col.key == "ordered" %}{{ row.ordered_kg|kg }}{% elif col.key == "picked" %}{{ row.picked_kg|kg }}{% elif col.key == "reserve" %}{{ row.reserve_kg|kg }}{% elif col.key == "free" %}{{ row.free_kg|kg }}{% elif col.key == "blocked" %}{{ row.blocked_kg|kg }}{% elif col.key == "stock" %}{{ row.stock_kg|kg }}{% elif col.key == "incoming" %}{{ row.incoming_kg|kg }}{% elif col.key == "short" %}{{ row.short_kg|kg }}{% endif %}</td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% empty %}
+<tr><td colspan="{% if columns %}{{ columns|length }}{% else %}1{% endif %}">{% if filtered %}Ничего не найдено.{% elif has_orders %}Нехватки нет.{% else %}Открытых заказов нет.{% endif %}</td></tr>
+{% endfor %}
+
+
+==============================================================================
+### FILE: templates\partials\pallet_weight.html
+### SIZE: 16 bytes / 1 lines
+==============================================================================
+
+{% load wms %}
+
+
+==============================================================================
+### FILE: templates\partials\receive_form.html
+### SIZE: 2132 bytes / 48 lines
+==============================================================================
+
+{% load wms %}
+<form method="post" action="/receipts/{{ receipt.id }}/units" class="card grid">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <label>Товар
+    <select name="product_id" data-product required>
+      {% for item in products %}
+      <option value="{{ item.id }}" {% if defaults.product_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      {% for item in calibers %}
+      <option value="{{ item.id }}" {% if defaults.caliber_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сортность
+    <select name="grade_id" required>
+      {% for item in grades %}
+      <option value="{{ item.id }}" {% if defaults.grade_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Тара
+    <select name="packaging_id" required>
+      {% for item in packagings %}
+      <option value="{{ item.id }}" {% if defaults.packaging_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Вес, кг <input name="net_kg" inputmode="decimal" autofocus required></label>
+  <label>Входная паллета
+    <select name="pallet_id">
+      <option value="">Не класть на паллету</option>
+      <option value="new">Новая однородная паллета</option>
+      {% for pallet in open_pallets %}
+      <option value="{{ pallet.id }}" {% if defaults.pallet_id == pallet.id %}selected{% endif %}>{{ pallet.number }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button name="action" value="save">Принять</button>

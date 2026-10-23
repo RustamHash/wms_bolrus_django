@@ -1,0 +1,12 @@
+{% load wms %}
+{% if user.is_office %}
+<form method="post" action="/tasks/{{ task.id }}/assign">{% csrf_token %}
+  <input type="hidden" name="next" value="/tasks?kind={% if kind %}{{ kind }}{% else %}all{% endif %}">
+  <select name="user_id" onchange="this.form.submit()">
+    <option value="">—</option>
+    {% for person in staff|get_item:task.kind %}
+    <option value="{{ person.id }}" {% if task.assignee_id == person.id %}selected{% endif %}>{{ person.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% elif task.assignee %}{{ task.assignee.name }}{% endif %}

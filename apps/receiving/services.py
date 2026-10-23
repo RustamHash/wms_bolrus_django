@@ -3,13 +3,13 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from apps.catalog.models import Caliber, Grade, Packaging
+from apps.catalog.models import Caliber, ConsigneeCategory, Grade, Packaging
 from apps.common.constants import PALLET_TARE
 from apps.common.exceptions import WarehouseError
 from apps.common.forms import get_row
 from apps.common.kg import as_kg
 from apps.common.numbers import barcode, document_number
-from apps.inventory.services import has_downstream, post_in, remove_in, update_in
+from apps.inventory.services import has_left, post_in, remove_in, update_in
 from apps.planning.models import Task, TaskLine
 from apps.receiving.models import Lot, Receipt
 from apps.storage.models import HandlingUnit, Pallet
@@ -102,6 +102,21 @@ def _places(*, receipt, lot, pallet, packaging, places: int, gross_kg, net_kg, g
     return as_kg(net_kg)
 
 
+def _category_ids(raw: list[int] | None) -> list[int]:
+    if not raw:
+        return []
+    return list(ConsigneeCategory.objects.filter(pk__in=raw).order_by("sort_order", "name").values_list("id", flat=True))
+
+
+def _reserve_fits(customer_line, category_ids: list[int]) -> None:
+    if not category_ids:
+        return
+    order = customer_line.order
+    consignee = order.consignee if order is not None else None
+    if consignee is None or consignee.category_id not in category_ids:
+        raise WarehouseError("Заказ этой категории не может взять паллету")
+
+
 def _fact(caliber_id: int, grade_id: int):
     return get_row(Caliber, caliber_id, "калибр"), get_row(Grade, grade_id, "сортность")
 
@@ -140,7 +155,8 @@ def accept_pallet(
     grade_id: int,
     user,
     reserve: bool = False,
-    client_id: int | None = None,
+    consignee_id: int | None = None,
+    category_ids: list[int] | None = None,
 ):
     task, line = _open_line(task_line_id, "receive")
     caliber, grade = _fact(caliber_id, grade_id)
@@ -150,23 +166,26 @@ def accept_pallet(
     lot = _lot(receipt, line.product_id, caliber.id, grade.id)
     customer_line = None
     order_id = None
-    if task.order_id:
+    if task.order_id and line.order_line_id:
         customer_line = line.order_line
-        order_id = task.order_id
+        order_id = customer_line.order_id
     elif reserve and line.purchase_line_id and line.purchase_line.customer_line_id:
         customer_line = line.purchase_line.customer_line
         order_id = customer_line.order_id
-    client = None
-    if order_id is None and client_id:
-        from apps.catalog.models import Client
+    consignee = None
+    if order_id is None and consignee_id:
+        from apps.catalog.models import Consignee
 
-        client = get_row(Client, client_id, "клиент")
+        consignee = get_row(Consignee, consignee_id, "грузополучатель")
+    chosen = _category_ids(category_ids)
+    if customer_line is not None:
+        _reserve_fits(customer_line, chosen)
     pallet = Pallet.objects.create(
         kind="inbound",
         status="closed",
         pallet_type=pallet_type,
         order_id=order_id,
-        reserved_client=client,
+        reserved_consignee=consignee,
         reserved_line=customer_line,
         created_by=user,
         closed_by=user,
@@ -175,6 +194,8 @@ def accept_pallet(
     pallet.number = document_number("ПЛ", pallet.id)
     pallet.barcode = barcode("PL", pallet.id)
     pallet.save(update_fields=["number", "barcode"])
+    if chosen:
+        pallet.allowed_categories.set(chosen)
     _places(
         receipt=receipt,
         lot=lot,
@@ -192,8 +213,14 @@ def accept_pallet(
         lot=lot,
         qty_kg=net,
         user=user,
-        reserved=order_id is not None or client is not None,
+        reserved=order_id is not None or consignee is not None,
     )
+    from apps.planning.services import refresh_receive_status
+
+    refresh_receive_status(task)
+    from apps.printing.services import schedule_accepted_passport
+
+    schedule_accepted_passport(pallet.id, getattr(user, "id", None))
     return pallet, movement
 
 
@@ -226,6 +253,9 @@ def accept_loose(*, task_id: int, rows: list[dict], user):
         accepted.append(f"{line.product.name} {format_kg(qty)} кг")
     if not accepted:
         raise WarehouseError("Укажите количество")
+    from apps.planning.services import refresh_receive_status
+
+    refresh_receive_status(task)
     return accepted
 
 
@@ -235,7 +265,7 @@ def _editable(movement_id: int):
     movement = get_row(Movement, movement_id, "движение")
     if movement.kind != "in":
         raise WarehouseError("Правится только приход")
-    if has_downstream(movement):
+    if has_left(movement):
         raise WarehouseError("По паллете уже есть отбор, отгрузка или переработка")
     if movement.task_line_id is None:
         raise WarehouseError("Этот приход проведён документом переработки")
@@ -308,6 +338,11 @@ def pallet_defaults(task: Task) -> dict[int, dict]:
 @transaction.atomic
 def delete_inbound(movement_id: int) -> None:
     movement, pallet, _receipt = _editable(movement_id)
+    task = movement.task
     remove_in(movement)
     pallet.units.all().delete()
     pallet.delete()
+    if task is not None:
+        from apps.planning.services import refresh_receive_status
+
+        refresh_receive_status(task)

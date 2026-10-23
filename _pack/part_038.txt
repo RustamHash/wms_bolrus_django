@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: templates\positions\form.html
+### SIZE: 1600 bytes / 31 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Должность{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новая должность{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/positions/{{ item.id }}{% else %}/positions{% endif %}" class="card grid">{% csrf_token %}
+  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% endif %}" required></label>
+  <fieldset class="grades">
+    <legend>Права</legend>
+    <div class="grade-picks">
+      {% for key, field, label in rights %}
+      <label><input type="checkbox" name="access" value="{{ key }}" {% if key in selected %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <p class="hint">Подпись к должности, не вход в программу. Грузчик и переборка остаются без галочек. Куда человек входит, задают роль и экраны в его карточке.</p>
+  </fieldset>
+  <label>Активна <input type="checkbox" name="active" value="1" {% if not item or item.is_active %}checked{% endif %}></label>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<form method="post" action="/positions/{{ item.id }}/delete" onsubmit="return confirm('Удалить должность?');">{% csrf_token %}
+  <button>Удалить</button>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\positions\list.html
+### SIZE: 1380 bytes / 31 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Должности{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">Должности <span class="journal-count">{{ rows|length }}</span></div>
+      <a class="icon-btn" href="/positions/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </div>
+    {% include "masters/nav.html" %}
+  </div>
+  <p class="hint">Должность — кем человек числится. Доступ в веб и на ТСД задаётся в карточке пользователя.</p>
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>Должность</th><th>Права</th><th>Активна</th><th></th></tr>
+  {% for item in rows %}
+  <tr data-href="/positions/{{ item.id }}">
+    <td>{{ item.name }}</td>
+    <td>{{ item.rights_title }}</td>
+    <td>{% if item.is_active %}да{% else %}нет{% endif %}</td>
+    <td><a href="/positions/{{ item.id }}">Изменить</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">Должностей пока нет.</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\receipts\detail.html
+### SIZE: 1694 bytes / 34 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ receipt.number }}{% endblock %}
+{% block content %}
+<h1>{{ receipt.number }}</h1>
+<p>{{ receipt.supplier.name }}, {{ receipt.doc_date|date:"d.m.Y" }}{% if receipt.ttn_number %}, ТТН {{ receipt.ttn_number }}{% endif %}. {{ DOC_STATUS|label:receipt.status }}</p>
+{% if receipt.status == "open" %}
+{% if products and calibers and grades and packagings %}
+{% include "partials/receive_form.html" %}
+
+{% else %}
+<p>Заполните справочники: товар, калибр, сортность и тара.</p>
+{% endif %}
+<form method="post" action="/receipts/{{ receipt.id }}/close">{% csrf_token %}<button>Закрыть приход</button></form>
+{% endif %}
+<table>
+  <tr><th>Штрихкод</th><th>Товар</th><th>Кг</th><th>Статус</th><th></th></tr>
+  {% for unit in units %}
+  <tr>
+    <td><a href="/units/{{ unit.id }}">{{ unit.barcode }}</a></td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }} / {{ unit.grade.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+    <td>{{ UNIT_STATUS|label:unit.status }}</td>
+    <td>
+      <a href="/print/units/{{ unit.id }}.pdf" target="_blank">PDF</a>
+      <form class="inline" method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>TSC</button></form>
+      <form class="inline" method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Сеть</button></form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Мест нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\receipts\form.html
+### SIZE: 760 bytes / 19 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Новый приход{% endblock %}
+{% block content %}
+<h1>Новый приход</h1>
+<form method="post" action="/receipts" class="card grid">{% csrf_token %}
+  <label>Поставщик
+    <select name="supplier_id" required>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" required></label>
+  <label>ТТН <input name="ttn_number"></label>
+  <button>Открыть</button>
+</form>
+{% if not suppliers %}<p>Сначала добавьте поставщика в справочнике.</p>{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\receipts\list.html
+### SIZE: 752 bytes / 21 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Приходы{% endblock %}
+{% block content %}
+<h1>Приходы</h1>
+<p><a class="btn" href="/receipts/new">Новый приход</a></p>
+<table>
+  <tr><th>Номер</th><th>Дата</th><th>Поставщик</th><th>ТТН</th><th>Статус</th></tr>
+  {% for receipt in receipts %}
+  <tr>
+    <td><a href="/receipts/{{ receipt.id }}">{{ receipt.number }}</a></td>
+    <td>{{ receipt.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ receipt.supplier.name }}</td>
+    <td>{{ receipt.ttn_number }}</td>
+    <td>{{ DOC_STATUS|label:receipt.status }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Приходов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\service\imports.html
+### SIZE: 1789 bytes / 39 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Импорт Excel{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Импорт заказов из Excel</h1>
+    <a class="btn slim" href="/service">К сервису</a>
+  </div>
+</div>
+<p class="hint">Запасной вариант. Основной импорт — из 1С на страницах заказов.</p>
+
+<div class="hub" style="grid-template-columns: 1fr 1fr; gap: 16px; max-width: 720px;">
+  <form class="doc-filter" method="post" action="/service/imports/customers" enctype="multipart/form-data" style="height:auto;">{% csrf_token %}
+    <h2 style="margin:0 0 8px; font-size:16px;">Заказы покупателей</h2>
+    <div class="filter-row">
+      <label>Файл шапки (.xlsx)
+        <input type="file" name="file" accept=".xlsx" required>
+      </label>
+    </div>
+    <div class="filter-row">
+      <label class="check"><input type="checkbox" name="update" value="1"> Обновить существующие</label>
+      <button class="slim">Импорт</button>
+    </div>
+  </form>
+
+  <form class="doc-filter" method="post" action="/service/imports/suppliers" enctype="multipart/form-data" style="height:auto;">{% csrf_token %}
+    <h2 style="margin:0 0 8px; font-size:16px;">Заказы поставщикам</h2>
+    <div class="filter-row">
+      <label>Файл (.xlsx)
+        <input type="file" name="file" accept=".xlsx" required>
+      </label>
+    </div>
+    <div class="filter-row">
+      <label class="check"><input type="checkbox" name="update" value="1"> Обновить существующие</label>
+      <button class="slim">Импорт</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\shipments\detail.html
+### SIZE: 1888 bytes / 34 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ shipment.number }}{% endblock %}
+{% block content %}
+<h1>Накладная {{ shipment.number }}</h1>
+<p>Заказ <a href="/orders/{{ shipment.order.id }}">{{ shipment.order.number }}</a></p>
+<p>Грузополучатель: {{ shipment.client_name }}</p>
+<p>Продавец на стикере: {{ shipment.seller_name }}</p>
+<pre>{{ shipment.seller_requisites }}</pre>
+<p>Условия: {% firstof shipment.shipping_terms "Не указаны" %}</p>
+<div class="actions">
+  <a class="btn" href="/print/shipments/{{ shipment.id }}/sticker.pdf" target="_blank">Стикер PDF</a>
+  <a class="btn" href="/print/shipments/{{ shipment.id }}/waybill.pdf" target="_blank">Отгрузочный лист</a>
+  <form method="post" action="/print/shipments/{{ shipment.id }}">{% csrf_token %}
+    <input type="hidden" name="document" value="sticker"><input type="hidden" name="target" value="tsc"><button>Стикер TSC</button>
+  </form>
+  <form method="post" action="/print/shipments/{{ shipment.id }}">{% csrf_token %}
+    <input type="hidden" name="document" value="sticker"><input type="hidden" name="target" value="network"><button>Стикер на сетевой</button>
+  </form>
+  <form method="post" action="/print/shipments/{{ shipment.id }}">{% csrf_token %}
+    <input type="hidden" name="document" value="waybill"><input type="hidden" name="target" value="network"><button>Лист на сетевой</button>
+  </form>
+</div>
+<table>
+  <tr><th>Место</th><th>Спецификация</th><th>Кг</th></tr>
+  {% for unit in shipment.units %}
+  <tr>
+    <td>{{ unit.barcode }}</td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }} / {{ unit.grade.name }}</td>
+    <td>{{ unit.net_kg|kg }} нетто</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\shipments\list.html
+### SIZE: 2153 bytes / 49 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Накладные{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter" method="get" action="/shipments">
+      <div class="journal-title">Накладные <span class="journal-count">{{ shipments|length }}</span></div>
+      <label>Период
+        <span class="dates">
+          <input type="date" name="date_from" value="{{ date_from }}">
+          <span class="sep">—</span>
+          <input type="date" name="date_to" value="{{ date_to }}">
+        </span>
+      </label>
+      <label>Клиент / продавец
+        <input name="party" value="{{ party }}" placeholder="Имя">
+      </label>
+      <label>Номер
+        <input name="number" value="{{ number }}">
+      </label>
+      <span class="filter-actions">
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/shipments" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+      </span>
+    </form>
+  </div>
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>Номер</th><th>Заказ</th><th>Грузополучатель</th><th>Продавец</th><th>Когда</th></tr>
+  {% for shipment in shipments %}
+  <tr data-href="/shipments/{{ shipment.id }}">
+    <td><a href="/shipments/{{ shipment.id }}">{{ shipment.number }}</a></td>
+    <td>{{ shipment.order.number }}</td>
+    <td>{{ shipment.client_name }}</td>
+    <td>{{ shipment.seller_name }}</td>
+    <td>{{ shipment.created_at|date:"d.m.Y H:i" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Отгрузок нет</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\staff\form.html
+### SIZE: 3045 bytes / 47 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Сотрудник{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новый сотрудник{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<form method="post" action="{% if item %}/staff/{{ item.id }}{% else %}/staff{% endif %}" class="card grid">{% csrf_token %}
+  <label>Фамилия <input name="last_name" value="{% if item %}{{ item.last_name }}{% endif %}" required></label>
+  <label>Имя <input name="first_name" value="{% if item %}{{ item.first_name }}{% endif %}" required></label>
+  <label>Отчество <input name="middle_name" value="{% if item %}{{ item.middle_name }}{% endif %}"></label>
+  <label>Короткий код <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
+  <label>Пользователь
+    <select name="account_id">
+      <option value=""></option>
+      {% for account in accounts %}
+      <option value="{{ account.id }}" {% if item and item.account.id == account.id %}selected{% endif %}>{{ account.name }} · {{ account.login }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint wide">Пользователь входит в веб и на ТСД своим логином. После связи ему видны задания, назначенные этому сотруднику.</p>
+  <label>Должность
+    <select name="position_id" required>
+      <option value=""></option>
+      {% for position in positions %}
+      <option value="{{ position.id }}" {% if item and item.position_id == position.id %}selected{% endif %}>{{ position.name }} — {{ position.rights_title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint wide">На ТСД входят постоянным токеном бейджа или коротким кодом. Достаточно одного, можно задать оба. Операции берутся из должности.</p>
+  <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<div class="card">
+  <h2>Токен входа</h2>
+  <p>Постоянный. QR на бейдже содержит этот токен, его можно и ввести вручную. При сохранении карточки токен не меняется.</p>
+  <label>Токен <input value="{{ item.badge_token }}" readonly></label>
+  <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="220" height="220"></p>
+  <p><a class="btn" href="/users/{{ item.id }}/badge" target="_blank">Печать бейджа</a></p>
+</div>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\staff\list.html
+### SIZE: 1860 bytes / 34 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Сотрудники{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">Сотрудники <span class="journal-count">{{ staff|length }}</span></div>
+      <a class="icon-btn" href="/staff/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </div>
+    {% include "masters/nav.html" %}
+  </div>
+  <p class="hint">Вход на ТСД: постоянный токен бейджа или короткий код. В веб-интерфейс сотрудник не входит.</p>
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>ФИО</th><th>Должность</th><th>Права</th><th>Пользователь</th><th>Код</th><th>Активен</th><th></th></tr>
+  {% for item in staff %}
+  <tr data-href="/staff/{{ item.id }}">
+    <td>{{ item.name }}</td>
+    <td>{% if item.position %}{{ item.position.name }}{% else %}—{% endif %}</td>
+    <td>{% if item.position %}{{ item.position.rights_title }}{% else %}{{ item.access_title }}{% endif %}</td>
+    <td>{% if item.account %}<a href="/users/{{ item.account.id }}">{{ item.account.login }}</a>{% else %}—{% endif %}</td>
+    <td>{% if item.tsd_code %}{{ item.tsd_code }}{% else %}—{% endif %}</td>
+    <td>{% if item.active %}да{% else %}нет{% endif %}</td>
+    <td><a href="/staff/{{ item.id }}">Изменить</a> · <a href="/users/{{ item.id }}/badge">Бейдж</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Сотрудников пока нет.</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\stock.html
+### SIZE: 1997 bytes / 42 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Остатки{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Остатки, кг</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/stock">
+      <div class="filter-row">
+        <label>Товар
+          <input name="product" value="{{ product }}" placeholder="Название">
+        </label>
+        <label>Поставщик
+          <input name="supplier" value="{{ supplier }}" placeholder="Имя">
+        </label>
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<table class="sheet">
+  <tr><th>Партия</th><th>Товар</th><th>Калибр</th><th>Сортность</th><th>Поставщик</th><th>Источник</th><th>Приход</th><th class="num">Свободно</th><th class="num">В резерве</th><th class="num">Отобрано</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td><a href="/lots/{{ row.lot_id }}">{{ row.number }}</a></td>
+    <td>{{ row.product }}</td><td>{{ row.caliber }}</td><td>{{ row.grade }}</td>
+    <td>{{ row.supplier }}</td><td>{{ row.source }}</td><td>{{ row.receipt }}</td>
+    <td class="num">{{ row.free_kg|kg }}</td>
+    <td class="num">{% if row.reserved_kg %}<a href="/stock/{{ row.lot_id }}?product={{ product|urlencode }}&amp;supplier={{ supplier|urlencode }}">{{ row.reserved_kg|kg }}</a>{% else %}{{ row.reserved_kg|kg }}{% endif %}</td>
+    <td class="num">{{ row.picked_kg|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="10">{% if product or supplier %}Ничего не найдено.{% else %}Остатков нет{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\stock_lot.html
+### SIZE: 2237 bytes / 54 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ lot.number }} · резерв{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ lot.number }}</h1>
+    <a class="btn slim" href="{{ back }}">К остаткам</a>
+  </div>
+</div>
+<p>
+  {{ lot.product.name }}, {{ lot.caliber.name }}, {{ lot.grade.name }}.
+  Поставщик {{ lot.supplier.name }}.
+  {% if balance %}Резерв {{ balance.reserved_kg|kg }} кг.{% endif %}
+</p>
+
+<h2>Строки заказов</h2>
+<table class="sheet">
+  <tr>
+    <th>Заказ</th><th>Отгрузка</th><th>Грузополучатель</th><th>Строка</th>
+    <th class="num">План, кг</th><th class="num">Резерв, кг</th><th>Паллеты</th>
+  </tr>
+  {% for line in lines %}
+  <tr>
+    <td>{% if line.order_id %}<a href="/orders/{{ line.order_id }}">{{ line.order_number }}</a>{% else %}—{% endif %}</td>
+    <td>{% if line.ship_date %}{{ line.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td>{{ line.consignee }}</td>
+    <td>{{ line.title }}</td>
+    <td class="num">{% if line.qty_kg is not None %}{{ line.qty_kg|kg }}{% endif %}</td>
+    <td class="num">{{ line.kg|kg }}</td>
+    <td>{% for pallet in line.pallets %}<a href="/pallets/{{ pallet.id }}">{{ pallet.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Резерва под строки заказов нет.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Журнал движений</h2>
+<table class="sheet">
+  <tr><th>Дата</th><th>Вид</th><th>Паллета</th><th class="num">Кг</th><th>Документ</th><th>Кто</th></tr>
+  {% for row in journal %}
+  <tr>
+    <td>{{ row.created_at|date:"d.m.Y H:i" }}</td>
+    <td>{{ row.kind }}</td>
+    <td><a href="/pallets/{{ row.pallet_id }}">{{ row.pallet_number }}</a></td>
+    <td class="num">{{ row.qty_kg|kg }}</td>
+    <td>{% if row.href %}<a href="{{ row.href }}">{{ row.document }}</a>{% else %}—{% endif %}</td>
+    <td>{{ row.user }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Движений нет.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tasks\_assignee.html
+### SIZE: 586 bytes / 12 lines
+==============================================================================
+
+{% load wms %}
+{% if user.is_office %}
+<form method="post" action="/tasks/{{ task.id }}/assign">{% csrf_token %}
+  <input type="hidden" name="next" value="/tasks?kind={% if kind %}{{ kind }}{% else %}all{% endif %}">
+  <select name="user_id" onchange="this.form.submit()">
+    <option value="">—</option>
+    {% for person in staff|get_item:task.kind %}
+    <option value="{{ person.id }}" {% if task.assignee_id == person.id %}selected{% endif %}>{{ person.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% elif task.assignee %}{{ task.assignee.name }}{% endif %}
+
+
+==============================================================================
+### FILE: templates\tasks\detail.html
+### SIZE: 8522 bytes / 164 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ task.number }}{% endblock %}
+{% block content %}
+<h1>{{ task.number }} · {{ TASK_KIND|label:task.kind }}</h1>
+<div class="doc-bar">
+  <a class="btn slim" href="/tasks/{{ task.id }}/print" target="_blank">Печать</a>
+</div>
+<p>
+  {% if task.purchase_order %}
+  Заказ <a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>,
+  {% if task.supplier %}{{ task.supplier.name }}{% else %}{{ task.purchase_order.supplier.name }}{% endif %}.
+  {% elif task.order %}
+  Заказ <a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>,
+  {{ task.order.consignee.name }}, продавец {{ task.order.seller.name }}.
+  {% endif %}
+</p>
+{% if can_status %}
+<form method="post" action="/tasks/{{ task.id }}/status" class="row">{% csrf_token %}
+  <label>Статус
+    <select name="status">
+      {% for key, label in status_choices %}
+      <option value="{{ key }}" {% if task.status == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="slim">Записать</button>
+</form>
+{% else %}
+<p>{{ TASK_STATUS|label:task.status }}</p>
+{% endif %}
+{% if task.kind == "receive" or task.kind == "pick" or task.kind == "ship" %}
+<form method="post" action="/tasks/{{ task.id }}/assign" class="row">{% csrf_token %}
+  <label>Сотрудник
+    <select name="user_id" {% if not can_status %}disabled{% endif %}>
+      <option value="">—</option>
+      {% for person in receivers %}
+      <option value="{{ person.id }}" {% if task.assignee_id == person.id %}selected{% endif %}>{{ person.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if can_status %}<button class="slim">Назначить</button>{% endif %}
+</form>
+{% endif %}
+{% if task.kind == "receive" %}
+<p>{% if task.ttn_number %}ТТН {{ task.ttn_number }}{% endif %}{% if task.doc_date %} {{ task.doc_date|date:"d.m.Y" }}{% endif %}</p>
+{% endif %}
+{% if task.kind == "receive" %}
+<nav class="sheet-tabs">
+  <a href="/tasks/{{ task.id }}" {% if tab != "manual" %}class="on"{% endif %}>Принятые строки / паллеты</a>
+  <a href="/tasks/{{ task.id }}?tab=manual" {% if tab == "manual" %}class="on"{% endif %}>Ручная приёмка</a>
+</nav>
+{% endif %}
+
+{% if task.kind == "pick" %}
+<h2>Строки задания</h2>
+<table>
+  <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">План, кг</th><th class="num">Отобрано, кг</th></tr>
+  {% for line in task.lines.all %}
+  <tr>
+    <td>{{ line.product.name }}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td class="num">{{ picked|get_item:line.id|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h2>Назначения</h2>
+<div class="stack">
+{% for item in allocations %}
+<div class="stack-row">
+  <span>
+    <a href="/pallets/{{ item.allocation.pallet.id }}">{{ item.allocation.pallet.number }}</a>
+    · {{ item.allocation.task_line.product.name }}
+    · план {{ item.allocation.qty_kg|kg }} кг
+    · факт {{ item.fact|kg }} кг
+  </span>
+  {% if task.is_working and item.left > 0 %}
+  <form method="post" action="/tasks/{{ task.id }}/pick" class="row">{% csrf_token %}
+    <input type="hidden" name="allocation_id" value="{{ item.allocation.id }}">
+    <label>Кг <input name="qty_kg" value="{{ item.left }}" inputmode="decimal"></label>
+    <button class="slim">Отобрать</button>
+  </form>
+  {% endif %}
+</div>
+{% empty %}
+<p>Назначений нет. Спланируйте задание.</p>
+{% endfor %}
+</div>
+{% elif task.kind != "receive" or tab != "manual" %}
+<h2>Строки задания</h2>
+<table>
+  <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">План, кг</th><th class="num">Принято, кг</th></tr>
+  {% for line in task.lines.all %}
+  <tr>
+    <td>{{ line.product.name }}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td class="num">{{ received|get_item:line.id|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Паллеты</h2>
+<div class="stack">
+{% for movement in movements %}
+<div class="stack-row">
+  <span>
+    {% if movement.pallet.kind == "loose" %}
+    Без паллета · {{ movement.lot.product.name }} {{ movement.lot.caliber.name }} {{ movement.lot.grade.name }} · {{ movement.qty_kg|kg }} кг
+    {% else %}
+    <a href="/pallets/{{ movement.pallet.id }}">{{ movement.pallet.number }}</a>
+    · {{ movement.pallet.units.all|length }} мест
+    {% if movement.pallet.units.all %}· {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %}
+    · {% pallet_label movement.pallet.pallet_type %}
+    · грязный {{ movement.pallet.units|sum_attr:'gross_kg'|kg }} · чистый {{ movement.qty_kg|kg }} кг
+    · {{ movement.lot.product.name }} {{ movement.lot.caliber.name }} {{ movement.lot.grade.name }}
+    {% if movement.pallet.order %}· резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_consignee %}· резерв {{ movement.pallet.reserved_consignee.name }}{% endif %}
+    {% endif %}
+  </span>
+  {% if movement.kind == "in" and movement.id in editable and user.role == "receiver" or movement.kind == "in" and movement.id in editable and user.is_office %}
+  <form method="post" action="/movements/{{ movement.id }}/delete">{% csrf_token %}
+    <input type="hidden" name="next" value="/tasks/{{ task.id }}">
+    <button class="slim ghost" title="Удалить паллету">✕</button>
+  </form>
+  {% endif %}
+</div>
+{% empty %}
+<p>Паллет ещё нет.</p>
+{% endfor %}
+</div>
+{% elif can_receive %}
+{% include "partials/accept_loose.html" %}
+{% include "partials/accept_pallet.html" %}
+{% else %}
+<p class="hint">{% if task.status == "closed" %}Задание закрыто, приёмка недоступна.{% else %}Приёмка доступна в статусе «К приемке».{% endif %}</p>
+{% endif %}
+
+{% if task.kind == "ship" and task.is_working and user.role == "warehouse" or task.kind == "ship" and task.is_working and user.is_office %}
+<h2>Паллеты в накладную</h2>
+{% for item in waiting %}
+<form method="post" action="/tasks/{{ task.id }}/ship" class="card">{% csrf_token %}
+  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
+  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <input type="hidden" name="movement_id" value="{{ item.movement.id }}">
+  <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}</p>
+  <label><input type="checkbox" name="confirm" value="1"> Условия отгрузки проверены: {% if task.order %}{{ task.order.shipping_terms }}{% else %}не указаны{% endif %}</label>
+  <button>Провести в накладную</button>
+</form>
+{% empty %}
+<p>Отобранных паллет под это задание нет.</p>
+{% endfor %}
+{% endif %}
+
+{% if user.is_office and task.is_working %}
+<form method="post" action="/tasks/{{ task.id }}/close">{% csrf_token %}<button>Закрыть задание</button></form>
+{% elif user.is_office and task.is_closed %}
+  {% if task.purchase_order and task.purchase_order.status != "closed" or task.order and task.order.status != "closed" %}
+  <form method="post" action="/tasks/{{ task.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tasks\list.html
+### SIZE: 11685 bytes / 244 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %}{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools band">
+    <form class="journal-bar journal-filter{% if kind == 'pick' %} with-period{% endif %}" method="get" action="/tasks" id="tasks-filter">
+      <div class="journal-title">{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %} <span class="journal-count">{{ tasks|length }}</span></div>
+      {% if kind == "pick" %}
+      {% include "orders/_period.html" with prefix="ship" label="Дата отгрузки" bound=ship_range tomorrow=1 %}
+      {% endif %}
+      <div class="field-grid">
+        <span>Вид</span>
+        <select name="kind">
+          <option value="all" {% if not kind %}selected{% endif %}>Все</option>
+          {% for key, label in TASK_KIND.items %}
+          <option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span>Статус</span>
+        <select name="status">
+          <option value="" {% if not status %}selected{% endif %}>Не закрытые</option>
+          <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
+          {% for key, label in status_choices %}
+          <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <span class="filter-actions">
+        {% if kind != "receive" %}
+        <label class="check">
+          <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()">
+          По группам
+        </label>
+        {% endif %}
+        <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <a class="icon-btn" href="/tasks?kind={{ kind|default:'all' }}" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
+      </span>
+    </form>
+    <form id="tasks-bulk" class="journal-bar" method="post" action="/tasks">{% csrf_token %}
+      <input type="hidden" name="kind" value="{{ kind|default:'all' }}">
+      {% if kind == "pick" %}
+      <input type="hidden" name="ship_from_type" value="{{ ship_range.from_type }}">
+      <input type="hidden" name="ship_from" value="{{ ship_range.from_value }}">
+      <input type="hidden" name="ship_to_type" value="{{ ship_range.to_type }}">
+      <input type="hidden" name="ship_to" value="{{ ship_range.to_value }}">
+      {% if grouped %}<input type="hidden" name="grouped" value="1">{% endif %}
+      {% endif %}
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <div class="journal-fields">
+        <span class="bulk-count" data-bulk-count="tasks-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            {% if kind == "pick" %}
+            <option value="reserve">Спланировать</option>
+            <option value="pick">Отобрать</option>
+            {% endif %}
+            {% if user.is_office %}<option value="assign">Назначить</option>{% endif %}
+            <option value="print">Печать</option>
+            <option value="delete">Удалить</option>
+          </select>
+        </label>
+        {% if user.is_office %}
+        <label data-assign hidden>Сотрудник
+          <select name="user_id">
+            <option value="">—</option>
+            {% for person in assign_staff %}
+            <option value="{{ person.id }}">{{ person.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label class="check">
+          <input type="checkbox" name="print_groups" value="1">
+          Печать по группам
+        </label>
+        <button class="icon-btn" type="submit" data-tip="Выполнить" aria-label="Выполнить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+        </button>
+      </div>
+    </form>
+  </div>
+  <div class="journal-table">
+<table class="sheet" data-bulk="tasks-bulk" {% if grouped %}id="tasks-grouped"{% endif %}>
+  <tr>
+    <th>Номер</th><th>Вид</th><th>Заказ</th>
+    {% if kind == "receive" %}<th>Поставщик</th><th>Сотрудник</th>{% endif %}
+    {% if kind != "receive" %}
+    <th>Грузополучатель</th><th>Зона доставки</th>
+    {% if kind == "pick" %}<th>Дата доставки</th><th class="num">Вес, кг</th><th class="num">Строк</th>{% endif %}
+    <th>Сотрудник</th>
+    {% endif %}
+    <th>Статус</th>
+  </tr>
+  {% if grouped %}
+  {% for group in groups %}
+  <tr class="group" data-open="1">
+    <td colspan="{% if kind == 'pick' %}10{% else %}7{% endif %}"><span class="fold">−</span> {{ group.title }} · {{ group.tasks|length }}</td>
+  </tr>
+  {% for task in group.tasks %}
+  <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
+    <td><a href="/tasks/{{ task.id }}">{{ task.number }}</a></td>
+    <td>{{ TASK_KIND|label:task.kind }}</td>
+    <td>
+      {% if task.purchase_order %}<a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>
+      {% elif task.order %}<a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>{% endif %}
+    </td>
+    <td>{% if task.order and task.order.consignee_id %}{{ task.order.consignee.name }}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    {% if kind == "pick" %}
+    <td>{% if task.order %}{{ task.order.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td class="num">{{ task.weight_kg|kg }}</td>
+    <td class="num">{{ task.line_count }}</td>
+    {% endif %}
+    <td>{% include "tasks/_assignee.html" %}</td>
+    <td>{{ TASK_STATUS|label:task.status }}</td>
+  </tr>
+  {% endfor %}
+  {% empty %}
+  <tr><td colspan="{% if kind == 'pick' %}10{% else %}7{% endif %}">Заданий нет</td></tr>
+  {% endfor %}
+  {% else %}
+  {% for task in tasks %}
+  <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
+    <td><a href="/tasks/{{ task.id }}">{{ task.number }}</a></td>
+    <td>{{ TASK_KIND|label:task.kind }}</td>
+    <td>
+      {% if task.purchase_order %}<a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>
+      {% elif task.order %}<a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>{% endif %}
+    </td>
+    {% if kind == "receive" %}
+    <td>{% if task.supplier %}{{ task.supplier.name }}{% elif task.purchase_order %}{{ task.purchase_order.supplier.name }}{% endif %}</td>
+    <td>{% include "tasks/_assignee.html" %}</td>
+    {% endif %}
+    {% if kind != "receive" %}
+    <td>{% if task.order and task.order.consignee_id %}{{ task.order.consignee.name }}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    {% if kind == "pick" %}
+    <td>{% if task.order %}{{ task.order.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td class="num">{{ task.weight_kg|kg }}</td>
+    <td class="num">{{ task.line_count }}</td>
+    {% endif %}
+    <td>{% include "tasks/_assignee.html" %}</td>
+    {% endif %}
+    <td>
+      {% if kind == "receive" and user.is_office %}
+      <form method="post" action="/tasks/{{ task.id }}/status">{% csrf_token %}
+        <input type="hidden" name="next" value="/tasks?kind=receive">
+        <select name="status" onchange="this.form.submit()">
+          {% for key, label in status_choices %}
+          <option value="{{ key }}" {% if task.status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}{{ TASK_STATUS|label:task.status }}{% endif %}
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="{% if kind == 'receive' %}6{% elif kind == 'pick' %}10{% else %}7{% endif %}">Заданий нет</td></tr>
+  {% endfor %}
+  {% endif %}
+</table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const bulk = document.getElementById("tasks-bulk");
+  if (bulk) {
+    const action = bulk.querySelector("[name=action]");
+    const assign = bulk.querySelector("[data-assign]");
+    const person = bulk.querySelector("[name=user_id]");
+    const showAssign = () => {
+      const on = action && action.value === "assign";
+      if (assign) assign.hidden = !on;
+      if (person) person.required = on;
+    };
+    if (action) action.addEventListener("change", showAssign);
+    showAssign();
+    bulk.addEventListener("submit", (event) => {
+      const value = action ? action.value : "";
+      if (value === "print") {
+        bulk.target = "_blank";
+        return;
+      }
+      bulk.target = "";
+      if (value === "delete" && !confirm("Удалить отмеченные задания?")) event.preventDefault();
+      if (value === "reserve" && !confirm("Спланировать выбранные задания?")) event.preventDefault();
+      if (value === "pick" && !confirm("Отобрать запланированный вес в выбранных заданиях?")) event.preventDefault();
+      if (value === "assign") {
+        const chosen = person && person.selectedOptions[0];
+        if (!person || !person.value) {
+          event.preventDefault();
+          alert("Выберите сотрудника");
+          return;
+        }
+        const name = chosen ? chosen.textContent.trim() : "";
+        if (!confirm("Назначить выбранные задания сотруднику " + name + "?")) event.preventDefault();
+      }
+    });
+  }
+</script>
+{% if kind == "pick" %}
+<script>
+  document.querySelectorAll("#tasks-filter select.period-type").forEach((select) => {
+    const input = document.getElementById(select.dataset.periodInput);
+    select.addEventListener("change", () => {
+      const custom = select.value === "custom";
+      input.hidden = !custom;
+      input.disabled = !custom;
+      if (!custom) select.form.requestSubmit();
+      else input.focus();
+    });
+    input.addEventListener("change", () => {
+      if (input.value) select.form.requestSubmit();
+    });
+  });
+</script>
+{% endif %}
+{% if grouped %}
+<script>
+  const table = document.getElementById("tasks-grouped");
+  if (table) {
+    table.querySelectorAll("tr.group").forEach((row) => {
+      row.addEventListener("click", () => {
+        const open = row.dataset.open !== "0";
+        row.dataset.open = open ? "0" : "1";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = open ? "+" : "−";
+        let next = row.nextElementSibling;
+        while (next && !next.classList.contains("group")) {
+          next.classList.toggle("folded", open);
+          next = next.nextElementSibling;
+        }
+      });
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\detail.html
+### SIZE: 10347 bytes / 192 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.get_kind_display }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform">К списку</a>
+      {% if open %}
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести документ и изменить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить документ?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }}. Вход {{ input_kg|kg }} кг, выход {{ output_kg|kg }} кг, отход {{ waste_kg|kg }} кг, расхождение {{ gap_kg|kg }} кг, допуск {{ tolerance_kg|kg }} кг.{% if inputs %} {% if fits %}Масса сходится.{% else %}Масса не сходится, проводка остановится.{% endif %}{% endif %}</p>
+{% if document.ledger_waste_kg != None %}
+<p class="hint">В движениях списан отход {{ document.ledger_waste_kg|kg }} кг. Отдельная партия отхода не создаётся. Резерв с исходных паллет снят. Выход получил категории из шапки. Жёсткий резерв входа на выход не переносится.</p>
+{% endif %}
+{% if document.notes and not open %}<p class="hint">{{ document.notes }}</p>{% endif %}
+
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}" class="card grid">{% csrf_token %}
+  <input type="hidden" name="action" value="save">
+  <label>Дата <input type="date" name="doc_date" value="{{ document.doc_date|date:'Y-m-d' }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="{{ document.tolerance_kg|kg }}" inputmode="decimal"></label>
+  <label>Примечание <textarea name="notes">{{ document.notes }}</textarea></label>
+  <fieldset>
+    <legend>Категории выхода</legend>
+    {% for item in consignee_categories %}
+    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}" {% if item.on %}checked{% endif %}> {{ item.name }}</label>
+    {% empty %}
+    <p class="hint">Категорий грузополучателей нет. Выход можно отгрузить любой.</p>
+    {% endfor %}
+    {% if category_conflict %}<p class="hint">У входных паллет нет общей категории. Отметьте, кому можно отгрузить выход, и сохраните шапку.</p>{% elif not document.categories_set %}<p class="hint">Пока шапка не сохранена, отмечены общие категории входа. Пустой список — выход можно отдать любой категории.</p>{% else %}<p class="hint">Список сохранён. Пустой список — выход можно отдать любой категории.</p>{% endif %}
+  </fieldset>
+  <label>Резерв под грузополучателя
+    <select name="output_consignee_id">
+      <option value="">Нет</option>
+      {% for item in consignees %}
+      <option value="{{ item.id }}" {% if document.output_consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Резерв под строку заказа
+    <select name="output_line_id">
+      <option value="">Нет</option>
+      {% for item in order_lines %}
+      <option value="{{ item.id }}" {% if document.output_line_id == item.id %}selected{% endif %}>{{ item.order.number }} · {{ item.order.consignee.name }} · {{ item.product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions"><button class="slim" type="submit">Сохранить шапку</button></div>
+</form>
+<p class="hint">Паллета списывается целиком. Часть веса уходит в дочерние партии, остаток — в отход. Исходную паллету в другую партию не переносят. Дата и допуск берутся из сохранённой шапки.</p>
+{% endif %}
+
+<h2>Вход</h2>
+{% if inputs %}
+<table class="sheet">
+  <tr><th>Паллета</th><th>Партия</th><th>Товар</th><th class="num">Кг</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in inputs %}
+  <tr>
+    <td><a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a></td>
+    <td><a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a></td>
+    <td>{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/inputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Вход пуст.</p>
+{% endif %}
+{% if open %}
+{% if choices %}
+<form method="post" action="/transform/{{ document.id }}/inputs" class="card grid">{% csrf_token %}
+  <label>Паллета на складе
+    <select name="pallet_id" required>
+      <option value=""></option>
+      {% for choice in choices %}
+      <option value="{{ choice.id }}">{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% else %}
+<p class="hint">Свободных паллет на складе нет.</p>
+{% endif %}
+{% endif %}
+
+<h2>Выход</h2>
+<p class="hint">Каждая строка становится дочерней партией и новой паллетой. Сорт берётся из справочника. Жёсткий резерв входа на выход не переносится.</p>
+{% if outputs %}
+<table class="sheet">
+  <tr><th>Товар</th><th>Срок</th><th class="num">Кг</th><th>Партия</th><th>Паллета</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in outputs %}
+  <tr>
+    <td>{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}</td>
+    <td>{% if line.expires_on %}{{ line.expires_on|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{% if line.lot_id %}<a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a>{% else %}после проводки{% endif %}</td>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a>{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/outputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Выхода нет. Весь вход можно списать в отход.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/outputs" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Срок годности <input type="date" name="expires_on"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+
+<h2>Отход</h2>
+<p class="hint">Отход — списание с исходной партии, а не новая партия. Если строка чуть не сходится с весом паллет, в движения уходит разница входа и выхода, пока она внутри допуска.</p>
+{% if wastes %}
+<table class="sheet">
+  <tr><th class="num">Кг</th><th>Причина</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in wastes %}
+  <tr>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{{ line.reason|default:"—" }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/waste/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif not open %}
+<p class="hint">Отхода в строках нет.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/waste" class="card grid">{% csrf_token %}
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Причина <input name="reason" maxlength="200"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\list.html
+### SIZE: 1060 bytes / 28 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Переработка</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform/new?kind=rework">Переборка</a>
+      <a class="btn slim" href="/transform/new?kind=workshop">Цех</a>
+    </div>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Вид</th><th>Статус</th><th>Вход</th><th>Выход</th></tr>
+  {% for document in documents %}
+  <tr data-href="/transform/{{ document.id }}">
+    <td><a href="/transform/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_kind_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{{ document.input_count }}</td>
+    <td>{{ document.output_count }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\new.html
+### SIZE: 1293 bytes / 23 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая переработка</h1>
+    <a class="btn slim" href="/transform">К списку</a>
+  </div>
+</div>
+<form method="post" action="/transform" class="card">{% csrf_token %}
+  <label>Вид
+    <select name="kind">
+      <option value="rework" {% if kind == "rework" %}selected{% endif %}>Переборка</option>
+      <option value="workshop" {% if kind == "workshop" %}selected{% endif %}>Цех</option>
+    </select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="0" inputmode="decimal"></label>
+  <p class="hint">Проводка сверяет вход с суммой выхода и отхода. Расхождение больше допуска документ не проводит. Ноль — массы должны сойтись точно. Отход списывается и не становится партией.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\allocate.html
+### SIZE: 1895 bytes / 40 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Под заказ</h1>
+<form method="get" action="/tsd/allocate">{% csrf_token %}
+  <label>Штрихкод места или паллеты <input name="barcode" value="{{ barcode }}" autofocus autocomplete="off"></label>
+  <button>Найти</button>
+</form>
+{% if barcode and not obj %}<p>Ничего не найдено.</p>{% endif %}
+{% if kind == "unit" %}
+<p>{{ obj.barcode }} · {{ obj.lot.product.name }} {{ obj.lot.caliber.name }} · {{ obj.net_kg|kg }} кг · {{ obj.grade.name }}</p>
+{% for line, reason in matches %}
+<form method="post" action="/tsd/allocate/unit" class="card">{% csrf_token %}
+  <input type="hidden" name="unit_id" value="{{ obj.id }}">
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <input type="hidden" name="barcode" value="{{ barcode }}">
+  <p>{{ line.order.number }} · {{ line.order.consignee.name }}</p>
+  <p>{{ line|describe }}</p>
+  <p>Осталось {{ line|remaining|kg }} кг</p>
+  {% if reason %}<p>{{ reason }}</p>{% else %}<button>Назначить</button>{% endif %}
+</form>
+{% empty %}
+<p>Открытых строк под это место нет.</p>
+{% endfor %}
+{% elif kind == "pallet" %}
+<p>{{ obj.number }}</p>
+{% for line in pallet_lines %}
+<form method="post" action="/tsd/allocate/pallet" class="card">{% csrf_token %}
+  <input type="hidden" name="pallet_id" value="{{ obj.id }}">
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <input type="hidden" name="barcode" value="{{ barcode }}">
+  <p>{{ line.order.number }} · {{ line.order.consignee.name }}</p>
+  <p>{{ line|describe }}</p>
+  <button>Назначить паллету</button>
+</form>
+{% empty %}
+<p>Нет строки, под которую подходит вся паллета.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\find.html
+### SIZE: 1061 bytes / 22 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Поиск</h1>
+<form method="get" action="/tsd/find">{% csrf_token %}
+  <input name="barcode" value="{{ barcode }}" autofocus placeholder="HU или PL">
+  <button class="btn menu">Найти</button>
+</form>
+{% if kind == "pallet" %}
+<p>Паллета {% if user.opens_web %}<a href="/pallets/{{ obj.id }}">{{ obj.number }}</a>{% else %}{{ obj.number }}{% endif %}{% if obj.location %} · {{ obj.location }}{% endif %}</p>
+{% elif kind == "unit" %}
+<p>Место {% if user.opens_web %}<a href="/units/{{ obj.id }}">{{ obj.barcode }}</a>{% else %}{{ obj.barcode }}{% endif %} {{ obj.net_kg|kg }} кг</p>
+{% elif barcode %}
+<p>Ничего не найдено.</p>
+{% endif %}
+{% if movement %}
+<p>Приход по <a href="/tsd/tasks/{{ movement.task_id }}">заданию</a>, {{ movement.qty_kg|kg }} кг</p>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\inventory.html
+### SIZE: 4472 bytes / 88 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ document.number }}</h1>
+<p class="hint">{{ document.doc_date|date:"d.m.Y" }}. Паспорт не обязателен: откройте паллету в списке по товару и месту. Скан — если паспорт на месте.</p>
+<form method="get" action="/tsd/inventory/{{ document.id }}">
+  <label>Паллета
+    <input name="barcode" value="{{ barcode }}" autofocus placeholder="Номер или штрихкод">
+  </label>
+  <button class="btn menu">Найти</button>
+</form>
+{% if line %}
+<p>{% if line.pallet_id %}{{ line.pallet.number|default:line.pallet_id }}{% else %}Новая паллета{% endif %} · {% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</p>
+<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.place %} · {{ line.place }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
+<form method="post" action="/tsd/inventory/{{ document.id }}">{% csrf_token %}
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <label>Факт, кг
+    <input name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal" required>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Ноль — паллеты нет на складе.</p>
+  <button class="btn menu" type="submit">Сохранить</button>
+</form>
+{% elif missing %}
+<p>Паллеты нет в этом документе.</p>
+{% endif %}
+{% if not line %}
+<nav class="digit-menu">
+  {% for item in lines %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}?line={{ item.id }}">
+    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.place %} · {{ item.place }}{% endif %}</span>
+  </a>
+  {% empty %}
+  <p>В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+  {% endfor %}
+</nav>
+<h2>Нет в учёте</h2>
+<form method="post" action="/tsd/inventory/{{ document.id }}/found">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% include "partials/cell_pick.html" %}
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <button class="btn menu" type="submit">Добавить на остаток</button>
+</form>
+{% else %}
+<p><a href="/tsd/inventory/{{ document.id }}">Все паллеты</a></p>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd/inventory"><span class="digit">0</span>К списку</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\inventory_list.html
+### SIZE: 722 bytes / 16 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>Инвентаризация</h1>
+<nav class="digit-menu">
+  {% for document in documents %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}" {% if forloop.counter <= 9 %}data-digit="{{ forloop.counter }}"{% endif %}>
+    {% if forloop.counter <= 9 %}<span class="digit">{{ forloop.counter }}</span>{% endif %}
+    <span>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</span>
+  </a>
+  {% empty %}
+  <p>Открытых подсчётов нет.</p>
+  {% endfor %}
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\menu.html
+### SIZE: 501 bytes / 13 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Меню</h1>
+<p class="hint">Нажмите цифру на клавиатуре или кнопку на экране.</p>
+<nav class="digit-menu">
+  {% for item in items %}
+  <a class="btn menu" data-digit="{{ item.digit }}" href="{{ item.href }}"><span class="digit">{{ item.digit }}</span>{{ item.title }}</a>
+  {% empty %}
+  <p>Нет доступных операций.</p>
+  {% endfor %}
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\move.html
+### SIZE: 966 bytes / 22 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% block content %}
+<h1>Перемещение</h1>
+<form method="get" action="/tsd/move">
+  <label>Паллета <input name="barcode" value="{{ barcode }}" {% if not pallet %}autofocus{% endif %} placeholder="PL или номер"></label>
+  <button class="btn menu">Найти</button>
+</form>
+{% if missing %}
+<p>Паллета не найдена.</p>
+{% endif %}
+{% if pallet %}
+<p>{{ pallet.number }}{% if pallet.location %} · сейчас {{ pallet.location }}{% else %} · ячейка не задана{% endif %}</p>
+<form method="post" action="/tsd/move">{% csrf_token %}
+  <input type="hidden" name="pallet_id" value="{{ pallet.id }}">
+  {% include "partials/cell_pick.html" %}
+  <button class="btn menu">Переместить</button>
+</form>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\pallet.html
+### SIZE: 1667 bytes / 37 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Входная паллета</h1>
+{% if pallet %}
+<p>{{ pallet.number }}, {{ pallet.barcode }}{% if pallet.location %}, {{ pallet.location }}{% endif %}</p>
+<p class="hint">Только одна спецификация. Другой калибр или сортность — новая паллета.</p>
+<div class="actions">
+  <a class="btn" href="/print/pallets/{{ pallet.id }}.pdf">Паспорт PDF</a>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Паспорт на сетевой</button></form>
+  <form method="post" action="/print/pallets/{{ pallet.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>Паспорт на TSC</button></form>
+  <form method="post" action="/tsd/pallet/close">{% csrf_token %}<button>Закрыть</button></form>
+</div>
+<table>
+  {% for unit in pallet.units %}
+  <tr>
+    <td>{{ unit.barcode }}</td>
+    <td>{{ unit.lot.product.name }} {{ unit.lot.caliber.name }}</td>
+    <td>{{ unit.net_kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>Открытой паллеты нет.</p>
+{% endif %}
+<form method="post" action="/tsd/pallet" class="card">{% csrf_token %}
+  <label>Ячейка новой паллеты <input name="location"></label>
+  <button>Новая паллета</button>
+</form>
+{% if open_pallets %}
+<ul>
+  {% for item in open_pallets %}
+  <li><a href="/tsd/pallet?pallet_id={{ item.id }}">{{ item.number }}</a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\receive.html
+### SIZE: 1407 bytes / 36 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>Приёмка</h1>
+{% if receipts %}
+<form method="get" action="/tsd/receive">{% csrf_token %}
+  <label>Приход
+    <select name="receipt_id" onchange="this.form.submit()">
+      {% for item in receipts %}
+      <option value="{{ item.id }}" {% if receipt and receipt.id == item.id %}selected{% endif %}>{{ item.number }} · {{ item.supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+<form method="post" action="/receipts" class="card grid">{% csrf_token %}
+  <input type="hidden" name="next" value="/tsd/receive">
+  <label>Новый поставщик
+    <select name="supplier_id">{% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}</select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" required></label>
+  <label>ТТН <input name="ttn_number"></label>
+  <button>Открыть приход</button>
+</form>
+{% if receipt and products %}
+{% include "partials/receive_form.html" %}
+
+<table>
+  {% for unit in units %}
+  <tr><td>{{ unit.barcode }}</td><td>{{ unit.net_kg|kg }} кг</td><td>{{ unit.grade.name }}</td></tr>
+  {% endfor %}
+</table>
+{% elif receipt %}
+<p>Заполните справочники товара на компьютере.</p>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\task.html
+### SIZE: 3104 bytes / 58 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>{% if task.supplier %}{{ task.supplier.name }}{% else %}{{ task.number }}{% endif %}</h1>
+<p>
+  {{ task.number }}{% if task.assignee %} · {{ task.assignee.name }}{% endif %}
+  · {% if task.purchase_order %}{{ task.purchase_order.number }}{% elif task.order %}{{ task.order.number }}{% endif %}
+  {% if task.ttn_number %} · ТТН {{ task.ttn_number }}{% endif %}
+</p>
+
+{% if task.kind == "receive" and task.is_working %}
+
+{% include "partials/accept_pallet.html" %}
+
+<h2>Принято</h2>
+{% for movement in movements %}
+<p>{{ movement.pallet.number }} · {{ movement.pallet.units.all|length }} мест{% if movement.pallet.units.all %} · {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %} · {% pallet_label movement.pallet.pallet_type %} · чистый {{ movement.qty_kg|kg }} кг{% if movement.pallet.order %} · резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_consignee %} · резерв {{ movement.pallet.reserved_consignee.name }}{% endif %}</p>
+{% if movement.id in editable %}
+<form method="post" action="/movements/{{ movement.id }}/delete">{% csrf_token %}
+  <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
+  <button>Удалить</button>
+</form>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if task.kind == "pick" and task.is_working %}
+{% for line in task.lines.all %}
+<p>{{ line.product.name }} · план {{ line.qty_kg|kg }} · отобрано {{ picked|get_item:line.id|kg }}</p>
+{% endfor %}
+{% for item in allocations %}
+{% if item.left > 0 %}
+<form method="post" action="/tasks/{{ task.id }}/pick">{% csrf_token %}
+  <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
+  <input type="hidden" name="allocation_id" value="{{ item.allocation.id }}">
+  <label>Кг <input name="qty_kg" value="{{ item.left }}" inputmode="decimal"></label>
+  <button class="btn menu">Отобрать {{ item.allocation.pallet.number }} · {{ item.allocation.task_line.product.name }}</button>
+</form>
+{% endif %}
+{% empty %}<p>Назначений нет.</p>{% endfor %}
+{% endif %}
+
+{% if task.kind == "ship" and task.is_working %}
+{% for item in waiting %}
+<form method="post" action="/tasks/{{ task.id }}/ship">{% csrf_token %}
+  <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
+  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
+  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <input type="hidden" name="movement_id" value="{{ item.movement.id }}">
+  <label><input type="checkbox" name="confirm" value="1"> Условия проверены</label>
+  <button class="btn menu">В накладную {{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг</button>
+</form>
+{% empty %}<p>Паллет к отгрузке нет.</p>{% endfor %}
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\tasks.html
+### SIZE: 938 bytes / 17 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="hint">Цифра 1–9 открывает задание, 0 возвращает в меню.</p>
+<nav class="digit-menu">
+  {% for task in tasks %}
+  <a class="btn menu" href="/tsd/tasks/{{ task.id }}" {% if forloop.counter <= 9 %}data-digit="{{ forloop.counter }}"{% endif %}>
+    {% if forloop.counter <= 9 %}<span class="digit">{{ forloop.counter }}</span>{% endif %}
+    <span>{{ task.number }} · {% if task.purchase_order %}{{ task.purchase_order.supplier.name }}{% elif task.order %}{{ task.order.number }}{% endif %}{% if task.assignee %} · {{ task.assignee.name }}{% endif %}</span>
+  </a>
+  {% empty %}
+  <p>{{ empty|default:"Вам не назначены задания." }}</p>
+  {% endfor %}
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd_base.html
+### SIZE: 530 bytes / 13 lines
+==============================================================================
+
+{% extends "layout.html" %}
+{% load wms %}
+{% block body_class %}tsd{% endblock %}
+{% block title %}ТСД{% endblock %}
+{% block header %}
+<header class="top tsd-top">
+  <a class="brand" href="/tsd">ТСД</a>
+  <nav>
+    <a href="/tsd/find" class="{% if request.path|startswith:'/tsd/find' %}active{% endif %}">Поиск</a>
+  </nav>
+  <form method="post" action="/logout">{% csrf_token %}<input type="hidden" name="next" value="/tsd/login"><button class="link">Выход</button></form>
+</header>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd_login.html
+### SIZE: 642 bytes / 17 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block header %}
+<header class="top tsd-top">
+  <span class="brand">ТСД</span>
+</header>
+{% endblock %}
+{% block content %}
+<h1>Вход</h1>
+<p class="hint">Введите короткий код или отсканируйте бейдж. Сканер вводит токен в поле и подтверждает вход.</p>
+<form method="post" action="/tsd/login" class="card">{% csrf_token %}
+  <label>Код или токен
+    <input name="code" data-code autocomplete="off" autofocus>
+  </label>
+  <button class="btn">Войти</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\units\detail.html
+### SIZE: 2830 bytes / 43 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ unit.barcode }}{% endblock %}
+{% block content %}
+<h1>{{ unit.barcode }}</h1>
+<div class="card">
+  <p>{{ unit.lot.product.name }}, калибр {{ unit.lot.caliber.name }}, сортность {{ unit.grade.name }}, {{ unit.packaging.name }}</p>
+  <p>Брутто {{ unit.gross_kg|kg }} кг, тара {{ unit.packaging.tare_kg|kg }} кг, нетто {{ unit.net_kg|kg }} кг</p>
+  <p>Поставщик {{ unit.lot.supplier.name }}, приход {{ unit.receipt.number }}, {{ unit.lot.received_on|date:"d.m.Y" }}</p>
+  <p>Партия <a href="/lots/{{ unit.lot_id }}">{{ unit.lot.number }}</a>, {{ unit.lot.get_source_display }}</p>
+  <p>Статус: {{ UNIT_STATUS|label:unit.status }}{% if unit.pallet %}, паллета <a href="/pallets/{{ unit.pallet.id }}">{{ unit.pallet.number }}</a>{% endif %}</p>
+  {% with alloc=unit|allocation %}
+  {% if alloc %}
+  <p>Старое назначение на заказ {{ alloc.order_line.order.number }}</p>
+  {% endif %}
+  {% endwith %}
+  {% if unit.reject_reason %}<p>Брак: {{ unit.reject_reason }}</p>{% endif %}
+  <div class="actions">
+    <a class="btn" href="/print/units/{{ unit.id }}.pdf" target="_blank">PDF этикетки</a>
+    <form method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="tsc"><button>Печать TSC</button></form>
+    <form method="post" action="/print/units/{{ unit.id }}">{% csrf_token %}<input type="hidden" name="target" value="network"><button>Сетевой принтер</button></form>
+  </div>
+</div>
+{% if unit.pallet and unit.status != "transformed" %}
+<form method="post" action="/units/{{ unit.id }}/detach">{% csrf_token %}<button>Снять с паллеты</button></form>
+{% endif %}
+{% if unit.status != "shipped" and unit.status != "rejected" and unit.status != "transformed" %}
+<form method="post" action="/units/{{ unit.id }}/quality" class="card grid">{% csrf_token %}
+  <h2>Сортность</h2>
+  <label>Сортность
+    <select name="grade_id">
+      {% for item in grades %}<option value="{{ item.id }}" {% if item.id == unit.grade_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button>Сохранить</button>
+  <p class="hint">Принятую паллету меняют в задании. Пока по ней нет отбора и отгрузки, приход можно исправить или удалить там.</p>
+</form>
+<form method="post" action="/units/{{ unit.id }}/reject" class="card" onsubmit="return confirm('Отметить брак?')">{% csrf_token %}
+  <label>Причина <input name="reason"></label>
+  <button>В брак</button>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\users\access_grid.html
+### SIZE: 622 bytes / 17 lines
+==============================================================================
+
+{% load wms %}
+<table class="sheet access-grid">
+  <tr>
+    <th>Меню</th>
+    {% for action, label in actions %}
+    <th>{{ label }}</th>
+    {% endfor %}
+  </tr>
+  {% for screen in screens %}
+  <tr>
+    <td class="screen">{{ screen.title }}{% if screen.hint %}<div class="hint">{{ screen.hint }}</div>{% endif %}</td>
+    {% for action, label in actions %}
+    <td><input type="checkbox" name="screen" value="{{ screen.key }}:{{ action }}" aria-label="{{ screen.title }} — {{ label }}" {% if screen.checks|get_item:action %}checked{% endif %}></td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+
+
+==============================================================================
+### FILE: templates\users\badge.html
+### SIZE: 710 bytes / 11 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Бейдж {{ item.name }}{% endblock %}
+{% block content %}
+<h1>{{ item.name }}</h1>
+<p>{{ ROLE_LABELS|label:item.role }}{% if item.position %} · {{ item.position.name }}{% endif %}</p>
+{% if item.tsd_code %}<p>Код: {{ item.tsd_code }}</p>{% endif %}
+<p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="280" height="280"></p>
+<p class="hint">Личный бейдж для входа в ТСД. QR-код сканируют на экране входа.</p>
+<p><button type="button" onclick="window.print()">Печать</button> <a href="/users/{{ item.id }}">К карточке</a></p>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\users\form.html
+### SIZE: 6958 bytes / 106 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Пользователь{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{% if item %}{{ item.name }}{% else %}Новый пользователь{% endif %}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>
+<nav class="sheet-tabs" id="user-tabs">
+  <button type="button" class="on" data-pane="card">Карточка</button>
+  <button type="button" data-pane="web">Доступы</button>
+  <button type="button" data-pane="tsd">Экран ТСД</button>
+</nav>
+<form method="post" action="{% if item %}/users/{{ item.id }}{% else %}/users{% endif %}" id="user-form">{% csrf_token %}
+  <input type="hidden" name="screens_present" value="1">
+  <div class="card grid" data-pane="card">
+    <label>Фамилия <input name="last_name" value="{% if item %}{{ item.last_name }}{% endif %}" required></label>
+    <label>Имя <input name="first_name" value="{% if item %}{% if item.first_name %}{{ item.first_name }}{% elif not item.last_name %}{{ item.name }}{% endif %}{% endif %}" required></label>
+    <label>Отчество <input name="middle_name" value="{% if item %}{{ item.middle_name }}{% endif %}"></label>
+    <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% endif %}" required></label>
+    <label>Пароль <input name="password" type="password" placeholder="{% if item %}пусто — не менять{% else %}нужен только для входа в веб{% endif %}"></label>
+    <label>Роль
+      <select name="role" id="user-role">
+        {% for key, label in roles.items %}
+        <option value="{{ key }}" {% if item and item.role == key or not item and key == 'none' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Должность
+      <select name="position_id">
+        <option value=""></option>
+        {% for position in positions %}
+        <option value="{{ position.id }}" {% if item and item.position_id == position.id %}selected{% endif %}>{{ position.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Короткий код ТСД <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
+    <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
+    <p class="hint wide">Один человек — одна карточка. Роль подставляет экраны веба и ТСД, их можно поправить на соседних вкладках. «Без доступа» — человек числится, например грузчик или переборка, и в программу не входит. Должность только называет работу и сама доступ не открывает.</p>
+    {% if can_grant %}
+    <label>Доступ в админку
+      <input type="checkbox" name="admin_access" value="1" {% if admin_access %}checked{% endif %}>
+    </label>
+    <p class="hint">Личный допуск этого пользователя. Допуск целой роли задаётся в админке, раздел «Доступ ролей». Что можно делать внутри админки, задают галочки вкладок «Доступы» и «Экран ТСД».</p>
+    {% endif %}
+    <label>Активен <input type="checkbox" name="active" value="1" {% if not item or item.active %}checked{% endif %}></label>
+  </div>
+  <div class="card" data-pane="web" hidden>
+    <p class="hint">Меню сайта. Чтение открывает раздел, запись позволяет сохранять, создание — добавлять, удаление — удалять. Те же права получает Django-админка по моделям этого меню. У администратора доступ полный независимо от галочек.</p>
+    {% include "users/access_grid.html" with screens=web_screens %}
+  </div>
+  <div class="card" data-pane="tsd" hidden>
+    <p class="hint">Кнопки меню терминала. Чтение показывает пункт и открывает экран, запись разрешает сохранять операцию. Пустые галочки — на ТСД входа нет.</p>
+    {% include "users/access_grid.html" with screens=tsd_screens %}
+  </div>
+  <button>Сохранить</button>
+</form>
+{% if item %}
+<div class="card">
+  <h2>Бейдж ТСД</h2>
+  <p>Личный QR-код для входа на терминале. PIN задаётся выше и тоже только у этого пользователя.</p>
+  <p><img src="/users/{{ item.id }}/badge.png" alt="QR-код {{ item.name }}" width="220" height="220"></p>
+  <p><a class="btn" href="/users/{{ item.id }}/badge" target="_blank">Печать бейджа</a></p>
+  <form method="post" action="/users/{{ item.id }}/badge" onsubmit="return confirm('Старый QR перестанет открывать вход. Выпустить новый?')">{% csrf_token %}
+    <button>Выпустить новый QR</button>
+  </form>
+</div>
+{% endif %}
+{{ role_presets|json_script:"role-access" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const tabs = document.getElementById("user-tabs");
+  const form = document.getElementById("user-form");
+  if (!tabs || !form) return;
+  const showPane = (pane) => {
+    tabs.querySelectorAll("button").forEach((item) => item.classList.toggle("on", item.dataset.pane === pane));
+    form.querySelectorAll("[data-pane]").forEach((item) => { item.hidden = item.dataset.pane !== pane; });
+  };
+  tabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-pane]");
+    if (!button) return;
+    showPane(button.dataset.pane);
+  });
+  form.addEventListener("invalid", (event) => {
+    const pane = event.target.closest("[data-pane]");
+    if (pane) showPane(pane.dataset.pane);
+  }, true);
+  const role = document.getElementById("user-role");
+  const presetNode = document.getElementById("role-access");
+  if (!role || !presetNode || form.dataset.saved === "1") return;
+  const presets = JSON.parse(presetNode.textContent || "{}");
+  const apply = () => {
+    const marks = new Set(presets[role.value] || []);
+    form.querySelectorAll("input[name=screen]").forEach((box) => { box.checked = marks.has(box.value); });
+  };
+  if (!{{ item|yesno:"true,false" }}) apply();
+  role.addEventListener("change", apply);
+})();
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\users\list.html
+### SIZE: 1389 bytes / 32 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Пользователи{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <div class="journal-bar">
+      <div class="journal-title">Пользователи <span class="journal-count">{{ users|length }}</span></div>
+      <a class="icon-btn" href="/users/new" data-tip="Добавить" aria-label="Добавить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </div>
+    {% include "masters/nav.html" %}
+  </div>
+  <div class="journal-table">
+<table class="sheet">
+  <tr><th>ФИО</th><th>Логин</th><th>Роль</th><th>Должность</th><th>Вход</th><th>Активен</th><th></th></tr>
+  {% for item in users %}
+  <tr data-href="/users/{{ item.id }}">
+    <td>{{ item.name }}</td>
+    <td>{{ item.login }}</td>
+    <td>{{ ROLE_LABELS|label:item.role }}</td>
+    <td>{% if item.position %}{{ item.position.name }}{% else %}—{% endif %}</td>
+    <td>{{ item.entry_label }}</td>
+    <td>{% if item.active %}да{% else %}нет{% endif %}</td>
+    <td><a href="/users/{{ item.id }}">Изменить</a> · <a href="/users/{{ item.id }}/badge">Бейдж</a></td>
+  </tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: wms_inbound_sorting_spec.md
+### SIZE: 21593 bytes / 229 lines
+==============================================================================
+
+# WMS ДЛЯ ПЛОДООВОЩНОГО СКЛАДА: МОДУЛЬ ПРИЕМКИ И ПЕРЕБОРКИ (MVP)
+
+Этот документ содержит полный контекст проектирования ядра WMS на Django для овощей и фруктов: от технического задания для программиста до регламента работы персонала на складе.
+
+---
+
+## ЧАСТЬ 1: Техническое задание для программиста (Архитектура и Бэкенд)
+
+### 1. Архитектура сущностей и связей (ORM Django)
+Учет остатков строится на неизменяемом Регистре движений (бухгалтерский метод). Таблица Stock выполняет роль денормализованного «снимка» текущего состояния для быстрой работы алгоритмов (например, подбора по FEFO). Любое изменение остатков обязано проводиться через запись транзакции в InventoryTransaction.
+
+#### Набор ключевых полей для разработки моделей (apps/inbound/models.py):
+
+class InboundOrder(models.Model):
+    # status: PLAN (План), IN_PROGRESS (В работе), COMPLETED (Завершен), CANCELLED (Отменено)
+    # receiver: ForeignKey на User (Назначенный приемщик)
+    # truck_temperature: Decimal (Температура в кузове)
+    # driver_info: CharField (ФИО, Госномер, данные авто)
+    
+    # Пакет документов в формате PDF. Может быть null, если документов нет.
+    document_package_pdf = models.FileField("Скан пакета документов (PDF)", upload_to='inbound/documents/%Y/%m/%d/', null=True, blank=True)
+    document_comment = models.TextField("Комментарий к документам", blank=True, help_text="Обязателен, если PDF отсутствует")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if not self.document_package_pdf and not self.document_comment:
+            raise ValidationError({'document_comment': 'Вы должны загрузить PDF-скан документов или указать причину их отсутствия.'})
+
+class InboundItem(models.Model):
+    """ Строка плана приемки """
+    order = models.ForeignKey(InboundOrder, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, verbose_name="Товар")
+    grade = models.CharField("Сорт из плана (Напр: 1 сорт, Экстра. Для вала - Вал/Несортированный)", max_length=50)
+    planned_quantity = models.DecimalField("Плановый вес, кг", max_digits=10, decimal_places=2)
+
+    @property
+    def actual_quantity(self):
+        """ Факт — сумма транзакций INBOUND по связанным партиям этой строки """
+        from apps.inventory.models import InventoryTransaction
+        batch_ids = self.batches.values_list('id', flat=True)
+        result = InventoryTransaction.objects.filter(
+            transaction_type='INBOUND',
+            pallet__batch_id__in=batch_ids
+        ).aggregate(total=models.Sum('quantity'))['total']
+        return result or 0.00
+
+class InboundPhoto(models.Model):
+    """ Оперативный фотоконтроль дефектов или машины на рампе """
+    PHOTO_TYPES = [
+        ('TRUCK_NUM', 'Госномер машины'),
+        ('OPEN_TRUCK', 'Открытый кузов'),
+        ('DEFECT', 'Фото брака / дефекта товара'),
+    ]
+    order = models.ForeignKey(InboundOrder, on_delete=models.CASCADE, related_name='photos')
+    photo_type = models.CharField(max_length=15, choices=PHOTO_TYPES)
+    image = models.ImageField(upload_to='inbound/photos/', null=True, blank=True)
+    comment = models.TextField("Комментарий к фото", blank=True)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if not self.image and not self.comment:
+            raise ValidationError({'comment': 'Обязательно добавьте фото или напишите комментарий с причиной его отсутствия.'})

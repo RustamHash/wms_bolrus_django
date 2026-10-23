@@ -6,7 +6,6 @@ from apps.planning.models import Order, OrderLine, OrderRevision
 from apps.planning.services import delete_line, update_line_qty
 
 HEADER_FIELDS = (
-    ("client", "Покупатель"),
     ("consignee", "Грузополучатель"),
     ("seller", "Продавец"),
     ("ship_date", "Дата отгрузки"),
@@ -45,9 +44,9 @@ def revision_summary(changes: dict) -> str:
 
 
 def header_snapshot(order: Order) -> dict:
-    consignee = order.consignee.name if order.consignee_id else order.client.name
+    consignee = order.consignee.name if order.consignee_id else ""
     return {
-        "client": order.client.name,
+        "client": consignee,
         "consignee": consignee,
         "seller": order.seller.name,
         "ship_date": order.ship_date.isoformat(),
@@ -192,14 +191,14 @@ def store_baseline(order: Order, user) -> None:
     _store(order, order.revision or 1, header_snapshot(order), line_snapshot(order), empty_changes(), user)
 
 
-def apply_import(order: Order, user, *, client, consignee, seller, ship_date, terms: str, lines: list[dict]) -> dict:
+def apply_import(order: Order, user, *, consignee, seller, ship_date, terms: str, lines: list[dict]) -> dict:
     before_header = header_snapshot(order)
     before_lines = line_snapshot(order)
     wanted = diff_states(
         before_header,
         before_lines,
         incoming_header(
-            client_name=client.name,
+            client_name=consignee.name,
             consignee_name=consignee.name,
             seller_name=seller.name,
             ship_date=ship_date,
@@ -211,7 +210,6 @@ def apply_import(order: Order, user, *, client, consignee, seller, ship_date, te
         return {"kind": "same", "changes": wanted}
     if order.status != "open":
         return {"kind": "closed", "changes": wanted}
-    order.client = client
     order.consignee = consignee
     order.seller = seller
     order.ship_date = ship_date

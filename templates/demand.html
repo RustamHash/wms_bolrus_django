@@ -67,7 +67,7 @@
   {% if groups %}
   <tr class="subtotal">
     {% for col in columns %}
-    <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and short_total > 0 %} short{% endif %}">{% if col.total_label %}Итого{% elif col.key == "ordered" %}{{ ordered_total|kg }}{% elif col.key == "picked" %}{{ picked_total|kg }}{% elif col.key == "stock" %}{{ stock_total|kg }}{% elif col.key == "incoming" %}{{ incoming_total|kg }}{% elif col.key == "short" %}{{ short_total|kg }}{% endif %}</td>
+    <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and short_total > 0 %} short{% endif %}">{% if col.total_label %}Итого{% elif col.key == "ordered" %}{{ ordered_total|kg }}{% elif col.key == "picked" %}{{ picked_total|kg }}{% elif col.key == "reserve" %}{{ reserve_total|kg }}{% elif col.key == "free" %}{{ free_total|kg }}{% elif col.key == "blocked" %}{{ blocked_total|kg }}{% elif col.key == "stock" %}{{ stock_total|kg }}{% elif col.key == "incoming" %}{{ incoming_total|kg }}{% elif col.key == "short" %}{{ short_total|kg }}{% endif %}</td>
     {% empty %}<td>Итого</td>{% endfor %}
   </tr>
   {% endif %}

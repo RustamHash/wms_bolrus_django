@@ -22,7 +22,7 @@ WEB_SCREENS = (
     {
         "key": "web_orders",
         "title": "Заказы",
-        "hint": "Покупатели и поставщики",
+        "hint": "Грузополучатели и поставщики",
         "models": _models(
             "planning",
             "order",
@@ -87,14 +87,14 @@ WEB_SCREENS = (
             "grade",
             "packaging",
             "supplier",
-            "client",
             "deliveryzone",
             "consigneecategory",
             "consignee",
             "seller",
         )
         + _models("accounts", "user", "position")
-        + _models("printing", "printer"),
+        + _models("printing", "printer")
+        + _models("storage", "warehousezone", "warehousecell"),
     },
     {
         "key": "web_service",
@@ -172,9 +172,9 @@ def legacy_visible(user, screen: str) -> bool:
     if screen in WEB_OFFICE:
         return user.is_office
     if screen in WEB_PUBLIC:
-        return user.role != "employee"
+        return user.role in ("receiver", "warehouse", "office", "admin")
     if screen == "tsd_find":
-        return True
+        return user.role in ("receiver", "warehouse", "office", "admin")
     if screen == "tsd_inventory":
         return user.role in ("receiver", "warehouse", "office", "admin")
     if screen == "tsd_shift":
@@ -191,6 +191,34 @@ def screen_checked(user, screen: str, action: str) -> bool:
     if user.access_managed and user.pk:
         return user.has_perm(screen_perm(screen, action))
     return legacy_visible(user, screen)
+
+
+def opens_web(user) -> bool:
+    if not getattr(user, "is_active", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "role", "") == "admin":
+        return True
+    return any(screen_allows(user, screen["key"], "view") for screen in WEB_SCREENS)
+
+
+def opens_tsd(user) -> bool:
+    if not getattr(user, "is_active", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "role", "") == "admin":
+        return True
+    return any(screen_allows(user, screen["key"], "view") for screen in TSD_SCREENS)
+
+
+def entry_label(user) -> str:
+    web = opens_web(user)
+    tsd = opens_tsd(user)
+    if web and tsd:
+        return "Веб и ТСД"
+    if web:
+        return "Веб"
+    if tsd:
+        return "ТСД"
+    return "без входа"
 
 
 def screen_allows(user, screen: str, action: str = "view") -> bool:
@@ -229,7 +257,7 @@ def role_presets() -> dict[str, list[str]]:
     from apps.accounts.models import User
 
     presets = {}
-    for role in ("receiver", "warehouse", "office", "admin", "employee"):
+    for role in ("none", "receiver", "warehouse", "office", "admin"):
         stub = User(role=role, is_active=True, access_managed=False)
         marks = []
         for screen in ALL_SCREENS:

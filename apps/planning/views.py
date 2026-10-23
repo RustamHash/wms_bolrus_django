@@ -3,14 +3,15 @@ from decimal import Decimal
 from urllib.parse import quote
 
 from django.db import close_old_connections, transaction
-from django.db.models import DecimalField, Exists, OuterRef, Prefetch, Q, Sum, Value
+from django.db.models import Count, DecimalField, Exists, OuterRef, Prefetch, Q, Sum, Value, prefetch_related_objects
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.catalog.models import Client
+from apps.accounts.services import person_ids
+from apps.catalog.models import Consignee, ConsigneeCategory
 from apps.catalog.services import load_refs
-from apps.common.constants import task_status_choices
+from apps.common.constants import TASK_STATUS, task_status_choices
 from apps.common.exceptions import WarehouseError
 from apps.common.kg import as_kg
 from apps.common.forms import optional_int, optional_int_query, parse_date, parse_kg, query_date, require_int, text
@@ -18,10 +19,10 @@ from apps.common.periods import range_from_query
 from apps.common.http import back_url, done, guarded, roles_required
 from apps.common.notices import notify
 from apps.inventory.models import Movement
+from apps.inventory.services import downstream_pallet_ids
 from apps.logistics.models import Driver, Route, RouteOrder
-from apps.inventory.services import has_downstream, received_kg
-from apps.picking.services import waiting_pallets as pick_waiting
-from apps.planning.models import Order, OrderLine, OrderRevision, PurchaseOrder, PurchaseOrderRevision, Task
+from apps.picking.services import pick_ready_task, reserve_for_task
+from apps.planning.models import Order, OrderLine, OrderRevision, PurchaseOrder, PurchaseOrderRevision, Task, TaskLine
 from apps.planning.revisions import revision_summary
 from apps.onec.exceptions import OnecError
 from apps.onec.sync import iter_sync_customer_orders, iter_sync_purchase_orders, sync_customer_orders, sync_purchase_orders
@@ -36,9 +37,13 @@ from apps.planning.services import (
     delete_customer_orders,
     delete_purchase_orders,
     delete_tasks,
+    assign_receive_task,
+    require_assigned,
     set_task_status,
+    staff_for_tasks,
     unmapped_titles,
     posted_line_ids,
+    order_pick_boards,
     received_fact_csv,
     save_customer_order,
     save_purchase_order,
@@ -156,22 +161,28 @@ def _customer_line_choices(extra_ids=None):
     from apps.common.kg import format_kg
     from apps.planning.models import OrderLine
 
-    query = Q(order__status="open", for_task=True)
+    query = Q(order__status__in=("open", "partial"), for_task=True)
     if extra_ids:
         query |= Q(id__in=list(extra_ids))
     rows = (
         OrderLine.objects.filter(query)
-        .select_related("order__client", "product", "external_product__alias__product")
+        .select_related("order__consignee", "product", "external_product__alias__product")
         .order_by("order__ship_date", "order_id", "id")
     )
     return [
         {
             "id": line.id,
             "product_id": line.product_id or "",
-            "label": f"{line.order.number} · {line.order.client.name} · {line.product_title()} · {format_kg(line.qty_kg)} кг",
+            "label": f"{line.order.number} · {line.order.consignee.name} · {line.product_title()} · {format_kg(line.qty_kg)} кг",
         }
         for line in rows
     ]
+
+
+def _purchase_printers():
+    from apps.printing.models import Printer
+
+    return list(Printer.objects.order_by("-is_default", "name"))
 
 
 def _purchase_form(order, user):
@@ -187,7 +198,7 @@ def _purchase_form(order, user):
                 "caliber",
                 "grade",
                 "external_product",
-                "customer_line__order__client",
+                "customer_line__order__consignee",
                 "customer_line__product",
                 "customer_line__external_product__alias__product",
             )
@@ -198,12 +209,16 @@ def _purchase_form(order, user):
             if line.customer_line_id:
                 linked.append(line.customer_line_id)
     held = holding_by_order_line(linked)
+    printers = _purchase_printers()
+    default_printer_id = next((item.id for item in printers if item.is_default), printers[0].id if printers else None)
     return {
         "order": order,
         "purchase_lines": lines,
         "tasks": list(Task.objects.filter(purchase_order=order).order_by("-id")) if order else [],
         "editable": user.is_office and (order is None or order.status != "closed"),
         "can_status": user.is_office,
+        "printers": printers,
+        "default_printer_id": default_printer_id,
         "unmapped": unmapped,
         "customer_lines": _customer_line_choices(linked),
         "held": held,
@@ -231,9 +246,9 @@ def _customer_page(order, user):
     party_grades = ""
     category_grade_id = None
     if order is not None and order.consignee_id:
-        from apps.catalog.grade_policy import grade_for_consignee, grade_names
+        from apps.catalog.grade_policy import grade_for_consignee, grade_names, shipping_grades
 
-        party = list(order.consignee.allowed_grades.order_by("sort_order", "name"))
+        party = shipping_grades(order.consignee)
         if party:
             party_grades = grade_names(order.consignee)
             refs["grades"] = party
@@ -253,29 +268,43 @@ def _customer_page(order, user):
         "party_grades": party_grades,
         "category_grade_id": category_grade_id,
         "today": date.today().isoformat(),
+        **(order_pick_boards(order) if order else {}),
         **refs,
     }
 
 
 def task_context(task, movements, user=None):
+    allocations = []
+    picked = {}
     if task.kind == "pick":
-        waiting = pick_waiting(task)
+        from apps.picking.services import allocation_rows, picked_map
+
+        allocations = allocation_rows(task)
+        picked = picked_map(task)
+        waiting = []
     elif task.kind == "ship":
         waiting = ship_waiting(task)
     else:
         waiting = []
-    editable = {item.id for item in movements if item.kind == "in" and not has_downstream(item)}
+    gone = downstream_pallet_ids(item.pallet_id for item in movements if item.kind == "in")
+    editable = {item.id for item in movements if item.kind == "in" and item.pallet_id not in gone}
     from apps.planning.reserve import assigned_by_order_line, plan_kg
 
-    lines = list(
-        task.lines.select_related(
-            "product",
-            "caliber",
-            "grade",
-            "order_line",
-            "purchase_line__customer_line__order__client",
-        )
+    prefetch_related_objects(
+        [task],
+        Prefetch(
+            "lines",
+            queryset=TaskLine.objects.select_related(
+                "product",
+                "caliber",
+                "grade",
+                "order_line__caliber_from",
+                "order_line__caliber_to",
+                "purchase_line__customer_line__order__consignee",
+            ),
+        ),
     )
+    lines = list(task.lines.all())
     customer_ids = [
         line.purchase_line.customer_line_id
         for line in lines
@@ -288,25 +317,35 @@ def task_context(task, movements, user=None):
         if customer is None:
             continue
         reserve[line.id] = {
-            "label": f"{customer.order.number}, {customer.order.client.name}",
+            "label": f"{customer.order.number}, {customer.order.consignee.name}",
             "plan": format(plan_kg(line.purchase_line), "f"),
             "held": format(assigned.get(customer.id, Decimal("0")), "f"),
         }
-    received = {line.id: received_kg(line) for line in lines}
+    received_rows = (
+        Movement.objects.filter(task_line_id__in=[line.id for line in lines], kind="in")
+        .values("task_line_id")
+        .annotate(total=Sum("qty_kg"))
+    )
+    received_totals = {row["task_line_id"]: as_kg(row["total"]) for row in received_rows}
+    received = {line.id: received_totals.get(line.id, Decimal("0.000")) for line in lines}
     return {
         "task": task,
         "movements": movements,
         "waiting": waiting,
+        "allocations": allocations,
+        "picked": picked,
         "editable": editable,
         "received": received,
         "loose_lines": [{"line": line, "left": as_kg(line.qty_kg) - received[line.id]} for line in lines],
         "reserve": reserve,
-        "clients": list(Client.objects.order_by("name")) if task.kind == "receive" and not task.order_id else [],
-        "defaults": pallet_defaults(task),
+        "consignees": list(Consignee.objects.order_by("name")) if task.kind == "receive" and not task.order_id else [],
+        "consignee_categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")) if task.kind == "receive" else [],
+        "defaults": pallet_defaults(task) if task.kind == "receive" else {},
         "can_receive": task.kind == "receive" and task.is_working() and user is not None and (user.role == "receiver" or user.is_office),
         "can_status": user is not None and user.is_office,
         "status_choices": task_status_choices(task.kind, task.status),
-        **load_refs(),
+        "receivers": staff_for_tasks([task], task.kind) if task.kind in ("receive", "pick", "ship") else [],
+        **(load_refs() if task.kind == "receive" else {}),
     }
 
 
@@ -367,8 +406,7 @@ CUSTOMER_SORTS = {
     "external": "external_number",
     "revision": "revision",
     "ship_date": "ship_date",
-    "client": "client__name",
-    "consignee": "consignee_sort",
+    "consignee": "consignee__name",
     "seller": "seller__name",
     "kg": "kg_total",
     "status": "status",
@@ -419,7 +457,7 @@ def customer_orders(request):
     if direction not in ("asc", "desc"):
         direction = "desc"
     on_route = RouteOrder.objects.filter(order_id=OuterRef("pk")).exclude(route__status=Route.Status.CANCELLED)
-    query = Order.objects.select_related("client", "seller", "consignee__zone").prefetch_related(
+    query = Order.objects.select_related("seller", "consignee__zone").prefetch_related(
         Prefetch(
             "route_orders",
             queryset=RouteOrder.objects.exclude(route__status=Route.Status.CANCELLED).select_related("route__driver"),
@@ -431,7 +469,6 @@ def customer_orders(request):
             Value(Decimal("0.000")),
             output_field=DecimalField(max_digits=12, decimal_places=3),
         ),
-        consignee_sort=Coalesce("consignee__name", "client__name"),
     )
     if ship_range["from_date"]:
         query = query.filter(ship_date__gte=ship_range["from_date"])
@@ -441,7 +478,6 @@ def customer_orders(request):
         query = query.filter(
             Q(number__icontains=search)
             | Q(external_number__icontains=search)
-            | Q(client__name__icontains=search)
             | Q(consignee__name__icontains=search)
             | Q(consignee__address__icontains=search)
             | Q(consignee__zone__name__icontains=search)
@@ -449,14 +485,12 @@ def customer_orders(request):
             | Exists(on_route.filter(route__driver__full_name__icontains=search))
         )
     if party:
-        query = query.filter(
-            Q(consignee__name__icontains=party) | Q(consignee__isnull=True, client__name__icontains=party)
-        )
+        query = query.filter(consignee__name__icontains=party)
     if number:
         query = query.filter(number__icontains=number)
     if document:
         query = query.filter(external_number__icontains=document)
-    if status in ("open", "closed"):
+    if status in ("open", "partial", "closed"):
         query = query.filter(status=status)
     if driver_id:
         query = query.filter(Exists(on_route.filter(route__driver_id=driver_id)))
@@ -472,6 +506,7 @@ def customer_orders(request):
             "rows": [{"order": item, "kg": item.kg_total, "driver": _order_driver(item)} for item in orders],
             "ship_range": ship_range,
             "search": search,
+            "status": status if status in ("open", "partial", "closed") else "",
             "driver_id": driver_id,
             "drivers": list(Driver.objects.filter(is_active=True).order_by("full_name")),
             "sort": sort,
@@ -501,6 +536,7 @@ def supplier_order_create(request):
             comment=text(form, "comment"),
             lines=_purchase_lines(form),
             user=request.user,
+            printer_id=optional_int(form, "printer_id"),
         )
 
     result, response = guarded(request, "/orders/suppliers/new", action)
@@ -533,6 +569,7 @@ def supplier_order_save(request, purchase_id):
             comment=order.comment if closed else text(form, "comment"),
             lines=[] if closed else _purchase_lines(form),
             user=request.user,
+            printer_id=None if closed else optional_int(form, "printer_id"),
         )
 
     result, response = guarded(request, f"/orders/suppliers/{purchase_id}", action)
@@ -678,7 +715,7 @@ def customer_orders_import(request):
             "report": result,
             "title": title,
             "list_href": "/orders/customers",
-            "party_label": "Покупатель",
+            "party_label": "Грузополучатель",
             "item_href": "/orders/",
         },
     )
@@ -759,7 +796,7 @@ def customer_orders_import_excel(request):
             "report": result,
             "title": "Импорт Excel · заказы покупателей",
             "list_href": "/orders/customers",
-            "party_label": "Покупатель",
+            "party_label": "Грузополучатель",
             "item_href": "/orders/",
         },
     )
@@ -829,7 +866,7 @@ def order_revision_report(request):
     if built:
         revisions = list(
             OrderRevision.objects.exclude(changes={})
-            .select_related("order", "order__client", "order__consignee", "created_by")
+            .select_related("order", "order__consignee", "order__consignee", "created_by")
             .order_by("-created_at", "-id")
         )
         for item in revisions:
@@ -841,7 +878,7 @@ def order_revision_report(request):
 
 @roles_required("warehouse", "receiver")
 def order_revisions(request, order_id):
-    order = get_object_or_404(Order.objects.select_related("client"), pk=order_id)
+    order = get_object_or_404(Order.objects.select_related("consignee"), pk=order_id)
     revisions = []
     for item in order.revisions.select_related("created_by").order_by("-revision"):
         revisions.append({"revision": item, "summary": revision_summary(item.changes)})
@@ -860,14 +897,14 @@ def order_create(request):
     def action():
         return save_customer_order(
             None,
-            client_id=require_int(form, "client_id", "Покупатель"),
+            consignee_id=require_int(form, "consignee_id", "Грузополучатель"),
             seller_id=require_int(form, "seller_id", "Продавец"),
             ship_date=parse_date(form.get("ship_date"), "Дата отгрузки"),
             shipping_terms=text(form, "shipping_terms"),
             status=text(form, "status") or "open",
             lines=_customer_lines(form),
             user=request.user,
-            consignee_id=optional_int(form, "consignee_id"),
+            number=text(form, "number"),
         )
 
     result, response = guarded(request, "/orders/new", action)
@@ -881,6 +918,7 @@ def order_detail(request, order_id):
     order = get_object_or_404(
         Order.objects.select_related("consignee__category__grade", "consignee__zone").prefetch_related(
             "consignee__allowed_grades",
+            "consignee__category__allowed_grades",
             "lines__product",
             "lines__external_product__alias__product",
             "lines__caliber",
@@ -905,14 +943,14 @@ def order_save(request, order_id):
         closed = order.status == "closed"
         return save_customer_order(
             order,
-            client_id=order.client_id if closed else require_int(form, "client_id", "Покупатель"),
+            consignee_id=order.consignee_id if closed else require_int(form, "consignee_id", "Грузополучатель"),
             seller_id=order.seller_id if closed else require_int(form, "seller_id", "Продавец"),
             ship_date=order.ship_date if closed else parse_date(form.get("ship_date"), "Дата отгрузки"),
             shipping_terms=order.shipping_terms if closed else text(form, "shipping_terms"),
             status=text(form, "status") or order.status,
             lines=[] if closed else _customer_lines(form),
             user=request.user,
-            consignee_id=order.consignee_id if closed else optional_int(form, "consignee_id"),
+            number=order.number if closed else text(form, "number"),
         )
 
     result, response = guarded(request, f"/orders/{order_id}", action)
@@ -970,9 +1008,10 @@ def _customer_task_lines(order, form=None):
 def _load_customer_order(order_id):
     return (
         Order.objects.filter(pk=order_id)
-        .select_related("consignee__zone")
+        .select_related("consignee__category", "consignee__zone")
         .prefetch_related(
             "consignee__allowed_grades",
+            "consignee__category__allowed_grades",
             "lines__external_product__alias__product",
             "lines__product",
             "lines__grades",
@@ -1162,22 +1201,86 @@ def task_list(request):
         )
     query = Task.objects.select_related(
         "supplier",
+        "assignee",
         "purchase_order__supplier",
-        "order__client",
+        "order__consignee",
         "order__consignee__zone",
-    ).order_by("-id")
+    )
     if kind in ("receive", "pick", "ship"):
         query = query.filter(kind=kind)
     else:
         kind = ""
+    if not request.user.is_office:
+        query = query.filter(Q(assignee_id__in=person_ids(request.user)) | ~Q(kind__in=("receive", "pick", "ship")))
+    ship_range = None
+    if kind == "pick":
+        asked = "ship_from_type" in request.GET
+        ship_range = range_from_query(request.GET, "ship", default_from="" if asked else "today")
+        if ship_range["from_date"]:
+            query = query.filter(order__ship_date__gte=ship_range["from_date"])
+        if ship_range["to_date"]:
+            query = query.filter(order__ship_date__lte=ship_range["to_date"])
+        query = query.annotate(line_count=Count("lines"), weight_kg=Sum("lines__qty_kg"))
+    if kind in ("receive", "pick", "ship"):
+        status_choices = task_status_choices(kind)
+    else:
+        status_choices = list(TASK_STATUS.items())
+    allowed_status = {key for key, _label in status_choices}
+    status = (request.GET.get("status") or "").strip()
+    if status == "all":
+        pass
+    elif status in allowed_status:
+        query = query.filter(status=status)
+    else:
+        status = ""
+        query = query.exclude(status__in=("closed", "picked"))
+    query = query.order_by("-id")
     tasks = list(query)
     grouped = kind != "receive" and request.GET.get("grouped") == "1"
     groups = _task_zone_groups(tasks) if grouped else []
+    staff = {
+        item: staff_for_tasks([task for task in tasks if task.kind == item], item)
+        for item in ("receive", "pick", "ship")
+    }
+    if kind in staff:
+        assign_staff = staff[kind]
+    else:
+        assign_staff = []
+        known = set()
+        for people in staff.values():
+            for person in people:
+                if person.id in known:
+                    continue
+                assign_staff.append(person)
+                known.add(person.id)
+        assign_staff.sort(key=lambda person: (person.name or "").casefold())
     return render(
         request,
         "tasks/list.html",
-        {"tasks": tasks, "kind": kind, "grouped": grouped, "groups": groups},
+        {
+            "tasks": tasks,
+            "kind": kind,
+            "grouped": grouped,
+            "groups": groups,
+            "staff": staff,
+            "assign_staff": assign_staff,
+            "status": status,
+            "status_choices": status_choices,
+            "ship_range": ship_range,
+        },
     )
+
+
+def _tasks_back(request) -> str:
+    raw_kind = text(request.POST, "kind")
+    if raw_kind not in ("receive", "pick", "ship", "all"):
+        return "/tasks"
+    parts = [f"kind={raw_kind}"]
+    for key in ("ship_from_type", "ship_from", "ship_to_type", "ship_to", "grouped", "status"):
+        value = (request.POST.get(key) or "").strip()
+        if value:
+            parts.append(f"{key}={quote(value)}")
+    return "/tasks?" + "&".join(parts)
 
 
 @roles_required("receiver", "warehouse")
@@ -1185,7 +1288,7 @@ def tasks_bulk(request):
     from apps.printing.views import load_print_tasks, task_sheet_response
 
     raw_kind = text(request.POST, "kind")
-    back = f"/tasks?kind={raw_kind}" if raw_kind in ("receive", "pick", "ship", "all") else "/tasks"
+    back = _tasks_back(request)
     action = text(request.POST, "action")
     ids = []
     for raw in request.POST.getlist("id"):
@@ -1200,6 +1303,62 @@ def tasks_bulk(request):
         if not tasks:
             return _error(request, back, "Задания не найдены")
         return task_sheet_response(tasks, by_groups=text(request.POST, "print_groups") == "1")
+    if action == "assign":
+        if not request.user.is_office:
+            return _error(request, back, "Недостаточно прав")
+        user_id = optional_int(request.POST, "user_id")
+        if not user_id:
+            return _error(request, back, "Выберите сотрудника")
+        done_rows = []
+        failed = []
+        name = ""
+        for task_id in ids:
+            task = Task.objects.filter(pk=task_id).first()
+            if task is None:
+                failed.append(f"{task_id}: задание не найдено")
+                continue
+            try:
+                assign_receive_task(task, user_id)
+                name = task.assignee.name if task.assignee_id else name
+                done_rows.append(task.number or str(task.id))
+            except WarehouseError as exc:
+                failed.append(f"{task.number or task_id}: {exc}")
+        if not done_rows:
+            return _error(request, back, "; ".join(failed) or "Ничего не назначено")
+        message = f"Назначено сотруднику {name}: " + ", ".join(done_rows)
+        if failed:
+            message += ". Не назначено: " + "; ".join(failed)
+        return done(request, back, message)
+    if action in ("reserve", "pick"):
+        if raw_kind != "pick":
+            return _error(request, back, "Это действие только для отбора")
+        runner = reserve_for_task if action == "reserve" else pick_ready_task
+        done_rows = []
+        failed = []
+        for task_id in ids:
+            task = (
+                Task.objects.select_related("order__consignee")
+                .filter(pk=task_id, kind="pick")
+                .first()
+            )
+            if task is None:
+                failed.append(f"{task_id}: задание на отбор не найдено")
+                continue
+            try:
+                require_assigned(task, request.user)
+                if action == "reserve":
+                    detail = runner(task)
+                else:
+                    detail = runner(task, request.user)
+                done_rows.append(f"{task.number}: {detail}")
+            except WarehouseError as exc:
+                failed.append(f"{task.number}: {exc}")
+        if not done_rows:
+            return _error(request, back, "; ".join(failed) or "Ничего не выполнено")
+        message = ("Спланировано: " if action == "reserve" else "Отобрано: ") + "; ".join(done_rows)
+        if failed:
+            message += ". Не выполнено: " + "; ".join(failed)
+        return done(request, back, message)
     if action != "delete":
         return _error(request, back, "Выберите действие")
     deleted, failed = delete_tasks(ids)
@@ -1215,15 +1374,21 @@ def tasks_bulk(request):
 @roles_required("receiver", "warehouse")
 def task_detail(request, task_id):
     task = get_object_or_404(
-        Task.objects.select_related("order__client", "order__seller", "purchase_order__supplier", "supplier"),
+        Task.objects.select_related(
+            "order__consignee",
+            "order__seller",
+            "purchase_order__supplier",
+            "supplier",
+            "assignee",
+        ),
         pk=task_id,
     )
     movements = list(
         Movement.objects.filter(task=task)
         .select_related(
-            "pallet__order__client",
-            "pallet__reserved_client",
-            "pallet__reserved_line__order__client",
+            "pallet__order__consignee",
+            "pallet__reserved_consignee",
+            "pallet__reserved_line__order__consignee",
             "lot__product",
             "lot__caliber",
             "lot__grade",
@@ -1231,6 +1396,12 @@ def task_detail(request, task_id):
         .prefetch_related("pallet__units__packaging")
         .order_by("-id")
     )
+    if (
+        not request.user.is_office
+        and task.kind in ("receive", "pick", "ship")
+        and task.assignee_id not in person_ids(request.user)
+    ):
+        return _error(request, f"/tasks?kind={task.kind}", "Задание вам не назначено")
     context = task_context(task, movements, request.user)
     tab = request.GET.get("tab") or "lines"
     if task.kind != "receive" or tab not in ("lines", "manual"):
@@ -1239,8 +1410,17 @@ def task_detail(request, task_id):
     return render(request, "tasks/detail.html", context)
 
 
+def _task_back(request, task_id: int) -> str:
+    back = text(request.POST, "next") or f"/tasks/{task_id}"
+    if not back.startswith("/") or back.startswith("//"):
+        return f"/tasks/{task_id}"
+    return back
+
+
 @roles_required("office")
 def task_status(request, task_id):
+    back = _task_back(request, task_id)
+
     def action():
         task = Task.objects.filter(pk=task_id).first()
         if task is None:
@@ -1248,11 +1428,29 @@ def task_status(request, task_id):
         set_task_status(task, text(request.POST, "status"))
         return task
 
-    result, response = guarded(request, f"/tasks/{task_id}", action)
+    result, response = guarded(request, back, action)
     if response:
         return response
     label = dict(task_status_choices(result.kind, result.status)).get(result.status, result.status)
-    return done(request, f"/tasks/{task_id}", f"Статус: {label}")
+    return done(request, back, f"Статус: {label}")
+
+
+@roles_required("office")
+def task_assign(request, task_id):
+    back = _task_back(request, task_id)
+
+    def action():
+        task = Task.objects.select_related("assignee").filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        assign_receive_task(task, optional_int(request.POST, "user_id"))
+        return task
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    name = result.assignee.name if result.assignee_id else "не назначен"
+    return done(request, back, f"Сотрудник: {name}")
 
 
 @roles_required("office")

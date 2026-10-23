@@ -2,9 +2,9 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from apps.catalog.models import Caliber, Grade, Product
+from apps.catalog.models import Caliber, Consignee, ConsigneeCategory, Grade, Product
 from apps.common.exceptions import WarehouseError
-from apps.common.forms import parse_date, parse_kg, require_int, text
+from apps.common.forms import optional_int, parse_date, parse_kg, require_int, text
 from apps.common.http import done, guarded, roles_required
 from apps.inventory.models import TransformDocument
 from apps.inventory.transform import (
@@ -21,7 +21,9 @@ from apps.inventory.transform import (
     post_document,
     save_header,
     stock_choices,
+    suggest_categories,
 )
+from apps.planning.models import OrderLine
 
 
 def _documents():
@@ -29,6 +31,16 @@ def _documents():
         input_count=Count("inputs"),
         output_count=Count("outputs"),
     ).order_by("-doc_date", "-id")
+
+
+def _id_list(form) -> list[int]:
+    found = []
+    for raw in form.getlist("category_id"):
+        try:
+            found.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return found
 
 
 def _optional_date(raw: str):
@@ -87,6 +99,12 @@ def _detail_context(document: TransformDocument) -> dict:
     wastes = list(document.wastes.order_by("id"))
     state = mass_state(document)
     open_doc = document.status == TransformDocument.Status.DRAFT
+    chosen = set(document.allowed_categories.values_list("id", flat=True)) if document.categories_set else set()
+    conflict = False
+    if open_doc and not document.categories_set:
+        suggested = suggest_categories(document)
+        conflict = suggested is None
+        chosen = suggested or set()
     return {
         "title": document.number,
         "document": document,
@@ -98,6 +116,17 @@ def _detail_context(document: TransformDocument) -> dict:
         "products": Product.objects.order_by("name") if open_doc else [],
         "calibers": Caliber.objects.order_by("sort_order", "name") if open_doc else [],
         "grades": Grade.objects.order_by("sort_order", "name") if open_doc else [],
+        "consignee_categories": [
+            {"id": item.id, "name": item.name, "on": item.id in chosen}
+            for item in ConsigneeCategory.objects.order_by("sort_order", "name")
+        ] if open_doc else [],
+        "category_conflict": conflict,
+        "consignees": list(Consignee.objects.order_by("name")) if open_doc else [],
+        "order_lines": list(
+            OrderLine.objects.filter(order__status="open", for_task=True)
+            .select_related("order__consignee", "product")
+            .order_by("order__number", "id")
+        ) if open_doc else [],
         **state,
     }
 
@@ -121,6 +150,9 @@ def transform_action(request, doc_id):
                 doc_date=parse_date(text(request.POST, "doc_date"), "Дата"),
                 tolerance_kg=parse_tolerance(text(request.POST, "tolerance_kg")),
                 notes=text(request.POST, "notes"),
+                category_ids=_id_list(request.POST),
+                output_consignee_id=optional_int(request.POST, "output_consignee_id"),
+                output_line_id=optional_int(request.POST, "output_line_id"),
             )
             return "Документ сохранён"
         if kind == "post":

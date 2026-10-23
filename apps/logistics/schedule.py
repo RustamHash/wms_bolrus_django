@@ -99,7 +99,7 @@ def schedule_print_tree(day: date) -> dict:
             Prefetch(
                 "route_orders",
                 queryset=RouteOrder.objects.select_related(
-                    "order__client",
+                    "order__consignee",
                     "order__consignee",
                 ).order_by("position", "id"),
             )

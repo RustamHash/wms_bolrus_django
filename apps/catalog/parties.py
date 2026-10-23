@@ -1,32 +1,10 @@
 from apps.catalog.families import CRITICAL_PRODUCTS, FAMILY_CODE, critical_family
-from apps.catalog.models import Client, Consignee, ExternalProduct, Product, ProductAlias, Supplier
+from apps.catalog.models import Consignee, ExternalProduct, Product, ProductAlias, Supplier
 from apps.common.exceptions import WarehouseError
 
 
 def _clean(value: str, limit: int) -> str:
     return " ".join((value or "").split())[:limit]
-
-
-def upsert_client(name: str, code: str = "") -> Client:
-    name = _clean(name, 200)
-    code = _clean(code, 32)
-    if not name:
-        raise WarehouseError("Укажите контрагента")
-    found = Client.objects.filter(code=code).first() if code else None
-    if found is None:
-        found = Client.objects.filter(name=name).first()
-    if found is None:
-        return Client.objects.create(name=name, code=code or None)
-    changed = []
-    if found.name != name:
-        found.name = name
-        changed.append("name")
-    if code and found.code != code:
-        found.code = code
-        changed.append("code")
-    if changed:
-        found.save(update_fields=changed)
-    return found
 
 
 def upsert_supplier(name: str, code: str = "") -> Supplier:
@@ -79,10 +57,6 @@ def upsert_consignee(name: str, code: str = "", address: str = "") -> Consignee:
     return found
 
 
-def consignee_for_buyer(client: Client) -> Consignee:
-    return upsert_consignee(client.name, client.code or "")
-
-
 def load_consignee_addresses(source) -> dict:
     from apps.common.xlsx import read_rows
 
@@ -128,17 +102,6 @@ def load_consignee_addresses(source) -> dict:
         if previous is None or (record[3], record[4]) >= (previous[3], previous[4]):
             parties[key] = record
 
-    clients_created = 0
-    for name, code in buyers.values():
-        clean_name = _clean(name, 200)
-        clean_code = _clean(code, 32)
-        existed = Client.objects.filter(code=clean_code).exists() if clean_code else False
-        if not existed and clean_name:
-            existed = Client.objects.filter(name=clean_name).exists()
-        upsert_client(name, code)
-        if not existed:
-            clients_created += 1
-
     created = 0
     updated = 0
     unchanged = 0
@@ -157,7 +120,6 @@ def load_consignee_addresses(source) -> dict:
         consignee.save(update_fields=["address"])
         updated += 1
     return {
-        "clients_created": clients_created,
         "consignees": len(parties),
         "created": created,
         "updated": updated,

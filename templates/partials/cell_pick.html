@@ -1,0 +1,131 @@
+<div data-place>
+  <label>Ячейка
+    <span class="client-pick" data-cell-pick>
+      <input type="hidden" name="cell_id" value="{{ selected_cell_id|default:'' }}" data-cell-id>
+      <input type="text" data-cell-query autocomplete="off" autocorrect="off" spellcheck="false" placeholder="А-01" enterkeyhint="search">
+      <ul data-cell-list hidden>
+        {% for cell in warehouse_cells %}
+        <li><button type="button" data-id="{{ cell.id }}" data-code="{{ cell.code }}" data-barcode="{{ cell.barcode }}" data-label="{{ cell.label }}" data-search="{{ cell.zone.code }} {{ cell.code }} {{ cell.label }} {{ cell.name }} {{ cell.barcode }}">{{ cell.label }}</button></li>
+        {% endfor %}
+      </ul>
+    </span>
+  </label>
+  {% if not warehouse_cells %}
+  <p class="hint">Справочник пуст. Сначала заведите <a href="/masters/warehouse-zones">зону</a> и <a href="/masters/warehouse-cells">место</a>: вместе они дают адрес вроде А-01.</p>
+  {% endif %}
+<script>
+(function () {
+  var root = document.currentScript.parentElement;
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = "1";
+  var hidden = root.querySelector("[data-cell-id]");
+  var query = root.querySelector("[data-cell-query]");
+  var list = root.querySelector("[data-cell-list]");
+  var buttons = list ? Array.prototype.slice.call(list.querySelectorAll("button")) : [];
+  function norm(value) { return (value || "").replace(/[\u0000-\u001f]/g, "").trim().toLowerCase(); }
+  function compact(value) { return norm(value).replace(/[-\s]/g, ""); }
+  function exact(raw) {
+    var key = norm(raw);
+    if (!key) return null;
+    var folded = compact(raw);
+    var byBarcode = buttons.filter(function (button) { return norm(button.dataset.barcode) === key; });
+    if (byBarcode.length === 1) return byBarcode[0];
+    var byLabel = buttons.filter(function (button) {
+      return norm(button.dataset.label) === key || compact(button.dataset.label) === folded;
+    });
+    if (byLabel.length === 1 && folded.length >= compact(byLabel[0].dataset.label).length) return byLabel[0];
+    return null;
+  }
+  function choose(button) {
+    if (!button) return;
+    hidden.value = button.dataset.id;
+    query.value = (button.dataset.label || button.textContent).trim();
+    list.hidden = true;
+  }
+  function paint() {
+    var needle = norm(query.value);
+    var folded = compact(query.value);
+    var marked = null;
+    buttons.forEach(function (button) {
+      var search = norm((button.dataset.search || "") + " " + button.textContent);
+      var match = !needle || search.indexOf(needle) !== -1 || compact(search).indexOf(folded) !== -1;
+      button.parentElement.hidden = !match;
+      button.classList.remove("mark");
+      if (match && !marked) marked = button;
+    });
+    if (marked) marked.classList.add("mark");
+    return marked;
+  }
+  function openList() {
+    var marked = paint();
+    list.hidden = !marked;
+  }
+  function syncText() {
+    var hit = exact(query.value);
+    if (hit) {
+      choose(hit);
+      return;
+    }
+    var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+    if (current && norm(query.value) === norm(current.dataset.label)) {
+      list.hidden = true;
+      return;
+    }
+    hidden.value = "";
+    openList();
+  }
+  if (!query) return;
+  var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+  if (current) query.value = current.dataset.label;
+  query.addEventListener("focus", openList);
+  query.addEventListener("input", syncText);
+  query.addEventListener("keydown", function (event) {
+    var visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
+    var index = visible.findIndex(function (button) { return button.classList.contains("mark"); });
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (list.hidden) openList();
+      visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
+      var next = visible[index + (event.key === "ArrowDown" ? 1 : -1)] || visible[0];
+      if (!next) return;
+      visible.forEach(function (button) { button.classList.remove("mark"); });
+      next.classList.add("mark");
+      next.scrollIntoView({ block: "nearest" });
+    }
+    if (event.key === "Enter") {
+      var hit = exact(query.value);
+      var marked = visible.filter(function (button) { return button.classList.contains("mark"); })[0];
+      if (hit || (!list.hidden && marked)) {
+        event.preventDefault();
+        choose(hit || marked);
+      }
+    }
+    if (event.key === "Escape") list.hidden = true;
+  });
+  query.addEventListener("blur", function () {
+    window.setTimeout(function () {
+      list.hidden = true;
+      var hit = exact(query.value);
+      if (hit) {
+        choose(hit);
+        return;
+      }
+      var selected = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+      query.value = selected ? selected.dataset.label : "";
+      if (!selected) hidden.value = "";
+    }, 150);
+  });
+  buttons.forEach(function (button) {
+    button.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    button.addEventListener("click", function () { choose(button); });
+  });
+  var form = root.closest("form");
+  if (form) {
+    form.addEventListener("submit", function () {
+      var hit = exact(query.value);
+      if (hit) choose(hit);
+    });
+  }
+})();
+</script>
+</div>

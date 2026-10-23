@@ -9,7 +9,7 @@
 </p>
 {% for row in revisions %}
 <h2>Версия {{ row.revision.revision }} · {{ row.summary }}</h2>
-<p class="hint">{{ row.revision.created_at|date:"d.m.Y H:i" }}{% if row.revision.created_by %} · {{ row.revision.created_by.name }}{% endif %}. Покупатель {{ row.revision.client_name }}, грузополучатель {{ row.revision.consignee_name }}, отгрузка {{ row.revision.ship_date|date:"d.m.Y" }}.</p>
+<p class="hint">{{ row.revision.created_at|date:"d.m.Y H:i" }}{% if row.revision.created_by %} · {{ row.revision.created_by.name }}{% endif %}. Грузополучатель {{ row.revision.consignee_name }}, отгрузка {{ row.revision.ship_date|date:"d.m.Y" }}.</p>
 {% if row.revision.changes.header or row.revision.changes.added or row.revision.changes.removed or row.revision.changes.changed or row.revision.changes.blocked %}
 {% include "orders/revision_diff.html" with changes=row.revision.changes %}
 {% else %}

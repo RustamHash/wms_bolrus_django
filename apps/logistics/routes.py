@@ -29,7 +29,7 @@ def create_route_with_orders(
     status: str = Route.Status.DRAFT,
 ) -> Route:
     wanted = list(dict.fromkeys(order_ids))
-    found = {order.id: order for order in Order.objects.filter(pk__in=wanted, status="open")}
+    found = {order.id: order for order in Order.objects.filter(pk__in=wanted, status__in=("open", "partial"))}
     missing = [oid for oid in wanted if oid not in found]
     if missing:
         raise WarehouseError("Некоторые заказы не найдены или закрыты")
@@ -67,8 +67,8 @@ def add_orders_to_route(route: Route, order_ids: list[int]) -> int:
         raise WarehouseError("Нельзя менять маршрут, который уже поставлен к отгрузке или отгружен")
     wanted = list(dict.fromkeys(order_ids))
     found = list(
-        Order.objects.filter(pk__in=wanted, status="open").select_related(
-            "client", "consignee", "consignee__zone"
+        Order.objects.filter(pk__in=wanted, status__in=("open", "partial")).select_related(
+            "consignee", "consignee__zone"
         )
     )
     taken = set(
@@ -84,7 +84,7 @@ def add_orders_to_route(route: Route, order_ids: list[int]) -> int:
     with transaction.atomic():
         rows = list(
             RouteOrder.objects.filter(route=route)
-            .select_related("order__client", "order__consignee", "order__consignee__zone")
+            .select_related("order__consignee", "order__consignee", "order__consignee__zone")
             .order_by("position", "id")
         )
         sequence = [row.order for row in rows]

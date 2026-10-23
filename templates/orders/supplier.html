@@ -33,6 +33,15 @@
     <label>Дата поступления
       <input type="date" name="receipt_date" value="{% if order and order.receipt_date %}{{ order.receipt_date|date:"Y-m-d" }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
     </label>
+    <label>Принтер
+      <select name="printer_id" {% if not editable %}disabled{% endif %}>
+        {% for item in printers %}
+        <option value="{{ item.id }}" {% if order and order.printer_id == item.id or not order and item.id == default_printer_id %}selected{% endif %}>{{ item.name }} · {% if item.printer_type == 'tsc' %}термо, 2 копии{% else %}A4{% endif %}</option>
+        {% empty %}
+        <option value="">Нет принтера</option>
+        {% endfor %}
+      </select>
+    </label>
     <label>Статус
       <select name="status" {% if not can_status %}disabled{% endif %}>
         {% for key, label in PURCHASE_STATUS.items %}
@@ -72,7 +81,7 @@
         <select name="customer_line" data-customer-line data-selected="{{ line.customer_line_id }}">
           <option value="">Свободный склад</option>
           {% if line.customer_line %}
-          <option value="{{ line.customer_line_id }}" selected>{{ line.customer_line.order.number }} · {{ line.customer_line.order.client.name }} · {{ line.customer_line.product_title }}</option>
+          <option value="{{ line.customer_line_id }}" selected>{{ line.customer_line.order.number }} · {{ line.customer_line.order.consignee.name }} · {{ line.customer_line.product_title }}</option>
           {% endif %}
         </select>
         <input name="reserve_kg" value="{% if line.reserve_kg != None %}{{ line.reserve_kg|kg }}{% endif %}" placeholder="План, кг">
@@ -136,7 +145,7 @@
     <tr>
       <td class="n"></td>
       <td>{% if line.product %}{{ line.product.name }}{% else %}{{ line.external_title }}{% endif %}</td>
-      <td>{% if line.customer_line %}{{ line.customer_line.order.number }} · {{ line.customer_line.order.client.name }}{% else %}—{% endif %}</td>
+      <td>{% if line.customer_line %}{{ line.customer_line.order.number }} · {{ line.customer_line.order.consignee.name }}{% else %}—{% endif %}</td>
       <td>{% if line.caliber %}{{ line.caliber.name }}{% else %}{% endif %}</td>
       <td>{% if line.grade %}{{ line.grade.name }}{% else %}{% endif %}</td>
       <td class="num">{{ line.qty_kg|kg }}</td>

@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% if task.supplier %}{{ task.supplier.name }}{% else %}{{ task.number }}{% endif %}</h1>
 <p>
-  {{ task.number }}
+  {{ task.number }}{% if task.assignee %} · {{ task.assignee.name }}{% endif %}
   · {% if task.purchase_order %}{{ task.purchase_order.number }}{% elif task.order %}{{ task.order.number }}{% endif %}
   {% if task.ttn_number %} · ТТН {{ task.ttn_number }}{% endif %}
 </p>
@@ -14,7 +14,7 @@
 
 <h2>Принято</h2>
 {% for movement in movements %}
-<p>{{ movement.pallet.number }} · {{ movement.pallet.units.all|length }} мест{% if movement.pallet.units.all %} · {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %} · {% pallet_label movement.pallet.pallet_type %} · чистый {{ movement.qty_kg|kg }} кг{% if movement.pallet.order %} · резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_client %} · резерв {{ movement.pallet.reserved_client.name }}{% endif %}</p>
+<p>{{ movement.pallet.number }} · {{ movement.pallet.units.all|length }} мест{% if movement.pallet.units.all %} · {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %} · {% pallet_label movement.pallet.pallet_type %} · чистый {{ movement.qty_kg|kg }} кг{% if movement.pallet.order %} · резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_consignee %} · резерв {{ movement.pallet.reserved_consignee.name }}{% endif %}</p>
 {% if movement.id in editable %}
 <form method="post" action="/movements/{{ movement.id }}/delete">{% csrf_token %}
   <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
@@ -25,14 +25,19 @@
 {% endif %}
 
 {% if task.kind == "pick" and task.is_working %}
-{% for item in waiting %}
+{% for line in task.lines.all %}
+<p>{{ line.product.name }} · план {{ line.qty_kg|kg }} · отобрано {{ picked|get_item:line.id|kg }}</p>
+{% endfor %}
+{% for item in allocations %}
+{% if item.left > 0 %}
 <form method="post" action="/tasks/{{ task.id }}/pick">{% csrf_token %}
   <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
-  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
-  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
-  <button class="btn menu">Отобрать {{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг{% if item.movement.pallet.order or item.movement.pallet.reserved_client %} · резерв{% endif %}</button>
+  <input type="hidden" name="allocation_id" value="{{ item.allocation.id }}">
+  <label>Кг <input name="qty_kg" value="{{ item.left }}" inputmode="decimal"></label>
+  <button class="btn menu">Отобрать {{ item.allocation.pallet.number }} · {{ item.allocation.task_line.product.name }}</button>
 </form>
-{% empty %}<p>Паллет к отбору нет.</p>{% endfor %}
+{% endif %}
+{% empty %}<p>Назначений нет.</p>{% endfor %}
 {% endif %}
 
 {% if task.kind == "ship" and task.is_working %}
@@ -41,8 +46,9 @@
   <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
   <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
   <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <input type="hidden" name="movement_id" value="{{ item.movement.id }}">
   <label><input type="checkbox" name="confirm" value="1"> Условия проверены</label>
-  <button class="btn menu">В накладную {{ item.movement.pallet.number }}</button>
+  <button class="btn menu">В накладную {{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг</button>
 </form>
 {% empty %}<p>Паллет к отгрузке нет.</p>{% endfor %}
 {% endif %}

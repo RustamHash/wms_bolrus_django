@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: apps\inventory\views.py
+### SIZE: 27142 bytes / 779 lines
+==============================================================================
+
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
+
+from django.contrib import messages
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+
+from apps.catalog.models import ProductGroup
+from apps.common.forms import query_date
+from apps.common.http import roles_required
+from apps.common.kg import as_kg
+from apps.common.xlsx import write_book
+from apps.inventory.models import Balance
+from apps.inventory.services import lot_journal, lot_reserve_rows, stock_rows
+from apps.receiving.models import Lot
+from apps.planning.services import demand_report, group_demand
+
+GROUP_FIELDS = (
+    ("date", "Дата отгрузки"),
+    ("consignee", "Грузополучатель"),
+    ("category", "Группа товара"),
+    ("product", "Товар"),
+    ("grade", "Сортность"),
+)
+DEMAND_COLUMNS = (
+    ("order", "Заказ", False),
+    ("ship_date", "Отгрузка", False),
+    ("consignee", "Грузополучатель", False),
+    ("category", "Группа товара", False),
+    ("product", "Товар", False),
+    ("grade", "Сортность", False),
+    ("spec", "Спецификация", False),
+    ("ordered", "Заказано", True),
+    ("picked", "Отобрано", True),
+    ("reserve", "В резерве", True),
+    ("free", "Свободно своей категории", True),
+    ("blocked", "Есть, но нельзя", True),
+    ("incoming", "Ожидается приход", True),
+    ("short", "Не хватает", True),
+)
+DEFAULT_COLUMNS = ("order", "ship_date", "consignee", "spec", "ordered", "picked", "reserve", "free", "blocked", "incoming", "short")
+PICK_FIELDS = (
+    ("order_number", "Заказ"),
+    ("ship_date", "Отгрузка"),
+    ("consignee", "Грузополучатель"),
+    ("category", "Группа товара"),
+    ("product", "Товар"),
+    ("grade", "Сортность"),
+    ("spec", "Спецификация"),
+    ("ordered", "Заказано"),
+    ("picked", "Отобрано"),
+    ("reserve", "В резерве"),
+    ("free", "Свободно своей категории"),
+    ("blocked", "Есть, но нельзя"),
+    ("incoming", "Ожидается приход"),
+    ("short", "Не хватает"),
+)
+PICK_OPS = (
+    ("equals", "Равно"),
+    ("not_equals", "Не равно"),
+    ("contains", "Содержит"),
+    ("not_contains", "Не содержит"),
+    ("starts_with", "Начинается с"),
+    ("ends_with", "Заканчивается на"),
+    ("in_list", "В списке"),
+    ("not_in_list", "Не в списке"),
+    ("is_empty", "Пусто"),
+    ("is_not_empty", "Не пусто"),
+    ("greater", "Больше"),
+    ("less", "Меньше"),
+    ("greater_or_equal", "Больше или равно"),
+    ("less_or_equal", "Меньше или равно"),
+)
+OP_ALIAS = {"eq": "equals", "ne": "not_equals"}
+INBOUND_PICKS = {"order_number", "category", "product", "ordered"}
+VALUE_KEYS = {
+    "order": "order_number",
+    "order_number": "order_number",
+    "ordered": "ordered_kg",
+    "picked": "picked_kg",
+    "reserve": "reserve_kg",
+    "free": "free_kg",
+    "blocked": "blocked_kg",
+    "stock": "stock_kg",
+    "incoming": "incoming_kg",
+    "short": "short_kg",
+}
+
+
+@roles_required("receiver", "warehouse")
+def reports_home(request):
+    return render(
+        request,
+        "hub.html",
+        {
+            "title": "Отчеты",
+            "items": [
+                {"href": "/stock", "title": "Остатки"},
+                {"href": "/demand", "title": "Потребность"},
+                {"href": "/reports/nomenclature", "title": "Номенклатура 1С"},
+                {"href": "/orders/customers/revisions", "title": "Расхождения заказов"},
+                {"href": "/pallets", "title": "Паллеты"},
+                {"href": "/transform", "title": "Переработка"},
+            ],
+        },
+    )
+
+
+@roles_required("receiver", "warehouse")
+def nomenclature_report(request):
+    from apps.onec.exceptions import OnecError
+    from apps.onec.nomenclature import nomenclature_rows
+
+    try:
+        rows = nomenclature_rows()
+    except OnecError as exc:
+        messages.error(request, str(exc))
+        return redirect("/reports")
+    header = [
+        ("Код", "header"),
+        ("Наименование", "header"),
+        ("Артикул", "header"),
+        ("Группа", "header"),
+        ("Путь", "header"),
+        ("Единица", "header"),
+        ("Это группа", "header"),
+        ("Пометка удаления", "header"),
+    ]
+    sheet = [header]
+    for row in rows:
+        sheet.append(
+            [
+                row["code"],
+                row["name"],
+                row["article"],
+                row["group"],
+                row["path"],
+                row["unit"],
+                "да" if row["folder"] else "",
+                "да" if row["deleted"] else "",
+            ]
+        )
+    if len(sheet) == 1:
+        sheet.append([("В 1С нет номенклатуры", "text")])
+    content = write_book([("Номенклатура", sheet)])
+    name = "номенклатура-1с.xlsx"
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename=nomenclature.xlsx; filename*=UTF-8''{quote(name)}"
+    return response
+
+
+@roles_required("receiver", "warehouse")
+def warehouse_home(request):
+    return redirect("/reports")
+
+
+@roles_required("receiver", "warehouse")
+def stock(request):
+    built = request.GET.get("run") == "1"
+    product = (request.GET.get("product") or "").strip()
+    supplier = (request.GET.get("supplier") or "").strip()
+    rows = stock_rows() if built else []
+    if product:
+        needle = product.casefold()
+        rows = [row for row in rows if needle in row["product"].casefold()]
+    if supplier:
+        needle = supplier.casefold()
+        rows = [row for row in rows if needle in row["supplier"].casefold()]
+    return render(
+        request,
+        "stock.html",
+        {"built": built, "rows": rows, "product": product, "supplier": supplier},
+    )
+
+
+@roles_required("receiver", "warehouse")
+def stock_lot(request, lot_id):
+    lot = get_object_or_404(
+        Lot.objects.select_related("product", "caliber", "grade", "supplier", "receipt"),
+        pk=lot_id,
+    )
+    product = (request.GET.get("product") or "").strip()
+    supplier = (request.GET.get("supplier") or "").strip()
+    back = "/stock?run=1"
+    if product or supplier:
+        back += f"&product={quote(product)}&supplier={quote(supplier)}"
+    return render(
+        request,
+        "stock_lot.html",
+        {
+            "lot": lot,
+            "balance": Balance.objects.filter(lot_id=lot.id).first(),
+            "lines": lot_reserve_rows(lot.id),
+            "journal": lot_journal(lot.id),
+            "back": back,
+        },
+    )
+
+
+def _contains(value: str, needle: str) -> bool:
+    return needle.casefold() in (value or "").casefold()
+
+
+def _demand_query(request):
+    if "date_from" not in request.GET and "date_to" not in request.GET:
+        today = timezone.localdate()
+        date_from_raw = today.isoformat()
+        date_to_raw = (today + timedelta(days=7)).isoformat()
+    else:
+        date_from_raw = request.GET.get("date_from") or ""
+        date_to_raw = request.GET.get("date_to") or ""
+    product = (request.GET.get("product") or "").strip()
+    party = (request.GET.get("party") or "").strip()
+    date_from = query_date(date_from_raw)
+    date_to = query_date(date_to_raw)
+
+    def line_visible(row) -> bool:
+        if date_from and row["ship_date"] < date_from:
+            return False
+        if date_to and row["ship_date"] > date_to:
+            return False
+        if product and not _contains(row["product"], product) and not _contains(row["spec"], product):
+            return False
+        if party and not _contains(row["consignee"], party):
+            return False
+        return True
+
+    def inbound_visible(row) -> bool:
+        receipt = row["receipt_date"]
+        if date_from or date_to:
+            if receipt is None:
+                return False
+            if date_from and receipt < date_from:
+                return False
+            if date_to and receipt > date_to:
+                return False
+        if product and not _contains(row["product"], product):
+            return False
+        return True
+
+    return {
+        "date_from": date_from_raw,
+        "date_to": date_to_raw,
+        "product": product,
+        "party": party,
+        "filtered": bool(date_from or date_to or product or party),
+        "line_visible": line_visible,
+        "inbound_visible": inbound_visible,
+    }
+
+
+def _id_set(values) -> set[int]:
+    chosen = set()
+    for raw in values:
+        try:
+            chosen.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return chosen
+
+
+def _flag(values, index) -> bool:
+    return index < len(values) and values[index] == "1"
+
+
+def _demand_grouping(request):
+    known = {key for key, _label in GROUP_FIELDS}
+    labels = dict(GROUP_FIELDS)
+    if request.GET.get("group_set") == "1":
+        keys = request.GET.getlist("group_by")
+        ons = request.GET.getlist("group_on")
+        rows = []
+        seen = set()
+        for index, key in enumerate(keys):
+            if key not in known or key in seen:
+                continue
+            seen.add(key)
+            rows.append({"key": key, "label": labels[key], "on": True if not ons else _flag(ons, index)})
+    else:
+        legacy = request.GET.get("group") or "product"
+        if legacy == "client":
+            legacy = "consignee"
+        if legacy not in known:
+            legacy = "product"
+        rows = [{"key": legacy, "label": labels[legacy], "on": True}]
+    return rows, [row["key"] for row in rows if row["on"]]
+
+
+def _demand_columns(request):
+    labels = {key: label for key, label, _num in DEMAND_COLUMNS}
+    nums = {key for key, _label, num in DEMAND_COLUMNS if num}
+    if request.GET.get("col_set") == "1":
+        keys = request.GET.getlist("col")
+        ons = request.GET.getlist("col_on")
+        rows = []
+        seen = set()
+        for index, key in enumerate(keys):
+            if key not in labels or key in seen:
+                continue
+            seen.add(key)
+            rows.append({"key": key, "label": labels[key], "num": key in nums, "on": _flag(ons, index)})
+    else:
+        rows = [
+            {"key": key, "label": label, "num": num, "on": key in DEFAULT_COLUMNS}
+            for key, label, num in DEMAND_COLUMNS
+        ]
+    visible = []
+    labeled = False
+    for row in rows:
+        if not row["on"]:
+            continue
+        item = dict(row)
+        item["total_label"] = not item["num"] and not labeled
+        if item["total_label"]:
+            labeled = True
+        visible.append(item)
+    return rows, visible
+
+
+def _demand_picks(request):
+    fields = {key for key, _label in PICK_FIELDS}
+    ops = {key for key, _label in PICK_OPS}
+    labels = dict(PICK_FIELDS)
+    op_labels = dict(PICK_OPS)
+    if request.GET.get("pick_set") != "1":
+        return []
+    rows = []
+    keys = request.GET.getlist("pick_field")
+    operators = request.GET.getlist("pick_op")
+    values = request.GET.getlist("pick_value")
+    ons = request.GET.getlist("pick_on")
+    for index, key in enumerate(keys):
+        if key not in fields:
+            continue
+        raw_op = operators[index] if index < len(operators) else "equals"
+        raw_op = OP_ALIAS.get(raw_op, raw_op)
+        op = raw_op if raw_op in ops else "equals"
+        rows.append(
+            {
+                "field": key,
+                "label": labels[key],
+                "op": op,
+                "op_label": op_labels[op],
+                "value": values[index] if index < len(values) else "",
+                "on": _flag(ons, index),
+            }
+        )
+    return rows
+
+
+class _Down:
+    def __init__(self, value):
+        self.value = value
+
+    def __lt__(self, other):
+        return self.value > other.value
+
+
+def _raw(row, field):
+    key = VALUE_KEYS.get(field, field)
+    if key not in row and field == "ship_date":
+        return row.get("receipt_date")
+    return row.get(key) if key in row else None
+
+
+def _blank(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _texts(value) -> tuple[str, ...]:
+    if _blank(value):
+        return ("",)
+    if isinstance(value, datetime):
+        value = value.date()
+    if hasattr(value, "strftime"):
+        return (value.strftime("%d.%m.%Y"), value.isoformat())
+    if isinstance(value, Decimal):
+        plain = format(value, "f")
+        shown = f"{value:.3f}"
+        return (plain, plain.replace(".", ","), shown, shown.replace(".", ","))
+    return (str(value),)
+
+
+def _number(text):
+    try:
+        return Decimal(str(text).replace(" ", "").replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _day(text):
+    text = str(text).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _equals(value, needle: str) -> bool:
+    if isinstance(value, Decimal):
+        number = _number(needle)
+        return number is not None and value == number
+    if hasattr(value, "strftime"):
+        day = _day(needle)
+        current = value.date() if isinstance(value, datetime) else value
+        return day is not None and current == day
+    return any(item.casefold() == needle.casefold() for item in _texts(value))
+
+
+def _contains_text(value, needle: str) -> bool:
+    folded = needle.casefold()
+    return any(folded in item.casefold() for item in _texts(value))
+
+
+def _ordered(value, needle: str):
+    if isinstance(value, Decimal):
+        number = _number(needle)
+        return None if number is None else (value, number)
+    if hasattr(value, "strftime"):
+        day = _day(needle)
+        current = value.date() if isinstance(value, datetime) else value
+        return None if day is None else (current, day)
+    return (str(value or "").casefold(), needle.casefold())
+
+
+def _compare(value, op, needle: str) -> bool:
+    op = OP_ALIAS.get(op, op)
+    if op == "is_empty":
+        return _blank(value)
+    if op == "is_not_empty":
+        return not _blank(value)
+    if op == "equals":
+        return _equals(value, needle)
+    if op == "not_equals":
+        return not _equals(value, needle)
+    if op == "not_contains":
+        return not _contains_text(value, needle)
+    if op == "starts_with":
+        return any(item.casefold().startswith(needle.casefold()) for item in _texts(value))
+    if op == "ends_with":
+        return any(item.casefold().endswith(needle.casefold()) for item in _texts(value))
+    if op in ("in_list", "not_in_list"):
+        items = [line.strip() for line in needle.splitlines() if line.strip()]
+        found = any(_equals(value, item) for item in items) if items else False
+        return found if op == "in_list" else not found
+    pair = _ordered(value, needle)
+    if pair is None:
+        return False
+    left, right = pair
+    if op == "greater":
+        return left > right
+    if op == "less":
+        return left < right
+    if op == "greater_or_equal":
+        return left >= right
+    if op == "less_or_equal":
+        return left <= right
+    return _contains_text(value, needle)
+
+
+def _pick_live(pick) -> bool:
+    if not pick["on"]:
+        return False
+    if pick["op"] in ("is_empty", "is_not_empty"):
+        return True
+    if pick["op"] in ("equals", "not_equals"):
+        return True
+    return bool(str(pick["value"]).strip())
+
+
+def _picks_ok(row, picks, allowed=None) -> bool:
+    for pick in picks:
+        if not _pick_live(pick):
+            continue
+        if allowed is not None and pick["field"] not in allowed:
+            continue
+        key = VALUE_KEYS.get(pick["field"], pick["field"])
+        if key not in row and not (pick["field"] == "ship_date" and "receipt_date" in row):
+            continue
+        if not _compare(_raw(row, pick["field"]), pick["op"], str(pick["value"])):
+            return False
+    return True
+
+
+def _norm(value):
+    if _blank(value):
+        return (0, "")
+    if isinstance(value, datetime):
+        value = value.date()
+    if hasattr(value, "toordinal"):
+        return (1, value.toordinal())
+    if isinstance(value, Decimal):
+        return (2, value)
+    return (3, str(value).casefold())
+
+
+def _ordering(sorts):
+    active = [item for item in sorts if item["on"]]
+    if not active:
+        return None
+
+    def key(row):
+        parts = []
+        for item in active:
+            rank, raw = _norm(_raw(row, item["field"]))
+            if item["desc"] and isinstance(raw, (int, Decimal)):
+                parts.append((rank, -raw))
+            elif item["desc"]:
+                parts.append((rank, _Down(raw)))
+            else:
+                parts.append((rank, raw))
+        return tuple(parts)
+
+    return key
+
+
+def _demand_sorts(request):
+    labels = {key: label for key, label, _num in DEMAND_COLUMNS}
+    if request.GET.get("sort_set") != "1":
+        return []
+    rows = []
+    keys = request.GET.getlist("sort_by")
+    directions = request.GET.getlist("sort_dir")
+    ons = request.GET.getlist("sort_on")
+    seen = set()
+    for index, key in enumerate(keys):
+        if key not in labels or key in seen:
+            continue
+        seen.add(key)
+        direction = directions[index] if index < len(directions) and directions[index] in ("asc", "desc") else "asc"
+        rows.append(
+            {
+                "field": key,
+                "label": labels[key],
+                "dir": direction,
+                "on": _flag(ons, index),
+                "desc": direction == "desc",
+            }
+        )
+    return rows
+
+
+def _demand_categories(request):
+    catalog = list(ProductGroup.objects.order_by("name"))
+    names = {item.id: item.name for item in catalog}
+    names[0] = "Без группы"
+    marked = request.GET.get("category_set") == "1"
+    chosen = _id_set(request.GET.getlist("category")) if marked else set(names)
+    rows = [{"id": item.id, "name": item.name, "on": item.id in chosen} for item in catalog]
+    rows.append({"id": 0, "name": "Без группы", "on": 0 in chosen})
+    return rows, chosen if marked else None
+
+
+_LINE_KG = {
+    "ordered": "ordered_kg",
+    "picked": "picked_kg",
+    "reserve": "reserve_kg",
+    "free": "free_kg",
+    "blocked": "blocked_kg",
+    "stock": "stock_kg",
+    "incoming": "incoming_kg",
+    "short": "short_kg",
+}
+
+
+def _demand_line_cell(row, column):
+    key = column["key"]
+    if key == "order":
+        return row["order_number"] or ""
+    if key == "ship_date":
+        return row["ship_date"]
+    if key in _LINE_KG:
+        return row[_LINE_KG[key]]
+    return row.get(key) or ""
+
+
+def _demand_sum_cell(source, column, text_style, num_style):
+    if column.get("total_label"):
+        return source["title"], text_style
+    field = _LINE_KG.get(column["key"])
+    if field:
+        return source[field], num_style
+    return None, text_style
+
+
+def _demand_order_rows(context) -> list[list]:
+    columns = context["columns"]
+    header = [(column["label"], "header") for column in columns] or [("Поля", "header")]
+    rows = [header]
+
+    def walk(nodes):
+        for item in nodes:
+            if item["title"]:
+                titled = {**item, "title": ("  " * item["level"]) + item["title"]}
+                rows.append(
+                    [_demand_sum_cell(titled, column, "group", "group_num") for column in columns]
+                    or [(item["title"], "group")]
+                )
+            walk(item["children"])
+            for line in item["rows"]:
+                rows.append([_demand_line_cell(line, column) for column in columns])
+
+    groups = context["groups"]
+    if groups:
+        walk(groups)
+        totals = {
+            "title": "Итого",
+            "ordered_kg": context["ordered_total"],
+            "picked_kg": context["picked_total"],
+            "reserve_kg": context["reserve_total"],
+            "free_kg": context["free_total"],
+            "blocked_kg": context["blocked_total"],
+            "stock_kg": context["stock_total"],
+            "incoming_kg": context["incoming_total"],
+            "short_kg": context["short_total"],
+        }
+        rows.append([_demand_sum_cell(totals, column, "total", "total_num") for column in columns] or [("Итого", "total")])
+    else:
+        if context["filtered"]:
+            message = "Ничего не найдено."
+        elif context["has_orders"]:
+            message = "Нехватки нет."
+        else:
+            message = "Открытых заказов нет."
+        rows.append([(message, "text")])
+    return rows
+
+
+def _demand_inbound_rows(context) -> list[list]:
+    header = [
+        ("Заказ", "header"),
+        ("Поставщик", "header"),
+        ("Поступление", "header"),
+        ("Товар", "header"),
+        ("Калибр", "header"),
+        ("Сортность", "header"),
+        ("Заказано", "header"),
+        ("Принято", "header"),
+        ("Осталось", "header"),
+    ]
+    rows = [header]
+    inbound = context["inbound"]
+    if not inbound:
+        if context["date_from"] or context["date_to"] or context["product"]:
+            message = "Ничего не найдено."
+        else:
+            message = "Нет заказов, которые ещё нужно принять."
+        rows.append([(message, "text")])
+        return rows
+    for row in inbound:
+        rows.append(
+            [
+                row["order_number"] or "",
+                row["supplier"] or "",
+                row["receipt_date"],
+                row["product"] or "",
+                row["caliber"] or "",
+                row["grade"] or "",
+                row["ordered_kg"],
+                row["received_kg"],
+                row["left_kg"],
+            ]
+        )
+    rows.append(
+        [
+            ("Итого к приёмке", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            ("", "total"),
+            (context["inbound_total"], "total_num"),
+        ]
+    )
+    return rows
+
+
+def _demand_xlsx(context) -> HttpResponse:
+    content = write_book(
+        [
+            ("Под заказы", _demand_order_rows(context)),
+            ("К приёмке", _demand_inbound_rows(context)),
+        ]
+    )
+    start = context["date_from"] or ""
+    end = context["date_to"] or ""
+    name = f"потребность-{start}-{end}.xlsx" if start or end else "потребность.xlsx"
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename=demand.xlsx; filename*=UTF-8''{quote(name)}"
+    return response
+
+
+@roles_required("receiver", "warehouse")
+def demand(request):
+    chosen = request.GET.getlist("all")
+    show_all = "1" in chosen if chosen else True
+    grouping, modes = _demand_grouping(request)
+    column_rows, columns = _demand_columns(request)
+    picks = _demand_picks(request)
+    sorts = _demand_sorts(request)
+    categories, category_ids = _demand_categories(request)
+    export = request.GET.get("export") == "xlsx"
+    built = request.GET.get("run") == "1" or export
+    filters = _demand_query(request)
+    picks_on = any(_pick_live(pick) for pick in picks)
+    ordering = _ordering(sorts)
+    context = {
+        "groups": [],
+        "show_all": show_all,
+        "grouping": grouping,
+        "column_rows": column_rows,
+        "columns": columns,
+        "picks": picks,
+        "sorts": sorts,
+        "pick_fields": [{"key": key, "label": label} for key, label in PICK_FIELDS],
+        "pick_ops": [{"key": key, "label": label} for key, label in PICK_OPS],
+        "group_fields": [{"key": key, "label": label} for key, label in GROUP_FIELDS],
+        "column_fields": [{"key": key, "label": label} for key, label, _num in DEMAND_COLUMNS],
+        "categories": categories,
+        "built": built,
+        "has_orders": False,
+        "ordered_total": Decimal("0"),
+        "picked_total": Decimal("0"),
+        "reserve_total": Decimal("0"),
+        "free_total": Decimal("0"),
+        "blocked_total": Decimal("0"),
+        "stock_total": Decimal("0"),
+        "incoming_total": Decimal("0"),
+        "short_total": Decimal("0"),
+        "inbound": [],
+        "inbound_total": Decimal("0"),
+        "date_from": filters["date_from"],
+        "date_to": filters["date_to"],
+        "product": filters["product"],
+        "party": filters["party"],
+        "filtered": filters["filtered"] or picks_on or (category_ids is not None and category_ids != {item["id"] for item in categories}),
+    }
+    if not built:
+        return render(request, "demand.html", context)
+    report = demand_report()
+    lines = report["lines"] if show_all else [row for row in report["lines"] if row["short_kg"] > 0]
+    lines = [row for row in lines if filters["line_visible"](row) and _picks_ok(row, picks)]
+    inbound = [row for row in report["inbound"] if filters["inbound_visible"](row) and _picks_ok(row, picks, INBOUND_PICKS)]
+    if ordering:
+        inbound = sorted(inbound, key=ordering)
+    if category_ids is not None:
+        lines = [row for row in lines if row["category_id"] in category_ids]
+        inbound = [row for row in inbound if row["category_id"] in category_ids]
+    context.update(
+        {
+            "groups": group_demand(lines, modes, ordering),
+            "has_orders": report["has_orders"],
+            "ordered_total": as_kg(sum((row["ordered_kg"] for row in lines), Decimal("0"))),
+            "picked_total": as_kg(sum((row["picked_kg"] for row in lines), Decimal("0"))),
+            "reserve_total": as_kg(sum((row["reserve_kg"] for row in lines), Decimal("0"))),
+            "free_total": as_kg(sum((row["free_kg"] for row in lines), Decimal("0"))),
+            "blocked_total": as_kg(sum((row["blocked_kg"] for row in lines), Decimal("0"))),
+            "stock_total": as_kg(sum((row["stock_kg"] for row in lines), Decimal("0"))),
+            "incoming_total": as_kg(sum((row["incoming_kg"] for row in lines), Decimal("0"))),
+            "short_total": as_kg(sum((row["short_kg"] for row in lines), Decimal("0"))),
+            "inbound": inbound,
+            "inbound_total": as_kg(sum((row["left_kg"] for row in inbound), Decimal("0"))),
+        }
+    )
+    if export:
+        return _demand_xlsx(context)
+    return render(request, "demand.html", context)
+
+
+==============================================================================
+### FILE: apps\logistics\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\logistics\apps.py
+### SIZE: 227 bytes / 8 lines
+==============================================================================
+
+from django.apps import AppConfig
+
+
+class LogisticsConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.logistics"
+    label = "logistics"
+    verbose_name = "Логистика"
+
+
+==============================================================================
+### FILE: apps\logistics\dirs.py
+### SIZE: 1849 bytes / 49 lines
+==============================================================================
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, text
+from apps.logistics.models import Driver, Vehicle
+
+
+def _optional_positive(form, name: str, label: str) -> int | None:
+    raw = text(form, name)
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise WarehouseError(f"Некорректное поле «{label}»") from exc
+    if value <= 0:
+        raise WarehouseError(f"«{label}» должно быть больше нуля")
+    return value
+
+
+def apply_vehicle(item: Vehicle, form) -> Vehicle:
+    plate = text(form, "plate_number")
+    if not plate:
+        raise WarehouseError("Заполните поле «Госномер»")
+    item.plate_number = plate
+    item.brand_model = text(form, "brand_model")
+    item.trailer_plate = text(form, "trailer_plate")
+    item.load_capacity_kg = _optional_positive(form, "load_capacity_kg", "Тоннаж, кг")
+    item.pallet_capacity = _optional_positive(form, "pallet_capacity", "Кол-во паллет")
+    item.is_active = text(form, "is_active") == "1"
+    item.save()
+    return item
+
+
+def apply_driver(item: Driver, form) -> Driver:
+    name = text(form, "full_name")
+    if not name:
+        raise WarehouseError("Заполните поле «ФИО»")
+    item.full_name = name
+    item.phone = text(form, "phone")
+    vehicle_id = optional_int(form, "vehicle_id")
+    if vehicle_id:
+        vehicle = Vehicle.objects.filter(pk=vehicle_id, is_active=True).first()
+        if vehicle is None:
+            raise WarehouseError("Автомобиль не найден")
+        item.vehicle = vehicle
+    else:
+        item.vehicle = None
+    item.is_active = text(form, "is_active") == "1"
+    item.save()
+    return item
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0001_initial.py
+### SIZE: 5260 bytes / 90 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-19 08:42
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        ('planning', '0011_task_work_status'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Driver',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('full_name', models.CharField(max_length=255, verbose_name='ФИО')),
+                ('phone', models.CharField(blank=True, default='', max_length=50, verbose_name='Телефон')),
+                ('is_active', models.BooleanField(default=True, verbose_name='Активен')),
+            ],
+            options={
+                'verbose_name': 'Водитель',
+                'verbose_name_plural': 'Водители',
+                'db_table': 'logistics_drivers',
+                'ordering': ['full_name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Vehicle',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('plate_number', models.CharField(max_length=50, verbose_name='Госномер')),
+                ('brand_model', models.CharField(blank=True, default='', max_length=255, verbose_name='Марка и модель')),
+                ('trailer_plate', models.CharField(blank=True, default='', max_length=50, verbose_name='Госномер прицепа')),
+                ('load_capacity_kg', models.PositiveIntegerField(blank=True, null=True, verbose_name='Грузоподъёмность, кг')),
+                ('is_active', models.BooleanField(default=True, verbose_name='Активен')),
+            ],
+            options={
+                'verbose_name': 'Автомобиль',
+                'verbose_name_plural': 'Автомобили',
+                'db_table': 'logistics_vehicles',
+                'ordering': ['plate_number'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Route',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('route_date', models.DateField(db_index=True, verbose_name='Дата маршрута')),
+                ('name', models.CharField(blank=True, default='', max_length=255, verbose_name='Название')),
+                ('vehicle_text', models.CharField(blank=True, default='', max_length=255, verbose_name='Автомобиль')),
+                ('status', models.CharField(choices=[('draft', 'Черновик'), ('planned', 'Запланирован'), ('completed', 'Выполнен'), ('cancelled', 'Отменён')], db_index=True, default='draft', max_length=20, verbose_name='Статус')),
+                ('planned_load_at', models.DateTimeField(blank=True, null=True, verbose_name='Время погрузки')),
+                ('notes', models.TextField(blank=True, default='', verbose_name='Комментарий')),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('driver', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='routes', to='logistics.driver', verbose_name='Водитель')),
+            ],
+            options={
+                'verbose_name': 'Маршрут',
+                'verbose_name_plural': 'Маршруты',
+                'db_table': 'logistics_routes',
+                'ordering': ['-route_date', '-id'],
+            },
+        ),
+        migrations.AddField(
+            model_name='driver',
+            name='vehicle',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='drivers', to='logistics.vehicle', verbose_name='Автомобиль'),
+        ),
+        migrations.CreateModel(
+            name='RouteOrder',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('position', models.PositiveIntegerField(default=1, verbose_name='Порядок')),
+                ('order', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='route_orders', to='planning.order', verbose_name='Заказ')),
+                ('route', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='route_orders', to='logistics.route', verbose_name='Маршрут')),
+            ],
+            options={
+                'verbose_name': 'Заказ в маршруте',
+                'verbose_name_plural': 'Заказы в маршруте',
+                'db_table': 'logistics_route_orders',
+                'ordering': ['position', 'id'],
+                'constraints': [models.UniqueConstraint(fields=('route', 'order'), name='uniq_logistics_route_order')],
+            },
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0002_driver_capacity.py
+### SIZE: 683 bytes / 23 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-19 12:46
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('logistics', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='driver',
+            name='load_capacity_kg',
+            field=models.PositiveIntegerField(blank=True, null=True, verbose_name='Тоннаж, кг'),
+        ),
+        migrations.AddField(
+            model_name='driver',
+            name='pallet_capacity',
+            field=models.PositiveIntegerField(blank=True, null=True, verbose_name='Кол-во паллет'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0003_vehicle_capacity.py
+### SIZE: 928 bytes / 31 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-19 12:55
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('logistics', '0002_driver_capacity'),
+    ]
+
+    operations = [
+        migrations.RemoveField(
+            model_name='driver',
+            name='load_capacity_kg',
+        ),
+        migrations.RemoveField(
+            model_name='driver',
+            name='pallet_capacity',
+        ),
+        migrations.AddField(
+            model_name='vehicle',
+            name='pallet_capacity',
+            field=models.PositiveIntegerField(blank=True, null=True, verbose_name='Кол-во паллет'),
+        ),
+        migrations.AlterField(
+            model_name='vehicle',
+            name='load_capacity_kg',
+            field=models.PositiveIntegerField(blank=True, null=True, verbose_name='Тоннаж, кг'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0004_route_actual_load.py
+### SIZE: 684 bytes / 23 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-19 15:25
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('logistics', '0003_vehicle_capacity'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='route',
+            name='actual_load_at',
+            field=models.DateTimeField(blank=True, null=True, verbose_name='Факт отгрузки'),
+        ),
+        migrations.AlterField(
+            model_name='route',
+            name='planned_load_at',
+            field=models.DateTimeField(blank=True, null=True, verbose_name='План погрузки'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0005_route_docked.py
+### SIZE: 899 bytes / 23 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-21 12:01
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('logistics', '0004_route_actual_load'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='route',
+            name='docked_at',
+            field=models.DateTimeField(blank=True, null=True, verbose_name='Поставлено к отгрузке'),
+        ),
+        migrations.AlterField(
+            model_name='route',
+            name='status',
+            field=models.CharField(choices=[('draft', 'Черновик'), ('planned', 'Запланирован'), ('docked', 'Поставлено к отгрузке'), ('completed', 'Отгружен'), ('cancelled', 'Отменён')], db_index=True, default='draft', max_length=20, verbose_name='Статус'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\migrations\0006_route_gate.py
+### SIZE: 588 bytes / 21 lines
+==============================================================================
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("logistics", "0005_route_docked"),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name="route",
+            name="arrived_at",
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Прибыл"),
+        ),
+        migrations.AddField(
+            model_name="route",
+            name="departed_at",
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Убыл"),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\logistics\models.py
+### SIZE: 5972 bytes / 148 lines
+==============================================================================
+
+from django.db import models
+
+
+class Vehicle(models.Model):
+    plate_number = models.CharField("Госномер", max_length=50)
+    brand_model = models.CharField("Марка и модель", max_length=255, blank=True, default="")
+    trailer_plate = models.CharField("Госномер прицепа", max_length=50, blank=True, default="")
+    load_capacity_kg = models.PositiveIntegerField("Тоннаж, кг", null=True, blank=True)
+    pallet_capacity = models.PositiveIntegerField("Кол-во паллет", null=True, blank=True)
+    is_active = models.BooleanField("Активен", default=True)
+
+    class Meta:
+        db_table = "logistics_vehicles"
+        verbose_name = "Автомобиль"
+        verbose_name_plural = "Автомобили"
+        ordering = ["plate_number"]
+
+    def __str__(self):
+        return self.display_name()
+
+    def display_name(self) -> str:
+        parts = [self.plate_number]
+        if self.brand_model:
+            parts.append(self.brand_model)
+        if self.trailer_plate:
+            parts.append(f"прицеп {self.trailer_plate}")
+        return ", ".join(parts)
+
+
+class Driver(models.Model):
+    full_name = models.CharField("ФИО", max_length=255)
+    phone = models.CharField("Телефон", max_length=50, blank=True, default="")
+    vehicle = models.ForeignKey(
+        Vehicle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="drivers",
+        verbose_name="Автомобиль",
+    )
+    is_active = models.BooleanField("Активен", default=True)
+
+    class Meta:
+        db_table = "logistics_drivers"
+        verbose_name = "Водитель"
+        verbose_name_plural = "Водители"
+        ordering = ["full_name"]
+
+    def __str__(self):
+        return self.full_name
+
+    def vehicle_display(self) -> str:
+        return self.vehicle.display_name() if self.vehicle_id else ""
+
+
+class Route(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Черновик"
+        PLANNED = "planned", "Запланирован"
+        DOCKED = "docked", "Поставлено к отгрузке"
+        COMPLETED = "completed", "Отгружен"
+        CANCELLED = "cancelled", "Отменён"
+
+    LIVE_STATUSES = (Status.DRAFT, Status.PLANNED)
+    ASSIGNED_STATUSES = (Status.DRAFT, Status.PLANNED, Status.DOCKED, Status.COMPLETED)
+
+    route_date = models.DateField("Дата маршрута", db_index=True)
+    name = models.CharField("Название", max_length=255, blank=True, default="")
+    driver = models.ForeignKey(
+        Driver,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="routes",
+        verbose_name="Водитель",
+    )
+    vehicle_text = models.CharField("Автомобиль", max_length=255, blank=True, default="")
+    status = models.CharField(
+        "Статус",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    planned_load_at = models.DateTimeField("План погрузки", null=True, blank=True)
+    arrived_at = models.DateTimeField("Прибыл", null=True, blank=True)
+    docked_at = models.DateTimeField("Поставлено к отгрузке", null=True, blank=True)
+    actual_load_at = models.DateTimeField("Факт отгрузки", null=True, blank=True)
+    departed_at = models.DateTimeField("Убыл", null=True, blank=True)
+    notes = models.TextField("Комментарий", blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "logistics_routes"
+        verbose_name = "Маршрут"
+        verbose_name_plural = "Маршруты"
+        ordering = ["-route_date", "-id"]
+
+    def __str__(self):
+        label = self.name or f"Маршрут {self.pk or ''}"
+        return f"{label} ({self.route_date:%d.%m.%Y})"
+
+    def refresh_vehicle_text(self) -> None:
+        if not self.driver_id:
+            self.vehicle_text = ""
+            return
+        driver = (
+            self.driver
+            if getattr(self, "driver", None) is not None and self.driver.pk == self.driver_id
+            else Driver.objects.select_related("vehicle").filter(pk=self.driver_id).first()
+        )
+        if driver and driver.vehicle_id:
+            self.vehicle_text = driver.vehicle.display_name()
+        else:
+            self.vehicle_text = ""
+
+    def save(self, *args, **kwargs):
+        old_status = None
+        if self.pk and not self._state.adding:
+            old_status = Route.objects.filter(pk=self.pk).values_list("status", flat=True).first()
+        frozen = old_status is not None and old_status not in self.LIVE_STATUSES
+        if self.status in self.LIVE_STATUSES or not frozen or not self.vehicle_text:
+            self.refresh_vehicle_text()
+        super().save(*args, **kwargs)
+
+
+class RouteOrder(models.Model):
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="route_orders", verbose_name="Маршрут")
+    order = models.ForeignKey(
+        "planning.Order",
+        on_delete=models.PROTECT,
+        related_name="route_orders",
+        verbose_name="Заказ",
+    )
+    position = models.PositiveIntegerField("Порядок", default=1)
+
+    class Meta:
+        db_table = "logistics_route_orders"
+        verbose_name = "Заказ в маршруте"
+        verbose_name_plural = "Заказы в маршруте"
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["route", "order"], name="uniq_logistics_route_order"),
+        ]
+
+    def __str__(self):
+        return f"{self.route_id} → {self.order_id} ({self.position})"
+
+
+==============================================================================
+### FILE: apps\logistics\queries.py
+### SIZE: 4123 bytes / 115 lines
+==============================================================================
+
+from collections import defaultdict
+from datetime import date
+from decimal import Decimal
+
+from django.db.models import Exists, OuterRef, Prefetch, Sum
+
+from apps.logistics.models import Route, RouteOrder
+from apps.planning.models import Order, OrderLine
+
+NO_ZONE_ID = 0
+
+
+def active_route_order_exists():
+    return Exists(
+        RouteOrder.objects.filter(
+            order_id=OuterRef("pk"),
+            route__status__in=Route.ASSIGNED_STATUSES,
+        )
+    )
+
+
+def unassigned_orders_queryset(ship_date: date | None = None):
+    qs = (
+        Order.objects.filter(status__in=("open", "partial"))
+        .annotate(on_route=active_route_order_exists())
+        .filter(on_route=False)
+        .select_related("consignee", "consignee__zone", "seller")
+        .prefetch_related(Prefetch("lines", queryset=OrderLine.objects.only("id", "order_id", "qty_kg")))
+        .order_by("ship_date", "id")
+    )
+    if ship_date is not None:
+        qs = qs.filter(ship_date=ship_date)
+    return qs
+
+
+def order_weights(orders) -> dict[int, Decimal]:
+    ids = [order.id for order in orders]
+    if not ids:
+        return {}
+    rows = (
+        OrderLine.objects.filter(order_id__in=ids)
+        .values("order_id")
+        .annotate(total=Sum("qty_kg"))
+    )
+    return {row["order_id"]: row["total"] or Decimal("0") for row in rows}
+
+
+def delivery_rank(order) -> tuple:
+    """Зона, затем очередность точки. Ноль — без очереди, такие точки в конце зоны."""
+    consignee = order.consignee if order.consignee_id else None
+    zone_name = ""
+    seq = 0
+    party = ""
+    if consignee is not None:
+        party = consignee.name or ""
+        seq = consignee.delivery_order or 0
+        if consignee.zone_id and consignee.zone is not None:
+            zone_name = consignee.zone.name or ""
+    return (zone_name.lower(), seq <= 0, seq, party.lower(), order.id)
+
+
+def _order_brief(order, weight: Decimal) -> dict:
+    consignee = order.consignee if order.consignee_id else None
+    if consignee is not None:
+        party = consignee.name
+        address = (consignee.address or "").strip()
+        delivery_order = consignee.delivery_order or 0
+    else:
+        party = ""
+        address = ""
+        delivery_order = 0
+    return {
+        "id": order.id,
+        "number": order.number or order.external_number or f"#{order.pk}",
+        "party": party,
+        "address": address,
+        "weight": weight,
+        "delivery_order": delivery_order,
+    }
+
+
+def group_orders_by_zone(orders, weights: dict[int, Decimal] | None = None) -> list[dict]:
+    weights = weights or {}
+    by_zone: dict[int, list] = defaultdict(list)
+    for order in orders:
+        zone_id = order.consignee.zone_id if order.consignee_id and order.consignee.zone_id else NO_ZONE_ID
+        by_zone[zone_id].append(order)
+
+    rows = []
+    for zone_id, zone_orders in by_zone.items():
+        if zone_id == NO_ZONE_ID:
+            zone_name = "Без зоны"
+        else:
+            zone = zone_orders[0].consignee.zone
+            zone_name = zone.name if zone else "Без зоны"
+        addresses = {
+            (order.consignee.address if order.consignee_id else "").strip()
+            for order in zone_orders
+        }
+        addresses.discard("")
+        zone_orders.sort(key=delivery_rank)
+        order_rows = [_order_brief(order, weights.get(order.id) or Decimal("0")) for order in zone_orders]
+        rows.append(
+            {
+                "zone_id": zone_id,
+                "zone_name": zone_name,
+                "order_count": len(zone_orders),
+                "tt_count": len(addresses) or len(zone_orders),
+                "weight": sum(item["weight"] for item in order_rows),
+                "order_ids": [item["id"] for item in order_rows],
+                "orders": order_rows,
+            }
+        )
+    rows.sort(key=lambda row: (row["zone_name"] == "Без зоны", row["zone_name"].lower(), row["zone_id"]))
+    return rows
+
+
+==============================================================================
+### FILE: apps\logistics\routes.py
+### SIZE: 12737 bytes / 317 lines
+==============================================================================
+
+from datetime import date, datetime, time
+from decimal import Decimal
+
+from django.db import transaction
+from django.db.models import Sum
+from django.utils import timezone
+
+from apps.common.exceptions import WarehouseError
+from apps.logistics.models import Driver, Route, RouteOrder
+from apps.logistics.queries import delivery_rank, unassigned_orders_queryset
+from apps.planning.models import Order, OrderLine, Task
+
+
+def route_weight(route: Route) -> Decimal:
+    total = (
+        OrderLine.objects.filter(order__route_orders__route=route)
+        .aggregate(total=Sum("qty_kg"))
+        .get("total")
+    )
+    return total or Decimal("0")
+
+
+def create_route_with_orders(
+    *,
+    route_date: date,
+    driver: Driver | None,
+    order_ids: list[int],
+    name: str = "",
+    status: str = Route.Status.DRAFT,
+) -> Route:
+    wanted = list(dict.fromkeys(order_ids))
+    found = {order.id: order for order in Order.objects.filter(pk__in=wanted, status__in=("open", "partial"))}
+    missing = [oid for oid in wanted if oid not in found]
+    if missing:
+        raise WarehouseError("Некоторые заказы не найдены или закрыты")
+    taken = set(
+        RouteOrder.objects.filter(
+            order_id__in=wanted,
+            route__status__in=Route.ASSIGNED_STATUSES,
+        ).values_list("order_id", flat=True)
+    )
+    free = [found[oid] for oid in wanted if oid not in taken]
+    if not free:
+        raise WarehouseError("Выбранные заказы уже в маршрутах")
+
+    with transaction.atomic():
+        route = Route(
+            route_date=route_date,
+            name=name or (driver.full_name if driver else ""),
+            driver=driver,
+            status=status,
+        )
+        route.save()
+        RouteOrder.objects.bulk_create(
+            [
+                RouteOrder(route=route, order=order, position=index)
+                for index, order in enumerate(free, start=1)
+            ]
+        )
+    return route
+
+
+def add_orders_to_route(route: Route, order_ids: list[int]) -> int:
+    if route.status == Route.Status.CANCELLED:
+        raise WarehouseError("Нельзя менять отменённый маршрут")
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Нельзя менять маршрут, который уже поставлен к отгрузке или отгружен")
+    wanted = list(dict.fromkeys(order_ids))
+    found = list(
+        Order.objects.filter(pk__in=wanted, status__in=("open", "partial")).select_related(
+            "consignee", "consignee__zone"
+        )
+    )
+    taken = set(
+        RouteOrder.objects.filter(
+            order_id__in=wanted,
+            route__status__in=Route.ASSIGNED_STATUSES,
+        ).values_list("order_id", flat=True)
+    )
+    free = [order for order in found if order.id not in taken]
+    if not free:
+        return 0
+    free.sort(key=delivery_rank)
+    with transaction.atomic():
+        rows = list(
+            RouteOrder.objects.filter(route=route)
+            .select_related("order__consignee", "order__consignee", "order__consignee__zone")
+            .order_by("position", "id")
+        )
+        sequence = [row.order for row in rows]
+        for order in free:
+            sequence.insert(_delivery_slot(sequence, order), order)
+        by_order = {row.order_id: row for row in rows}
+        fresh = []
+        for position, order in enumerate(sequence, start=1):
+            row = by_order.get(order.id)
+            if row is None:
+                fresh.append(RouteOrder(route=route, order=order, position=position))
+            elif row.position != position:
+                row.position = position
+                row.save(update_fields=["position"])
+        if fresh:
+            RouteOrder.objects.bulk_create(fresh)
+    return len(free)
+
+
+def _delivery_slot(sequence: list, order) -> int:
+    key = delivery_rank(order)
+    last = None
+    for index, current in enumerate(sequence):
+        if delivery_rank(current) <= key:
+            last = index
+    return 0 if last is None else last + 1
+
+
+def remove_order_from_route(route: Route, order_id: int) -> None:
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Можно менять только черновик или запланированный маршрут")
+    deleted, _ = RouteOrder.objects.filter(route=route, order_id=order_id).delete()
+    if not deleted:
+        raise WarehouseError("Заказ не найден в маршруте")
+    _renumber(route)
+
+
+def delete_routes(ids: list[int]) -> tuple[list[str], list[str]]:
+    """Удаляет маршруты; заказы снова свободны для маршрутизации."""
+    from django.db.models.deletion import ProtectedError
+
+    deleted = []
+    failed = []
+    routes = {route.id: route for route in Route.objects.filter(pk__in=ids)}
+    for route_id in ids:
+        route = routes.get(route_id)
+        if route is None:
+            failed.append(f"{route_id}: маршрут не найден")
+            continue
+        label = route.name or f"#{route.id}"
+        try:
+            with transaction.atomic():
+                route.delete()
+            deleted.append(label)
+        except ProtectedError:
+            failed.append(f"{label}: маршрут используется")
+    return deleted, failed
+
+
+def reorder_route_orders(route: Route, order_ids: list[int]) -> None:
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Можно менять только черновик или запланированный маршрут")
+    current = list(RouteOrder.objects.filter(route=route).order_by("position", "id"))
+    by_order = {row.order_id: row for row in current}
+    if set(order_ids) != set(by_order):
+        raise WarehouseError("Список заказов не совпадает с маршрутом")
+    with transaction.atomic():
+        for index, order_id in enumerate(order_ids, start=1):
+            row = by_order[order_id]
+            if row.position != index:
+                row.position = index
+                row.save(update_fields=["position"])
+
+
+def move_route_order(route: Route, order_id: int, direction: str) -> None:
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Можно менять только черновик или запланированный маршрут")
+    rows = list(RouteOrder.objects.filter(route=route).order_by("position", "id"))
+    index = next((i for i, row in enumerate(rows) if row.order_id == order_id), None)
+    if index is None:
+        raise WarehouseError("Заказ не найден в маршруте")
+    if direction == "up" and index > 0:
+        rows[index], rows[index - 1] = rows[index - 1], rows[index]
+    elif direction == "down" and index < len(rows) - 1:
+        rows[index], rows[index + 1] = rows[index + 1], rows[index]
+    else:
+        return
+    with transaction.atomic():
+        for pos, row in enumerate(rows, start=1):
+            if row.position != pos:
+                row.position = pos
+                row.save(update_fields=["position"])
+
+
+def set_route_status(route: Route, status: str) -> Route:
+    allowed = {choice.value for choice in Route.Status}
+    if status not in allowed:
+        raise WarehouseError("Некорректный статус маршрута")
+    route.status = status
+    route.save()
+    return route
+
+
+def load_local(value: datetime) -> datetime:
+    return timezone.localtime(value) if timezone.is_aware(value) else value
+
+
+def set_planned_load_at(route: Route, value: datetime | None, *, warn_conflict: bool = True) -> str | None:
+    warning = None
+    if value is not None and route.driver_id:
+        local = load_local(value)
+        bucket = slot_bucket(value)
+        conflict = (
+            Route.objects.filter(
+                driver_id=route.driver_id,
+                planned_load_at__isnull=False,
+            )
+            .exclude(pk=route.pk)
+            .exclude(status=Route.Status.CANCELLED)
+        )
+        for other in conflict:
+            if not other.planned_load_at:
+                continue
+            other_local = load_local(other.planned_load_at)
+            if other_local.date() == local.date() and slot_bucket(other.planned_load_at) == bucket:
+                warning = f"У водителя уже есть маршрут в слоте {local.strftime('%d.%m')} {bucket}"
+                break
+    route.planned_load_at = value
+    route.save(update_fields=["planned_load_at", "updated_at"])
+    return warning if warn_conflict else None
+
+
+def slot_bucket(value: datetime) -> str:
+    local = load_local(value)
+    minute = 0 if local.minute < 30 else 30
+    return f"{local.hour:02d}:{minute:02d}"
+
+
+def parse_load_datetime(load_date: date | None, raw_time: str) -> datetime | None:
+    """Дата и время погрузки. Дата может отличаться от даты рейса (погрузка накануне)."""
+    text = (raw_time or "").strip()
+    if not text:
+        return None
+    if load_date is None:
+        raise WarehouseError("Укажите дату погрузки")
+    try:
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        naive = datetime.combine(load_date, time(hour=hour, minute=minute))
+    except (TypeError, ValueError, IndexError) as exc:
+        raise WarehouseError("Некорректное время погрузки") from exc
+    if timezone.is_naive(naive):
+        return timezone.make_aware(naive, timezone.get_current_timezone())
+    return naive
+
+
+def parse_load_date(raw: str) -> date | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise WarehouseError("Некорректная дата погрузки") from exc
+
+
+def update_route_header(
+    route: Route,
+    *,
+    name: str,
+    driver: Driver | None,
+    notes: str,
+    status: str,
+    planned_load_at: datetime | None,
+    actual_load_at: datetime | None = None,
+) -> str | None:
+    allowed = {choice.value for choice in Route.Status}
+    if status not in allowed:
+        raise WarehouseError("Некорректный статус маршрута")
+    route.name = name
+    route.driver = driver
+    route.notes = notes
+    route.status = status
+    warning = None
+    route.planned_load_at = planned_load_at
+    route.actual_load_at = actual_load_at
+    if status in Route.LIVE_STATUSES:
+        route.docked_at = None
+    elif status == Route.Status.DOCKED and route.docked_at is None:
+        route.docked_at = timezone.now()
+    elif status == Route.Status.COMPLETED and route.actual_load_at is None:
+        route.actual_load_at = timezone.now()
+    if planned_load_at and route.driver_id:
+        local = load_local(planned_load_at)
+        bucket = slot_bucket(planned_load_at)
+        for other in Route.objects.filter(
+            driver_id=route.driver_id,
+            planned_load_at__isnull=False,
+        ).exclude(pk=route.pk).exclude(status=Route.Status.CANCELLED):
+            if not other.planned_load_at:
+                continue
+            other_local = load_local(other.planned_load_at)
+            if other_local.date() == local.date() and slot_bucket(other.planned_load_at) == bucket:
+                warning = f"У водителя уже есть маршрут в слоте {local.strftime('%d.%m')} {bucket}"
+                break
+    route.save()
+    return warning
+
+
+def ship_tasks_for_orders(order_ids: list[int]) -> dict[int, list[Task]]:
+    if not order_ids:
+        return {}
+    tasks = Task.objects.filter(order_id__in=order_ids, kind="ship").exclude(status="cancelled").order_by("-id")
+    result: dict[int, list[Task]] = {}
+    for task in tasks:
+        result.setdefault(task.order_id, []).append(task)
+    return result
+
+
+def _renumber(route: Route) -> None:
+    rows = list(RouteOrder.objects.filter(route=route).order_by("position", "id"))
+    for index, row in enumerate(rows, start=1):
+        if row.position != index:
+            row.position = index
+            row.save(update_fields=["position"])
+
+
+def available_orders_for_route(route: Route):
+    return unassigned_orders_queryset(ship_date=route.route_date)
+
+
+==============================================================================
+### FILE: apps\logistics\routing.py
+### SIZE: 13108 bytes / 318 lines
+==============================================================================
+
+"""Маршрутизация: зона → водитель, заказ может уйти другому водителю."""
+from collections import defaultdict
+from datetime import date
+from decimal import Decimal
+from typing import Iterable
+
+from apps.common.exceptions import WarehouseError
+from apps.logistics.models import Driver, Route
+from apps.logistics.queries import group_orders_by_zone, order_weights, unassigned_orders_queryset
+from apps.logistics.routes import add_orders_to_route, create_route_with_orders
+
+SESSION_ASSIGNMENTS_KEY = "routing_zone_drivers"
+SESSION_ORDER_ASSIGNMENTS_KEY = "routing_order_drivers"
+NO_DRIVER_ID = 0
+
+
+def assignment_date_key(ship_date: date | None) -> str:
+    return ship_date.isoformat() if ship_date else "default"
+
+
+def _read_id_map(session, store_key: str, ship_date: date | None) -> dict[int, int]:
+    store = session.get(store_key) or {}
+    raw = store.get(assignment_date_key(ship_date)) or {}
+    result = {}
+    for raw_id, driver_id in raw.items():
+        try:
+            item_id = int(raw_id)
+            did = int(driver_id)
+        except (TypeError, ValueError):
+            continue
+        if did >= 0:
+            result[item_id] = did
+    return result
+
+
+def _write_id(session, store_key: str, ship_date: date | None, item_id: int, driver_id: int | None) -> None:
+    store = session.get(store_key) or {}
+    date_key = assignment_date_key(ship_date)
+    day_map = dict(store.get(date_key) or {})
+    key = str(int(item_id))
+    if driver_id is None or driver_id < 0:
+        day_map.pop(key, None)
+    else:
+        day_map[key] = int(driver_id)
+    store[date_key] = day_map
+    session[store_key] = store
+    session.modified = True
+
+
+def _drop_ids(session, store_key: str, ship_date: date | None, item_ids: Iterable[int]) -> None:
+    store = session.get(store_key) or {}
+    date_key = assignment_date_key(ship_date)
+    day_map = dict(store.get(date_key) or {})
+    for item_id in item_ids:
+        day_map.pop(str(int(item_id)), None)
+    store[date_key] = day_map
+    session[store_key] = store
+    session.modified = True
+
+
+def get_session_assignments(session, ship_date: date | None) -> dict[int, int]:
+    """zone_id -> driver_id; 0 = создать маршрут без водителя."""
+    return _read_id_map(session, SESSION_ASSIGNMENTS_KEY, ship_date)
+
+
+def set_session_assignment(session, ship_date: date | None, zone_id: int, driver_id: int | None) -> None:
+    _write_id(session, SESSION_ASSIGNMENTS_KEY, ship_date, zone_id, driver_id)
+
+
+def clear_session_assignments(session, ship_date: date | None, zone_ids: Iterable[int]) -> None:
+    _drop_ids(session, SESSION_ASSIGNMENTS_KEY, ship_date, zone_ids)
+
+
+def get_session_order_assignments(session, ship_date: date | None) -> dict[int, int]:
+    """order_id -> driver_id; 0 = маршрут без водителя. Нет ключа — заказ следует зоне."""
+    return _read_id_map(session, SESSION_ORDER_ASSIGNMENTS_KEY, ship_date)
+
+
+def set_session_order_assignment(session, ship_date: date | None, order_id: int, driver_id: int | None) -> None:
+    _write_id(session, SESSION_ORDER_ASSIGNMENTS_KEY, ship_date, order_id, driver_id)
+
+
+def clear_session_order_assignments(session, ship_date: date | None, order_ids: Iterable[int]) -> None:
+    _drop_ids(session, SESSION_ORDER_ASSIGNMENTS_KEY, ship_date, order_ids)
+
+
+def routing_rows(ship_date: date, session) -> tuple[list[dict], dict[int, int], Decimal]:
+    orders = list(unassigned_orders_queryset(ship_date))
+    weights = order_weights(orders)
+    rows = group_orders_by_zone(orders, weights)
+    assignments = get_session_assignments(session, ship_date)
+    order_assignments = get_session_order_assignments(session, ship_date)
+    total_weight = Decimal("0")
+    for row in rows:
+        row["driver_id"] = assignments.get(row["zone_id"])
+        overrides = 0
+        for order in row["orders"]:
+            driver_id = order_assignments.get(order["id"])
+            order["driver_id"] = driver_id
+            order["assigned"] = driver_id is not None
+            if driver_id is not None:
+                overrides += 1
+        row["override_count"] = overrides
+        total_weight += row["weight"] or Decimal("0")
+    return rows, assignments, total_weight
+
+
+def driver_load_summary(rows: list[dict], drivers) -> list[dict]:
+    """Вес заказов по эффективному водителю. Перегруз — если вес больше тоннажа авто."""
+    weights: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    counts: dict[int, int] = defaultdict(int)
+    for row in rows:
+        zone_driver = row.get("driver_id")
+        for order in row.get("orders") or []:
+            driver_id = order["driver_id"] if order.get("assigned") else zone_driver
+            if driver_id is None:
+                continue
+            weights[driver_id] += order.get("weight") or Decimal("0")
+            counts[driver_id] += 1
+    by_id = {driver.id: driver for driver in drivers}
+    result = []
+    for driver_id, weight in weights.items():
+        if driver_id == NO_DRIVER_ID:
+            result.append(
+                {
+                    "driver_id": NO_DRIVER_ID,
+                    "name": "Без водителя",
+                    "weight": weight,
+                    "count": counts[driver_id],
+                    "capacity": None,
+                    "over": False,
+                }
+            )
+            continue
+        driver = by_id.get(driver_id)
+        capacity = None
+        if driver is not None and driver.vehicle_id and driver.vehicle and driver.vehicle.load_capacity_kg:
+            capacity = driver.vehicle.load_capacity_kg
+        result.append(
+            {
+                "driver_id": driver_id,
+                "name": driver.full_name if driver is not None else f"#{driver_id}",
+                "weight": weight,
+                "count": counts[driver_id],
+                "capacity": capacity,
+                "over": capacity is not None and weight > capacity,
+            }
+        )
+    result.sort(key=lambda item: (item["name"] == "Без водителя", item["name"].lower()))
+    return result
+
+
+def _row_orders(row: dict) -> list[dict]:
+    orders = row.get("orders")
+    if orders is not None:
+        return orders
+    return [{"id": order_id} for order_id in row.get("order_ids") or []]
+
+
+def _order_override(order: dict) -> int | None:
+    """Явный водитель заказа. None — заказ следует зоне."""
+    if order.get("assigned"):
+        return order.get("driver_id")
+    if "assigned" in order:
+        return None
+    return order.get("driver_id")
+
+
+def partition_route_orders(zone_rows: list[dict]) -> tuple[dict[int, list[int]], list[dict], list[int]]:
+    """Заказы с явным водителем идут ему, остальные — водителю зоны.
+
+    Возвращает заказы по водителям, маршруты «без водителя» по зонам
+    и зоны, чьё назначение реально использовано.
+    """
+    by_driver: dict[int, list[int]] = defaultdict(list)
+    no_driver_zones: list[dict] = []
+    inherited_zone_ids: list[int] = []
+    for row in zone_rows:
+        zone_driver = row.get("driver_id")
+        no_driver_ids: list[int] = []
+        used_inheritance = False
+        for order in _row_orders(row):
+            explicit = _order_override(order)
+            driver_id = explicit if explicit is not None else zone_driver
+            if driver_id is None:
+                continue
+            if explicit is None:
+                used_inheritance = True
+            if driver_id == NO_DRIVER_ID:
+                no_driver_ids.append(order["id"])
+            else:
+                by_driver[driver_id].append(order["id"])
+        if no_driver_ids:
+            no_driver_zones.append(
+                {
+                    "zone_id": row["zone_id"],
+                    "zone_name": row["zone_name"],
+                    "order_ids": no_driver_ids,
+                }
+            )
+        if used_inheritance and zone_driver is not None:
+            inherited_zone_ids.append(row["zone_id"])
+    return by_driver, no_driver_zones, inherited_zone_ids
+
+
+def consumed_for_create(zone_rows: list[dict]) -> tuple[list[int], list[int]]:
+    by_driver, no_driver_zones, inherited_zone_ids = partition_route_orders(zone_rows)
+    order_ids = [order_id for ids in by_driver.values() for order_id in ids]
+    for zone in no_driver_zones:
+        order_ids.extend(zone["order_ids"])
+    return order_ids, inherited_zone_ids
+
+
+def consumed_for_route(route: Route, zone_rows: list[dict]) -> tuple[list[int], list[int]]:
+    target = route.driver_id if route.driver_id else NO_DRIVER_ID
+    by_driver, no_driver_zones, inherited_zone_ids = partition_route_orders(zone_rows)
+    if target == NO_DRIVER_ID:
+        order_ids = [order_id for zone in no_driver_zones for order_id in zone["order_ids"]]
+    else:
+        order_ids = list(by_driver.get(target, []))
+    inherited = set(inherited_zone_ids)
+    zone_ids = [
+        row["zone_id"]
+        for row in zone_rows
+        if row["zone_id"] in inherited and row.get("driver_id") == target
+    ]
+    return order_ids, zone_ids
+
+
+def _zone_label(names: list[str]) -> str:
+    unique = []
+    for name in names:
+        cleaned = (name or "").strip() or "Без зоны"
+        if cleaned not in unique:
+            unique.append(cleaned)
+    return ", ".join(unique)[:255]
+
+
+def _driver_zone_names(zone_rows: list[dict]) -> dict[int, list[str]]:
+    names: dict[int, list[str]] = defaultdict(list)
+    for row in zone_rows:
+        zone_driver = row.get("driver_id")
+        label = (row.get("zone_name") or "").strip() or "Без зоны"
+        seen = set()
+        for order in _row_orders(row):
+            explicit = _order_override(order)
+            driver_id = explicit if explicit is not None else zone_driver
+            if driver_id is None or driver_id == NO_DRIVER_ID or driver_id in seen:
+                continue
+            seen.add(driver_id)
+            names[driver_id].append(label)
+    return names
+
+
+def create_routes_from_zone_assignments(
+    *,
+    ship_date: date,
+    zone_rows: list[dict],
+) -> list[Route]:
+    """Один маршрут на водителя; «Без водителя» — по одному маршруту на зону."""
+    by_driver, no_driver_zones, _inherited = partition_route_orders(zone_rows)
+    if not by_driver and not no_driver_zones:
+        raise WarehouseError("Назначьте водителя или «Без водителя» на зоны или заказы")
+
+    drivers = {
+        driver.id: driver
+        for driver in Driver.objects.filter(pk__in=by_driver.keys(), is_active=True).select_related("vehicle")
+    }
+    zone_names = _driver_zone_names(zone_rows)

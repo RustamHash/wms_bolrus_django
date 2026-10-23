@@ -133,6 +133,7 @@ body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
 .import-log[hidden] { display: none; }
 .page-bar .doc-filter .import-log { max-width: 720px; }
 .client-pick { position: relative; display: block; }
+.client-pick input { width: 100%; }
 .client-pick ul { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 280px; overflow: auto; background: white; border: 1px solid #b7c4b8; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
 .client-pick li { margin: 0; }
 .client-pick button, body.tsd .client-pick button { display: block; width: 100%; margin: 0; padding: 8px 10px; background: white; color: var(--ink); text-align: left; font-weight: 400; border-radius: 6px; min-height: 40px; }
@@ -352,22 +353,39 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 .journal .tool-box .icon-btn { width: 18px; height: 18px; }
 .journal .tool-box .icon-btn svg { width: 12px; height: 12px; }
 .journal .dates { display: flex; align-items: center; gap: 0.25rem; font-size: 0.65rem; }
-#customers-filter { display: grid; grid-template-columns: auto auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
+#customers-filter,
+#tasks-filter.with-period { display: grid; grid-template-columns: auto auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
+#tasks-filter { display: grid; grid-template-columns: auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
 #customers-filter .journal-title,
 #customers-filter .period-grid,
 #customers-filter .field-grid,
-#customers-filter .filter-actions { grid-row: 1 / span 2; }
-#customers-filter .period-grid { display: grid; grid-template-columns: auto auto auto auto; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
-#customers-filter select.period-type { width: 148px; }
-#customers-filter .period-caption { grid-column: 1; grid-row: 1 / span 2; }
-#customers-filter .from-word { grid-column: 2; grid-row: 1; }
-#customers-filter .from-select { grid-column: 3; grid-row: 1; }
-#customers-filter .from-date { grid-column: 4; grid-row: 1; }
-#customers-filter .to-word { grid-column: 2; grid-row: 2; }
-#customers-filter .to-select { grid-column: 3; grid-row: 2; }
-#customers-filter .to-date { grid-column: 4; grid-row: 2; }
-#customers-filter .field-grid { display: grid; grid-template-columns: auto 160px; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
-#customers-filter .field-grid input, #customers-filter .field-grid select { width: 100%; min-width: 0; }
+#customers-filter .filter-actions,
+#tasks-filter .journal-title,
+#tasks-filter .period-grid,
+#tasks-filter .field-grid,
+#tasks-filter .filter-actions { grid-row: 1 / span 2; }
+#customers-filter .period-grid,
+#tasks-filter .period-grid { display: grid; grid-template-columns: auto auto auto auto; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
+#customers-filter select.period-type,
+#tasks-filter select.period-type { width: 148px; }
+#customers-filter .period-caption,
+#tasks-filter .period-caption { grid-column: 1; grid-row: 1 / span 2; }
+#customers-filter .from-word,
+#tasks-filter .from-word { grid-column: 2; grid-row: 1; }
+#customers-filter .from-select,
+#tasks-filter .from-select { grid-column: 3; grid-row: 1; }
+#customers-filter .from-date,
+#tasks-filter .from-date { grid-column: 4; grid-row: 1; }
+#customers-filter .to-word,
+#tasks-filter .to-word { grid-column: 2; grid-row: 2; }
+#customers-filter .to-select,
+#tasks-filter .to-select { grid-column: 3; grid-row: 2; }
+#customers-filter .to-date,
+#tasks-filter .to-date { grid-column: 4; grid-row: 2; }
+#customers-filter .field-grid,
+#tasks-filter .field-grid { display: grid; grid-template-columns: auto 160px; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
+#customers-filter .field-grid input, #customers-filter .field-grid select,
+#tasks-filter .field-grid input, #tasks-filter .field-grid select { width: 100%; min-width: 0; }
 .journal input:not([type="checkbox"]):not([type="file"]),
 .journal select,
 .journal button.slim,
@@ -380,6 +398,7 @@ body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0
 .journal select[name="action"] { width: 160px; }
 .journal select[name="supplier_id"] { width: 220px; }
 .journal select[name="status"] { width: 170px; }
+.journal select[name="user_id"] { width: 180px; }
 .journal input[name="party"] { width: 180px; }
 .journal input[name="number"],
 .journal input[name="order_number"] { width: 140px; }

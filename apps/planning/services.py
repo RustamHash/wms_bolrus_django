@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Prefetch, Sum
 
 from apps.catalog.families import critical_family
-from apps.catalog.models import Caliber, Client, Consignee, Grade, Product, ProductAlias, Seller, Supplier
+from apps.catalog.models import Caliber, Consignee, Grade, Product, ProductAlias, Seller, Supplier
 from apps.catalog.parties import ensure_alias, warehouse_product
 from apps.common.constants import PALLET_TYPE, TASK_WORK_STATUS, task_status_choices
 from apps.common.exceptions import WarehouseError
@@ -15,7 +15,7 @@ from apps.common.forms import get_row
 from apps.common.kg import as_kg, format_kg
 from apps.common.numbers import document_number
 from apps.common.present import line_caliber
-from apps.inventory.models import Balance, Movement
+from apps.inventory.models import Movement
 from apps.inventory.services import kg_by, received_kg
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine, Task, TaskLine
 
@@ -28,14 +28,10 @@ def remaining_kg(line: OrderLine) -> Decimal:
 
 
 @transaction.atomic
-def create_order(*, client_id, seller_id, ship_date, shipping_terms, user, consignee_id=None) -> Order:
-    client = get_row(Client, client_id, "клиент")
+def create_order(*, consignee_id, seller_id, ship_date, shipping_terms, user, number=None) -> Order:
+    consignee = get_row(Consignee, consignee_id, "грузополучатель")
     seller = get_row(Seller, seller_id, "продавец")
-    from apps.catalog.parties import consignee_for_buyer
-
-    consignee = get_row(Consignee, consignee_id, "грузополучатель") if consignee_id else consignee_for_buyer(client)
     order = Order.objects.create(
-        client=client,
         consignee=consignee,
         seller=seller,
         ship_date=ship_date,
@@ -43,8 +39,16 @@ def create_order(*, client_id, seller_id, ship_date, shipping_terms, user, consi
         created_by=user,
         status="open",
     )
-    order.number = document_number("ЗК", order.id)
-    order.save(update_fields=["number"])
+    clean = (number or "").strip()
+    if clean:
+        if Order.objects.filter(number=clean).exclude(pk=order.pk).exists() or Order.objects.filter(external_number=clean).exclude(pk=order.pk).exists():
+            raise WarehouseError("Заказ с таким номером уже есть")
+        order.number = clean
+        order.external_number = clean
+        order.save(update_fields=["number", "external_number"])
+    else:
+        order.number = document_number("ЗК", order.id)
+        order.save(update_fields=["number"])
     return order
 
 
@@ -147,18 +151,18 @@ def _sync_customer_lines(order: Order, lines: list[dict]) -> None:
 
 
 @transaction.atomic
-def save_customer_order(order, *, client_id, seller_id, ship_date, shipping_terms, status, lines, user, consignee_id=None) -> Order:
-    if status not in ("open", "closed"):
+def save_customer_order(order, *, consignee_id, seller_id, ship_date, shipping_terms, status, lines, user, number=None) -> Order:
+    if status not in ("open", "partial", "closed"):
         raise WarehouseError("Выберите статус")
     was_closed = order is not None and order.status == "closed"
     if order is None:
         order = create_order(
-            client_id=client_id,
+            consignee_id=consignee_id,
             seller_id=seller_id,
             ship_date=ship_date,
             shipping_terms=shipping_terms,
             user=user,
-            consignee_id=consignee_id,
+            number=number,
         )
         _sync_customer_lines(order, lines)
         order.status = status
@@ -172,12 +176,14 @@ def save_customer_order(order, *, client_id, seller_id, ship_date, shipping_term
         order.status = status
         order.save(update_fields=["status"])
         return order
-    client = get_row(Client, client_id, "покупатель")
     seller = get_row(Seller, seller_id, "продавец")
-    from apps.catalog.parties import consignee_for_buyer
-
-    consignee = get_row(Consignee, consignee_id, "грузополучатель") if consignee_id else consignee_for_buyer(client)
-    order.client = client
+    consignee = get_row(Consignee, consignee_id, "грузополучатель")
+    clean = (number or "").strip()
+    if clean and clean != (order.number or ""):
+        if Order.objects.filter(number=clean).exclude(pk=order.pk).exists() or Order.objects.filter(external_number=clean).exclude(pk=order.pk).exists():
+            raise WarehouseError("Заказ с таким номером уже есть")
+        order.number = clean
+        order.external_number = clean
     order.consignee = consignee
     order.seller = seller
     order.ship_date = ship_date
@@ -243,7 +249,7 @@ def _check_concrete(line: OrderLine, caliber: Caliber | None, grade: Grade | Non
 @transaction.atomic
 def create_task(*, order_id, kind, supplier_id, ttn_number, doc_date, lines, user) -> Task:
     order = get_row(Order, order_id, "заказ")
-    if order.status != "open":
+    if order.status not in ("open", "partial"):
         raise WarehouseError("Заказ закрыт")
     missing = unmapped_titles(order)
     if missing:
@@ -302,16 +308,197 @@ def create_task(*, order_id, kind, supplier_id, ttn_number, doc_date, lines, use
     return task
 
 
+ASSIGNABLE_KINDS = ("receive", "pick", "ship")
+
+_STAFF_ROLE = {
+    "receive": "receiver",
+    "pick": "warehouse",
+    "ship": "warehouse",
+}
+
+
+def task_staff(kind: str) -> list:
+    from django.db.models import Q
+
+    from apps.accounts.models import User
+
+    role = _STAFF_ROLE.get(kind)
+    if role is None:
+        return []
+    from apps.accounts.access import screen_codename
+
+    flag = f"access_{kind}"
+    screen_names = [screen_codename(f"tsd_{kind}", action) for action in ("view", "change")]
+    return list(
+        User.objects.filter(is_active=True)
+        .exclude(role__in=("office", "admin"))
+        .filter(
+            Q(access_managed=False, role=role)
+            | Q(access_managed=False, role="employee", **{flag: True})
+            | Q(access_managed=False, role="employee", position__is_active=True, **{f"position__{flag}": True})
+            | Q(access_managed=True, user_permissions__codename__in=screen_names)
+        )
+        .distinct()
+        .order_by("name")
+    )
+
+
+def receive_staff() -> list:
+    return task_staff("receive")
+
+
+def staff_for_tasks(tasks, kind: str | None = None) -> list:
+    if kind is None:
+        kinds = {getattr(task, "kind", None) for task in tasks}
+        kinds.discard(None)
+        kind = next(iter(kinds)) if len(kinds) == 1 else "receive"
+    people = task_staff(kind)
+    known = {item.id for item in people}
+    for task in tasks:
+        if getattr(task, "kind", kind) != kind:
+            continue
+        person = getattr(task, "assignee", None)
+        if person is not None and person.id not in known:
+            people.append(person)
+            known.add(person.id)
+    people.sort(key=lambda item: (item.name or "").casefold())
+    return people
+
+
+def require_assigned(task: Task, user) -> None:
+    if user is not None and getattr(user, "is_office", False):
+        return
+    if task.kind not in ASSIGNABLE_KINDS:
+        return
+    from apps.accounts.services import person_ids
+
+    if user is None or task.assignee_id not in person_ids(user):
+        raise WarehouseError("Задание вам не назначено")
+
+
+def assign_receive_task(task: Task, user_id: int | None) -> None:
+    from apps.accounts.models import User
+
+    if task.kind not in ASSIGNABLE_KINDS:
+        raise WarehouseError("Это задание не назначается сотруднику")
+    if not user_id:
+        task.assignee = None
+        task.save(update_fields=["assignee"])
+        refresh_receive_status(task)
+        return
+    person = User.objects.filter(pk=user_id, is_active=True).first()
+    allowed = {item.id for item in task_staff(task.kind)}
+    if task.assignee_id:
+        allowed.add(task.assignee_id)
+    if person is None or person.id not in allowed:
+        raise WarehouseError("Выберите сотрудника")
+    task.assignee = person
+    task.save(update_fields=["assignee"])
+    refresh_receive_status(task)
+
+
+def refresh_receive_status(task: Task) -> None:
+    """Назначение ставит «Назначено», первый приход — «В работе». Принятый и закрытый не трогает."""
+    if task.kind != "receive" or task.status not in ("open", "to_receive", "assigned", "in_work"):
+        return
+    started = Movement.objects.filter(task_id=task.pk, kind="in").exists()
+    if started:
+        new = "in_work"
+    elif task.assignee_id:
+        new = "assigned"
+    else:
+        new = TASK_WORK_STATUS["receive"]
+    if task.status != new:
+        task.status = new
+        task.save(update_fields=["status"])
+
+
 def set_task_status(task: Task, status: str) -> None:
     allowed = {key for key, _label in task_status_choices(task.kind, task.status)}
     if status not in allowed:
         raise WarehouseError("Выберите статус")
+    if task.kind == "pick" and status == "closed":
+        close_task(task)
+        return
     task.status = status
     task.save(update_fields=["status"])
 
 
 def close_task(task: Task) -> None:
+    if task.kind == "pick":
+        from apps.picking.services import release_unpicked_plan
+
+        release_unpicked_plan(task)
+        if task.status != "closed":
+            task.status = "closed"
+            task.save(update_fields=["status"])
+        if task.order_id:
+            sync_order_pick_status(task.order)
+        return
     set_task_status(task, "closed")
+
+
+def sync_order_pick_status(order: Order) -> None:
+    """Закрытый отбор: весь план в движениях — заказ закрыт, иначе отгружен частично.
+
+    Уже закрытый заказ не открывается снова: это решение администратора.
+    """
+    if order is None or order.status == "closed":
+        return
+    facts = _picked_by_order_line(order)
+    lines = [line for line in order.lines.all() if line.for_task and as_kg(line.qty_kg) > 0]
+    complete = bool(lines) and all(facts.get(line.id, Decimal("0.000")) >= as_kg(line.qty_kg) for line in lines)
+    new = "closed" if complete else "partial"
+    if order.status != new:
+        order.status = new
+        order.save(update_fields=["status"])
+
+
+def _picked_by_order_line(order: Order) -> dict[int, Decimal]:
+    rows = (
+        Movement.objects.filter(kind="pick", task__order=order)
+        .exclude(task_line__order_line_id=None)
+        .values("task_line__order_line_id")
+        .annotate(total=Sum("qty_kg"))
+    )
+    return {row["task_line__order_line_id"]: as_kg(row["total"] or 0) for row in rows}
+
+
+def order_pick_boards(order: Order) -> dict:
+    facts = _picked_by_order_line(order)
+    fact_rows = []
+    plan_total = Decimal("0.000")
+    fact_total = Decimal("0.000")
+    for line in order.lines.all():
+        if not line.for_task:
+            continue
+        plan = as_kg(line.qty_kg)
+        fact = facts.get(line.id, Decimal("0.000"))
+        gap = as_kg(plan - fact)
+        if gap < 0:
+            gap = Decimal("0.000")
+        fact_rows.append({"line": line, "plan": plan, "fact": fact, "gap": gap})
+        plan_total += plan
+        fact_total += fact
+    lots = list(
+        Movement.objects.filter(kind="pick", task__order=order)
+        .select_related(
+            "lot__product",
+            "lot__caliber",
+            "lot__grade",
+            "lot__supplier",
+            "pallet",
+            "task",
+        )
+        .order_by("id")
+    )
+    return {
+        "fact_rows": fact_rows,
+        "plan_total": plan_total,
+        "fact_total": fact_total,
+        "gap_total": as_kg(plan_total - fact_total) if plan_total > fact_total else Decimal("0.000"),
+        "pick_lots": lots,
+    }
 
 
 def close_task_order(task: Task):
@@ -320,7 +507,10 @@ def close_task_order(task: Task):
         raise WarehouseError("У задания нет заказа")
     if order.status == "closed":
         return order
-    still_open = [item.number or f"#{item.id}" for item in order.tasks.exclude(status="closed")]
+    still_open = [
+        item.number or f"#{item.id}"
+        for item in order.tasks.exclude(status__in=("closed", "picked"))
+    ]
     if still_open:
         raise WarehouseError("Сначала закройте задания: " + ", ".join(still_open))
     order.status = "closed"
@@ -471,7 +661,11 @@ def _purchase_lines(order: PurchaseOrder, lines: list[dict]) -> None:
 
 def _open_receive_task(order: PurchaseOrder):
     return (
-        Task.objects.filter(purchase_order=order, kind="receive", status=TASK_WORK_STATUS["receive"])
+        Task.objects.filter(
+            purchase_order=order,
+            kind="receive",
+            status__in=(TASK_WORK_STATUS["receive"], "assigned", "in_work"),
+        )
         .order_by("-id")
         .first()
     )
@@ -533,8 +727,28 @@ def _sync_receive_task(order: PurchaseOrder) -> None:
     _fill_receive_lines(task, order)
 
 
+def _purchase_printer(printer_id, current: PurchaseOrder | None):
+    from apps.common.exceptions import PrintError
+    from apps.printing.models import Printer
+    from apps.printing.services import default_printer
+
+    if printer_id:
+        printer = Printer.objects.filter(pk=printer_id).first()
+        if printer is None:
+            raise WarehouseError("Выберите принтер")
+        return printer
+    if current is not None and current.printer_id:
+        return current.printer
+    for kind in ("tsc", "network"):
+        try:
+            return default_printer(kind)
+        except PrintError:
+            continue
+    return None
+
+
 @transaction.atomic
-def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, comment, lines, user) -> PurchaseOrder:
+def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, comment, lines, user, printer_id=None) -> PurchaseOrder:
     if status not in ("draft", "incoming", "closed"):
         raise WarehouseError("Выберите статус")
     was_closed = order is not None and order.status == "closed"
@@ -546,6 +760,7 @@ def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, c
             receipt_date=receipt_date,
             status=status,
             comment=comment.strip(),
+            printer=_purchase_printer(printer_id, None),
             created_by=user,
         )
         order.number = document_number("ЗП", order.id)
@@ -562,6 +777,7 @@ def save_purchase_order(order, *, supplier_id, doc_date, receipt_date, status, c
     order.receipt_date = receipt_date
     order.status = status
     order.comment = comment.strip()
+    order.printer = _purchase_printer(printer_id, order)
     order.save()
     _purchase_lines(order, lines)
     _sync_receive_task(order)
@@ -597,7 +813,7 @@ def create_receive_task(order: PurchaseOrder, user) -> Task:
 def received_fact_csv(order: PurchaseOrder) -> bytes:
     movements = (
         Movement.objects.filter(task__purchase_order=order, kind="in")
-        .select_related("task", "pallet__order__client", "pallet__reserved_line", "lot__product", "lot__caliber", "lot__grade")
+        .select_related("task", "pallet__order__consignee", "pallet__reserved_line", "lot__product", "lot__caliber", "lot__grade")
         .prefetch_related("pallet__units__packaging")
         .order_by("id")
     )
@@ -690,6 +906,44 @@ def _covers(line: OrderLine, product_id: int, caliber, grade_id) -> bool:
     return True
 
 
+def _category_ok(pool: dict, consignee) -> bool:
+    allowed = pool["category_ids"]
+    if not allowed:
+        return True
+    return bool(consignee and consignee.category_id and consignee.category_id in allowed)
+
+
+def _pool_role(pool: dict, line: OrderLine, order) -> str:
+    if not _covers(line, pool["product_id"], pool["caliber"], pool["grade_id"]):
+        return ""
+    if not _category_ok(pool, order.consignee):
+        return "blocked"
+    if pool["reserved_line_id"]:
+        return "reserve" if pool["reserved_line_id"] == line.id else "blocked"
+    if pool["reserved_consignee_id"]:
+        return "reserve" if pool["reserved_consignee_id"] == order.consignee_id else "blocked"
+    if pool["order_id"]:
+        return "reserve" if pool["order_id"] == order.id else "blocked"
+    return "free"
+
+
+def _take_role(pools: list[dict], line: OrderLine, order, role: str, need: Decimal) -> Decimal:
+    left = as_kg(need)
+    taken = Decimal("0.000")
+    if left <= 0:
+        return taken
+    for pool in pools:
+        if pool["kg"] <= 0 or _pool_role(pool, line, order) != role:
+            continue
+        chunk = min(pool["kg"], left)
+        pool["kg"] = as_kg(pool["kg"] - chunk)
+        taken += chunk
+        left = as_kg(left - chunk)
+        if left <= 0:
+            break
+    return as_kg(taken)
+
+
 def _take(pools: list[dict], line: OrderLine, need: Decimal) -> Decimal:
     left = as_kg(need)
     taken = Decimal("0.000")
@@ -709,35 +963,19 @@ def _take(pools: list[dict], line: OrderLine, need: Decimal) -> Decimal:
 
 def demand_report() -> dict:
     from apps.catalog.grade_policy import effective_grade_ids
-    from apps.planning.reserve import (
-        assigned_by_order_line,
-        client_reserved_pools,
-        holding_by_grade,
-        legacy_reserved_pools,
-        plan_kg,
-    )
+    from apps.planning.reserve import assigned_by_order_line, open_pallet_pools, plan_kg
 
     picked = kg_by("order_line_id", "pick")
     received = kg_by("purchase_line_id", "in")
-    held = holding_by_grade()
     assigned = assigned_by_order_line()
-    legacy = legacy_reserved_pools()
-    client_holds = client_reserved_pools()
-    stock_pools = []
-    for row in Balance.objects.select_related("lot__caliber").order_by("lot__received_on", "lot_id"):
-        kg = as_kg(row.free_kg)
-        if kg <= 0:
-            continue
-        lot = row.lot
-        stock_pools.append(
-            {"product_id": lot.product_id, "caliber": lot.caliber, "grade_id": lot.grade_id, "kg": kg}
-        )
+    pallet_pools = open_pallet_pools()
     purchases = PurchaseOrder.objects.filter(status="incoming").select_related("supplier").prefetch_related(
         "lines__product__group",
         "lines__caliber",
         "lines__grade",
         "lines__customer_line__grades",
         "lines__customer_line__order__consignee__allowed_grades",
+        "lines__customer_line__order__consignee__category__allowed_grades",
     )
     purchases = sorted(purchases, key=lambda item: (item.receipt_date or date.max, item.id))
     inbound = []
@@ -796,9 +1034,10 @@ def demand_report() -> dict:
                 )
     orders = (
         Order.objects.filter(status="open")
-        .select_related("client", "consignee")
+        .select_related("consignee")
         .prefetch_related(
             "consignee__allowed_grades",
+            "consignee__category__allowed_grades",
             Prefetch(
                 "lines",
                 queryset=OrderLine.objects.select_related(
@@ -825,26 +1064,22 @@ def demand_report() -> dict:
             open_need = as_kg(ordered - already)
             if open_need < 0:
                 open_need = Decimal("0.000")
-            allowed = effective_grade_ids(line, order.consignee)
-            usable = Decimal("0.000")
-            for grade_id, kg in held.get(line.id, []):
-                if allowed is None or grade_id in allowed:
-                    usable += kg
-            from_hold = min(as_kg(usable), open_need)
-            left = as_kg(open_need - from_hold)
-            from_legacy = _take(legacy.get(order.id, []), line, left)
-            left = as_kg(left - from_legacy)
-            from_client = _take(client_holds.get(order.client_id, []), line, left)
-            left = as_kg(left - from_client)
-            from_stock = _take(stock_pools, line, left)
-            left = as_kg(left - from_stock)
+            blocked = Decimal("0.000")
+            for pool in pallet_pools:
+                if _pool_role(pool, line, order) == "blocked":
+                    blocked += pool["origin_kg"]
+            from_reserve = _take_role(pallet_pools, line, order, "reserve", open_need)
+            left = as_kg(open_need - from_reserve)
+            from_free = _take_role(pallet_pools, line, order, "free", left)
+            left = as_kg(left - from_free)
             from_named = min(dedicated.get(line.id, Decimal("0.000")), left)
             dedicated[line.id] = as_kg(dedicated.get(line.id, Decimal("0.000")) - from_named)
             left = as_kg(left - from_named)
             from_incoming = _take(incoming_pools, line, left)
-            from_stock = as_kg(from_hold + from_legacy + from_client + from_stock)
+            from_reserve = as_kg(from_reserve)
+            from_free = as_kg(from_free)
             from_incoming = as_kg(from_named + from_incoming)
-            short = as_kg(open_need - from_stock - from_incoming)
+            short = as_kg(open_need - from_reserve - from_free - from_incoming)
             if short > 0:
                 short_total += short
             category_id, category = _line_category(line)
@@ -853,8 +1088,7 @@ def demand_report() -> dict:
                     "order_id": order.id,
                     "order_number": order.number,
                     "ship_date": order.ship_date,
-                    "client": order.client.name,
-                    "consignee": order.consignee.name if order.consignee_id else order.client.name,
+                    "consignee": order.consignee.name,
                     "product": line.product_title(),
                     "category_id": category_id,
                     "category": category,
@@ -862,7 +1096,10 @@ def demand_report() -> dict:
                     "grade": _demand_grade(line, order.consignee),
                     "ordered_kg": ordered,
                     "picked_kg": already,
-                    "stock_kg": from_stock,
+                    "reserve_kg": from_reserve,
+                    "free_kg": from_free,
+                    "blocked_kg": as_kg(blocked),
+                    "stock_kg": as_kg(from_reserve + from_free),
                     "incoming_kg": from_incoming,
                     "short_kg": short,
                 }
@@ -892,6 +1129,9 @@ def _demand_sums(rows: list[dict]) -> dict:
         "count": len(rows),
         "ordered_kg": as_kg(sum((row["ordered_kg"] for row in rows), zero)),
         "picked_kg": as_kg(sum((row["picked_kg"] for row in rows), zero)),
+        "reserve_kg": as_kg(sum((row["reserve_kg"] for row in rows), zero)),
+        "free_kg": as_kg(sum((row["free_kg"] for row in rows), zero)),
+        "blocked_kg": as_kg(sum((row["blocked_kg"] for row in rows), zero)),
         "stock_kg": as_kg(sum((row["stock_kg"] for row in rows), zero)),
         "incoming_kg": as_kg(sum((row["incoming_kg"] for row in rows), zero)),
         "short_kg": as_kg(sum((row["short_kg"] for row in rows), zero)),

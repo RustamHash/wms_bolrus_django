@@ -31,7 +31,7 @@
   </div>
   <div class="journal-table">
 <table class="sheet">
-  <tr><th>Номер</th><th>Заказ</th><th>Клиент</th><th>Продавец</th><th>Когда</th></tr>
+  <tr><th>Номер</th><th>Заказ</th><th>Грузополучатель</th><th>Продавец</th><th>Когда</th></tr>
   {% for shipment in shipments %}
   <tr data-href="/shipments/{{ shipment.id }}">
     <td><a href="/shipments/{{ shipment.id }}">{{ shipment.number }}</a></td>

@@ -6,6 +6,7 @@ from apps.common.forms import require_int, text
 from apps.common.http import done, guarded, roles_required
 from apps.common.present import group_units
 from apps.storage.models import HandlingUnit, Pallet
+from apps.storage.places import place_form_context, resolve_place
 from apps.storage.services import (
     add_to_inbound,
     add_to_outbound,
@@ -21,14 +22,14 @@ from apps.storage.services import (
 @roles_required("receiver", "warehouse")
 def pallet_list(request):
     built = request.GET.get("run") == "1"
-    pallets = Pallet.objects.exclude(kind="loose").select_related("order", "reserved_client").order_by("-id") if built else []
-    return render(request, "pallets/list.html", {"pallets": pallets, "built": built})
+    pallets = Pallet.objects.exclude(kind="loose").select_related("order", "reserved_consignee").order_by("-id") if built else []
+    return render(request, "pallets/list.html", {"pallets": pallets, "built": built, **place_form_context()})
 
 
 @roles_required("receiver", "warehouse")
 def pallet_create(request):
     def action():
-        return create_inbound_pallet(user=request.user, location=text(request.POST, "location"))
+        return create_inbound_pallet(user=request.user, cell=resolve_place(request.POST, required=False))
 
     result, response = guarded(request, "/pallets", action)
     if response:
@@ -39,7 +40,10 @@ def pallet_create(request):
 
 @roles_required("receiver", "warehouse")
 def pallet_detail(request, pallet_id):
-    pallet = get_object_or_404(Pallet.objects.select_related("order__client", "reserved_client"), pk=pallet_id)
+    pallet = get_object_or_404(
+        Pallet.objects.select_related("order__consignee", "reserved_consignee", "cell__zone"),
+        pk=pallet_id,
+    )
     units = list(pallet.units.select_related("lot__product", "lot__caliber", "lot__supplier", "grade", "packaging").order_by("id"))
     spent = (
         pallet.movements.filter(kind__in=("transform_out", "waste"))
@@ -50,7 +54,7 @@ def pallet_detail(request, pallet_id):
     return render(
         request,
         "pallets/detail.html",
-        {"pallet": pallet, "units": units, "groups": group_units(units), "spent": spent},
+        {"pallet": pallet, "units": units, "groups": group_units(units), "spent": spent, **place_form_context(pallet.cell)},
     )
 
 
@@ -60,8 +64,10 @@ def pallet_location(request, pallet_id):
         pallet = Pallet.objects.filter(pk=pallet_id).first()
         if pallet is None:
             raise WarehouseError("Паллета не найдена")
-        pallet.location = text(request.POST, "location")
-        pallet.save(update_fields=["location"])
+        cell = resolve_place(request.POST, required=True)
+        pallet.cell = cell
+        pallet.location = cell.label()
+        pallet.save(update_fields=["cell", "location"])
 
     result, response = guarded(request, f"/pallets/{pallet_id}", action)
     if response:

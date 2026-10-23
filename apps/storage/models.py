@@ -1,24 +1,86 @@
 from django.db import models
 
 
+class WarehouseZone(models.Model):
+    code = models.CharField("Код", max_length=32, unique=True)
+    name = models.CharField("Название", max_length=120, unique=True)
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_zones"
+        verbose_name = "Зона склада"
+        verbose_name_plural = "Зоны склада"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.name}"
+
+
+def cell_address(zone_code: str, code: str) -> str:
+    zone = (zone_code or "").strip()
+    place = (code or "").strip()
+    if not zone:
+        return place[:120]
+    prefix = f"{zone}-"
+    if place.casefold().startswith(prefix.casefold()):
+        return place[:120]
+    return f"{zone}-{place}"[:120]
+
+
+class WarehouseCell(models.Model):
+    zone = models.ForeignKey(WarehouseZone, on_delete=models.PROTECT, related_name="cells", verbose_name="Зона")
+    code = models.CharField("Код", max_length=32)
+    name = models.CharField("Название", max_length=120, blank=True, default="")
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_cells"
+        verbose_name = "Ячейка"
+        verbose_name_plural = "Ячейки"
+        ordering = ["zone__code", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["zone", "code"], name="warehouse_cell_zone_code"),
+        ]
+
+    def label(self) -> str:
+        return cell_address(self.zone.code, self.code)
+
+    def __str__(self) -> str:
+        return self.label()
+
+
 class Pallet(models.Model):
     number = models.CharField(max_length=32, unique=True, null=True, blank=True)
     barcode = models.CharField(max_length=32, unique=True, null=True, blank=True)
     kind = models.CharField(max_length=32)
     status = models.CharField(max_length=32, default="open")
     location = models.CharField(max_length=120, blank=True, default="")
+    cell = models.ForeignKey(
+        WarehouseCell,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pallets",
+        verbose_name="Ячейка",
+    )
     pallet_type = models.CharField(max_length=8, blank=True, default="")
     order = models.ForeignKey("planning.Order", null=True, blank=True, on_delete=models.PROTECT, related_name="pallets")
-    reserved_client = models.ForeignKey(
-        "catalog.Client",
+    reserved_consignee = models.ForeignKey(
+        "catalog.Consignee",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="held_pallets",
-        verbose_name="Резерв под клиента",
+        verbose_name="Резерв под грузополучателя",
     )
     reserved_line = models.ForeignKey(
         "planning.OrderLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="reserved_pallets"
+    )
+    allowed_categories = models.ManyToManyField(
+        "catalog.ConsigneeCategory",
+        blank=True,
+        related_name="pallets",
+        verbose_name="Можно отгружать категориям",
     )
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="pallets_created")
     closed_by = models.ForeignKey(

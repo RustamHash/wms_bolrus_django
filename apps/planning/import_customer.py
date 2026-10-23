@@ -4,8 +4,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from apps.catalog.models import Client, ExternalProduct, ProductAlias, Seller
-from apps.catalog.parties import consignee_for_buyer, upsert_client, upsert_consignee, upsert_external
+from apps.catalog.models import ExternalProduct, ProductAlias, Seller
+from apps.catalog.parties import upsert_consignee, upsert_external
 from apps.common.exceptions import WarehouseError
 from apps.common.xlsx import read_rows
 from apps.planning.models import Order, OrderLine
@@ -103,10 +103,6 @@ def _detail_rows(path: Path) -> list[dict]:
     return rows
 
 
-def _client(name: str, code: str = "") -> Client:
-    return upsert_client(name, code)
-
-
 def _norm(value: str) -> str:
     value = value.lower().replace("ё", "е")
     return re.sub(r"[^a-zа-я0-9]+", " ", value).strip()
@@ -175,7 +171,7 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
         if _cell(cells, columns, "Состояние") != INCOMING:
             report.other_status += 1
             continue
-        found = Order.objects.filter(external_number=external).select_related("client", "consignee", "seller").first()
+        found = Order.objects.filter(external_number=external).select_related("consignee", "seller").first()
         if found is not None and not update:
             report.duplicates.append(external)
             continue
@@ -190,21 +186,17 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
         if ship_date is None:
             report.missing_files.append(f"{external}: нет даты отгрузки")
             continue
-        client_name = _cell(cells, columns, "Покупатель")
-        client_code = _cell(cells, columns, "КодПокупатель")
-        if not client_name:
-            report.missing_files.append(f"{external}: нет покупателя")
+        buyer_name = _cell(cells, columns, "Покупатель")
+        buyer_code = _cell(cells, columns, "КодПокупатель")
+        consignee_name = _cell(cells, columns, "Грузополучатель") or buyer_name
+        consignee_code = _cell(cells, columns, "Код") or buyer_code
+        if not consignee_name:
+            report.missing_files.append(f"{external}: нет грузополучателя")
             continue
-        if len(client_name) > 200:
-            report.missing_files.append(f"{external}: слишком длинное имя покупателя")
+        if len(consignee_name) > 200:
+            report.missing_files.append(f"{external}: слишком длинное имя грузополучателя")
             continue
-        client = _client(client_name, client_code)
-        consignee_name = _cell(cells, columns, "Грузополучатель")
-        consignee_code = _cell(cells, columns, "Код")
-        if not consignee_name and not consignee_code:
-            consignee = consignee_for_buyer(client)
-        else:
-            consignee = upsert_consignee(consignee_name or client.name, consignee_code or client.code or "")
+        consignee = upsert_consignee(consignee_name, consignee_code)
         seller = _seller(_executor(path))
         if seller is None:
             report.missing_files.append(f"{external}: нет продавца")
@@ -250,14 +242,13 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
             result = apply_import(
                 found,
                 user,
-                client=client,
                 consignee=consignee,
                 seller=seller,
                 ship_date=ship_date,
                 terms=_cell(cells, columns, "Комментарий"),
                 lines=lines,
             )
-            row = _order_row(found, external, client_name, result["changes"])
+            row = _order_row(found, external, consignee_name, result["changes"])
             kind = result["kind"]
             if kind == "updated":
                 row["revision"] = result["revision"]
@@ -270,15 +261,13 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
                 report.unchanged.append(row)
             continue
         order = create_order(
-            client_id=client.id,
+            consignee_id=consignee.id,
             seller_id=seller.id,
             ship_date=ship_date,
             shipping_terms=_cell(cells, columns, "Комментарий"),
             user=user,
-            consignee_id=consignee.id,
+            number=external,
         )
-        order.external_number = external
-        order.save(update_fields=["external_number"])
         for item in lines:
             OrderLine.objects.create(
                 order=order,
@@ -300,7 +289,7 @@ def import_customer_orders(source: Path | bytes, user, update: bool = False) -> 
                 "id": order.id,
                 "number": order.number,
                 "external": external,
-                "party": client_name,
+                "party": consignee_name,
                 "lines": len(lines),
             }
         )

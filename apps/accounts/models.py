@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -153,6 +152,16 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not keys:
             return "—"
         return ", ".join(TSD_ACCESS[key] for key in keys)
+
+    def opens_web(self) -> bool:
+        from apps.accounts.access import opens_web
+
+        return opens_web(self)
+
+    def opens_tsd(self) -> bool:
+        from apps.accounts.access import opens_tsd
+
+        return opens_tsd(self)
 
     def opens_admin(self) -> bool:
         if not self.is_active:

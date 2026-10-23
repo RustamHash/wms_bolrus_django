@@ -61,7 +61,9 @@ def task_status_label(tasks, work: str) -> str:
         return TASK_STATUS[work]
     if "open" in statuses:
         return TASK_STATUS["open"]
-    if statuses <= {"closed"}:
+    if statuses <= {"closed", "picked"}:
+        if statuses == {"picked"}:
+            return TASK_STATUS["picked"]
         return TASK_STATUS["closed"]
     status = next(iter(statuses))
     return TASK_STATUS.get(status, status)
@@ -94,7 +96,7 @@ def shift_orders(start: date, end: date) -> list[dict]:
                 "weight": weights.get(order.id, Decimal("0")),
                 "plans": [link.route.planned_load_at for link in order.route_orders.all() if link.route.planned_load_at],
                 "route": ", ".join(names),
-                "pick": task_status_label(list(order.tasks.all()), "to_pick"),
+                "pick": task_status_label(list(order.tasks.all()), "created"),
             }
         )
     return rows

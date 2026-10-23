@@ -7,10 +7,11 @@
 {% if spent and spent.transform_document_id %}
 <p>Списана документом <a href="/transform/{{ spent.transform_document_id }}">{{ spent.transform_document.number }}</a>.</p>
 {% endif %}
-{% if pallet.order %}<p>{% if pallet.kind == "inbound" %}Резерв{% else %}Заказ{% endif %} <a href="/orders/{{ pallet.order.id }}">{{ pallet.order.number }}</a>, {{ pallet.order.client.name }}</p>{% elif pallet.reserved_client %}<p>Резерв под клиента {{ pallet.reserved_client.name }}. Ждёт его заказ.</p>{% endif %}
+{% if pallet.order %}<p>{% if pallet.kind == "inbound" %}Резерв{% else %}Заказ{% endif %} <a href="/orders/{{ pallet.order.id }}">{{ pallet.order.number }}</a>, {{ pallet.order.consignee.name }}</p>{% elif pallet.reserved_consignee %}<p>Резерв под грузополучателя {{ pallet.reserved_consignee.name }}. Ждёт его заказ.</p>{% endif %}
+<p>Категории отгрузки: {% for item in pallet.allowed_categories.all %}{{ item.name }}{% if not forloop.last %}, {% endif %}{% empty %}любая{% endfor %}.</p>
 {% if pallet.kind == "inbound" %}<p class="hint">На входе паллета однородная: один товар, калибр и сортность.</p>{% else %}<p class="hint">На выходе можно смешивать места этого заказа.</p>{% endif %}
 <form method="post" action="/pallets/{{ pallet.id }}/location" class="row">{% csrf_token %}
-  <label>Ячейка <input name="location" value="{{ pallet.location }}"></label>
+  {% include "partials/cell_pick.html" %}
   <button>Сохранить</button>
 </form>
 <div class="actions">

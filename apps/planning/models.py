@@ -9,9 +9,8 @@ from apps.common.present import describe_line
 class Order(models.Model):
     number = models.CharField(max_length=32, unique=True, null=True, blank=True)
     external_number = models.CharField("Номер 1С", max_length=32, unique=True, null=True, blank=True)
-    client = models.ForeignKey("catalog.Client", on_delete=models.PROTECT, related_name="orders")
     consignee = models.ForeignKey(
-        "catalog.Consignee", null=True, blank=True, on_delete=models.PROTECT, related_name="orders", verbose_name="Грузополучатель"
+        "catalog.Consignee", on_delete=models.PROTECT, related_name="orders", verbose_name="Грузополучатель"
     )
     seller = models.ForeignKey("catalog.Seller", on_delete=models.PROTECT, related_name="orders")
     ship_date = models.DateField()
@@ -23,8 +22,8 @@ class Order(models.Model):
 
     class Meta:
         db_table = "orders"
-        verbose_name = "Заказ покупателя"
-        verbose_name_plural = "Заказы покупателей"
+        verbose_name = "Заказ"
+        verbose_name_plural = "Заказы"
 
     def __str__(self):
         return self.number or f"#{self.pk}"
@@ -82,8 +81,8 @@ class OrderLine(models.Model):
 
     class Meta:
         db_table = "order_lines"
-        verbose_name = "Строка заказа покупателя"
-        verbose_name_plural = "Строки заказов покупателей"
+        verbose_name = "Строка заказа"
+        verbose_name_plural = "Строки заказов"
 
     def external_title(self) -> str:
         code = self.external_code
@@ -138,6 +137,14 @@ class PurchaseOrder(models.Model):
     gate_at = models.DateTimeField("Постановка на ворота", null=True, blank=True)
     receive_finished_at = models.DateTimeField("Окончание приёмки", null=True, blank=True)
     departed_at = models.DateTimeField("Убыл", null=True, blank=True)
+    printer = models.ForeignKey(
+        "printing.Printer",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="purchase_orders",
+        verbose_name="Принтер",
+    )
     revision = models.PositiveIntegerField("Версия", default=1)
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="purchase_orders_created")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -239,6 +246,14 @@ class Task(models.Model):
     ttn_number = models.CharField(max_length=80, blank=True, default="")
     doc_date = models.DateField(null=True, blank=True)
     receipt = models.ForeignKey("receiving.Receipt", null=True, blank=True, on_delete=models.PROTECT, related_name="tasks")
+    assignee = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_tasks",
+        verbose_name="Сотрудник",
+    )
     created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="tasks_created")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -247,7 +262,16 @@ class Task(models.Model):
         verbose_name = "Задание"
         verbose_name_plural = "Задания"
 
+    def is_closed(self) -> bool:
+        if self.status == "closed":
+            return True
+        return self.kind == "pick" and self.status == "picked"
+
     def is_working(self) -> bool:
+        if self.kind == "receive" and self.status in ("assigned", "in_work"):
+            return True
+        if self.kind == "pick":
+            return self.status in ("created", "partial", "planned", "in_work")
         return self.status == TASK_WORK_STATUS.get(self.kind)
 
     def __str__(self):

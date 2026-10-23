@@ -14,9 +14,7 @@
     </form>
     <form class="doc-filter" method="post" action="/pallets">{% csrf_token %}
       <div class="filter-row">
-        <label>Ячейка
-          <input name="location" placeholder="камера 2 / ряд 4">
-        </label>
+        {% include "partials/cell_pick.html" %}
         <button class="slim">Новая входная паллета</button>
       </div>
     </form>
@@ -32,7 +30,7 @@
     <td><a href="/pallets/{{ pallet.id }}">{{ pallet.number }}</a></td>
     <td>{{ PALLET_KIND|label:pallet.kind }}</td>
     <td>{{ PALLET_STATUS|label:pallet.status }}</td>
-    <td>{% if pallet.order %}{{ pallet.order.number }}{% elif pallet.reserved_client %}{{ pallet.reserved_client.name }}{% endif %}</td>
+    <td>{% if pallet.order %}{{ pallet.order.number }}{% elif pallet.reserved_consignee %}{{ pallet.reserved_consignee.name }}{% endif %}</td>
     <td>{{ pallet.location }}</td>
   </tr>
   {% empty %}

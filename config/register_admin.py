@@ -3,14 +3,14 @@ from django.contrib.admin import ModelAdmin
 from apps.accounts.access import ACTIONS
 
 from apps.accounts.models import AdminRoleGrant, AdminUserGrant, Position, User
-from apps.catalog.models import Caliber, Client, Grade, Packaging, Product, ProductGroup, Seller, Supplier
+from apps.catalog.models import Caliber, Grade, Packaging, Product, ProductGroup, Seller, Supplier
 from apps.inventory.models import Balance, Movement, TransformDocument
 from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine, Task, TaskLine
 from apps.printing.models import Printer
 from apps.receiving.models import Lot, Receipt
 from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
 from apps.shipping.models import Shipment
-from apps.storage.models import HandlingUnit, Pallet
+from apps.storage.models import HandlingUnit, Pallet, WarehouseCell, WarehouseZone
 from config.admin_site import wms_admin
 
 
@@ -82,10 +82,9 @@ for model, fields in (
     (Grade, ("name", "sort_order")),
     (Packaging, ("name", "tare_kg")),
     (Supplier, ("name",)),
-    (Client, ("name",)),
     (Seller, ("code", "name")),
     (Printer, ("name", "printer_type", "host", "is_default")),
-    (Order, ("number", "client", "seller", "ship_date", "status")),
+    (Order, ("number", "consignee", "seller", "ship_date", "status")),
     (OrderLine, ("order", "product", "qty_kg")),
     (PurchaseOrder, ("number", "supplier", "doc_date", "status")),
     (PurchaseOrderLine, ("order", "product", "qty_kg")),
@@ -94,6 +93,8 @@ for model, fields in (
     (Receipt, ("number", "supplier", "doc_date", "status")),
     (Lot, ("number", "source", "product", "supplier", "received_on", "expires_on", "parent", "is_opening")),
     (Shipment, ("number", "client_name", "order")),
+    (WarehouseZone, ("code", "name", "barcode")),
+    (WarehouseCell, ("zone", "code", "name", "barcode")),
     (Pallet, ("number", "kind", "status")),
     (HandlingUnit, ("barcode", "status", "net_kg")),
     (Vehicle, ("plate_number", "brand_model", "load_capacity_kg", "pallet_capacity", "is_active")),

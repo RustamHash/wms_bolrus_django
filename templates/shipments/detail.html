@@ -4,7 +4,7 @@
 {% block content %}
 <h1>Накладная {{ shipment.number }}</h1>
 <p>Заказ <a href="/orders/{{ shipment.order.id }}">{{ shipment.order.number }}</a></p>
-<p>Клиент: {{ shipment.client_name }}</p>
+<p>Грузополучатель: {{ shipment.client_name }}</p>
 <p>Продавец на стикере: {{ shipment.seller_name }}</p>
 <pre>{{ shipment.seller_requisites }}</pre>
 <p>Условия: {% firstof shipment.shipping_terms "Не указаны" %}</p>

@@ -1,8 +1,23 @@
-def allowed_grade_ids(consignee) -> set[int] | None:
+def shipping_grades(consignee) -> list:
+    """Сорта, которые можно отгрузить этому грузополучателю.
+
+    Список категории закрывает всех её контрагентов. Пустая категория оставляет
+    галочки на самом грузополучателе. Пусто и там — можно любой сорт.
+    """
     if consignee is None:
+        return []
+    if consignee.category_id:
+        grades = list(consignee.category.allowed_grades.all())
+        if grades:
+            return sorted(grades, key=lambda item: (item.sort_order, item.name))
+    return sorted(consignee.allowed_grades.all(), key=lambda item: (item.sort_order, item.name))
+
+
+def allowed_grade_ids(consignee) -> set[int] | None:
+    grades = shipping_grades(consignee)
+    if not grades:
         return None
-    ids = {item.id for item in consignee.allowed_grades.all()}
-    return ids or None
+    return {item.id for item in grades}
 
 
 def effective_grade_ids(line, consignee) -> set[int] | None:
@@ -29,7 +44,7 @@ def effective_grade_names(line, consignee) -> str:
     for item in line.grades.all():
         found[item.id] = item
     if consignee is not None:
-        for item in consignee.allowed_grades.all():
+        for item in shipping_grades(consignee):
             found.setdefault(item.id, item)
     chosen = sorted((found[item_id] for item_id in ids if item_id in found), key=lambda item: (item.sort_order, item.name))
     return ", ".join(item.name for item in chosen)
@@ -38,8 +53,7 @@ def effective_grade_names(line, consignee) -> str:
 def grade_names(consignee) -> str:
     if consignee is None:
         return ""
-    grades = sorted(consignee.allowed_grades.all(), key=lambda item: (item.sort_order, item.name))
-    return ", ".join(item.name for item in grades)
+    return ", ".join(item.name for item in shipping_grades(consignee))
 
 
 def grade_for_consignee(consignee):

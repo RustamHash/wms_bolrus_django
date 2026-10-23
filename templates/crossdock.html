@@ -9,7 +9,7 @@
   <label>Заказ
     <select name="order_id" onchange="this.form.submit()">
       {% for item in orders %}
-      <option value="{{ item.id }}" {% if order and order.id == item.id %}selected{% endif %}>{{ item.number }} · {{ item.client.name }}</option>
+      <option value="{{ item.id }}" {% if order and order.id == item.id %}selected{% endif %}>{{ item.number }} · {{ item.consignee.name }}</option>
       {% endfor %}
     </select>
   </label>

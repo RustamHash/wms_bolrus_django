@@ -151,16 +151,12 @@ def _line_caliber(line) -> str:
         return ""
     if order_line.caliber_mode == "range" and order_line.caliber_from_id and order_line.caliber_to_id:
         return f"{order_line.caliber_from.name}–{order_line.caliber_to.name}"
-    if order_line.caliber_mode == "any":
-        return "любой"
     return ""
 
 
 def _line_grade(line) -> str:
     if line.grade_id:
         return line.grade.name
-    if line.order_line_id:
-        return "любая"
     return ""
 
 
@@ -233,12 +229,9 @@ def _task_sheet(pdf, task, left, right, height, columns, statuses) -> float:
     purchase = task.purchase_order
     if order is not None:
         number = order.number or ""
-        if order.external_number:
-            number = f"{number} · 1С {order.external_number}"
-        y = _text(pdf, left, y, f"Заказ покупателя {number}".strip())
+        y = _text(pdf, left, y, f"Заказ {number}".strip())
         y = _text(pdf, left, y, f"Дата отгрузки: {order.ship_date.strftime('%d.%m.%Y')}")
-        y = _text(pdf, left, y, f"Покупатель: {order.client.name}"[:140])
-        if order.consignee_id and order.consignee.name != order.client.name:
+        if order.consignee_id:
             y = _text(pdf, left, y, f"Грузополучатель: {order.consignee.name}"[:140])
         y = _text(pdf, left, y, f"Продавец: {order.seller.name}"[:140])
         terms = (order.shipping_terms or "").strip()
@@ -363,10 +356,9 @@ def routes_sheets_pdf(sheets: list) -> bytes:
     columns = (
         ("№", 12 * mm),
         ("Заказ", 36 * mm),
-        ("Покупатель", 52 * mm),
-        ("Грузополучатель", 52 * mm),
-        ("Адрес", 78 * mm),
-        ("Зона", 32 * mm),
+        ("Грузополучатель", 70 * mm),
+        ("Адрес", 90 * mm),
+        ("Зона", 36 * mm),
         ("Кг", 22 * mm),
     )
     widths = [item[1] for item in columns]
@@ -402,7 +394,7 @@ def routes_sheets_pdf(sheets: list) -> bytes:
         y -= 2 * mm
 
         def header(top: float) -> float:
-            return _row(pdf, top, left, [item[0] for item in columns], widths, 9, {0, 6})
+            return _row(pdf, top, left, [item[0] for item in columns], widths, 9, {0, 5})
 
         def ensure(top: float, need: float) -> float:
             if top - need >= bottom:
@@ -432,14 +424,13 @@ def routes_sheets_pdf(sheets: list) -> bytes:
             cells = [
                 str(stop.position),
                 order.number or str(order.id),
-                order.client.name,
                 consignee_name,
                 address,
                 zone,
                 format_kg(weight),
             ]
             y = ensure(y, 8 * mm)
-            y = _row(pdf, y, left, cells, widths, 8, {0, 6})
+            y = _row(pdf, y, left, cells, widths, 8, {0, 5})
         y -= 8 * mm
         if not stops:
             y = _text(pdf, left, y, "Остановок нет")

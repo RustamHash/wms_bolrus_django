@@ -3,7 +3,9 @@ import re
 from django.contrib import messages
 from django.shortcuts import redirect
 
-from apps.accounts.access import path_action, screen_allows, screens_for_path
+from django.contrib.auth import logout
+
+from apps.accounts.access import opens_tsd, opens_web, path_action, screen_allows, screens_for_path
 
 _OPERATION = re.compile(r"^/(?:tasks/\d+/(?:receive|pick|ship)|movements/\d+/delete)$")
 
@@ -14,7 +16,7 @@ class StaffWebGate:
 
     def __call__(self, request):
         user = getattr(request, "user", None)
-        if user is not None and user.is_authenticated and user.role == "employee":
+        if user is not None and user.is_authenticated and not opens_web(user):
             path = request.path
             if path.startswith("/tsd") or path.startswith("/static") or path == "/logout":
                 return self.get_response(request)
@@ -22,7 +24,11 @@ class StaffWebGate:
                 return self.get_response(request)
             if request.method == "POST" and _OPERATION.match(path):
                 return self.get_response(request)
-            return redirect("/tsd")
+            if opens_tsd(user):
+                return redirect("/tsd")
+            logout(request)
+            messages.error(request, "У пользователя нет доступа в веб и на ТСД")
+            return redirect("/login")
         return self.get_response(request)
 
 
@@ -34,7 +40,7 @@ class ScreenGate:
 
     def __call__(self, request):
         user = getattr(request, "user", None)
-        if user is None or not user.is_authenticated or user.role == "employee":
+        if user is None or not user.is_authenticated:
             return self.get_response(request)
         if user.is_superuser or user.role == "admin":
             return self.get_response(request)

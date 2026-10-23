@@ -27,6 +27,12 @@ def position_choices(current_id: int | None = None):
     return Position.objects.filter(query).order_by("name")
 
 
+def person_ids(user) -> list[int]:
+    if user is None or not getattr(user, "pk", None):
+        return []
+    return [user.pk]
+
+
 def assign_position(item: User, position_id: int | None, *, required: bool) -> None:
     if not position_id:
         if required:

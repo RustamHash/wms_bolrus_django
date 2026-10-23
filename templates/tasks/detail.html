@@ -12,7 +12,7 @@
   {% if task.supplier %}{{ task.supplier.name }}{% else %}{{ task.purchase_order.supplier.name }}{% endif %}.
   {% elif task.order %}
   Заказ <a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>,
-  {{ task.order.client.name }}, продавец {{ task.order.seller.name }}.
+  {{ task.order.consignee.name }}, продавец {{ task.order.seller.name }}.
   {% endif %}
 </p>
 {% if can_status %}
@@ -29,6 +29,19 @@
 {% else %}
 <p>{{ TASK_STATUS|label:task.status }}</p>
 {% endif %}
+{% if task.kind == "receive" or task.kind == "pick" or task.kind == "ship" %}
+<form method="post" action="/tasks/{{ task.id }}/assign" class="row">{% csrf_token %}
+  <label>Сотрудник
+    <select name="user_id" {% if not can_status %}disabled{% endif %}>
+      <option value="">—</option>
+      {% for person in receivers %}
+      <option value="{{ person.id }}" {% if task.assignee_id == person.id %}selected{% endif %}>{{ person.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if can_status %}<button class="slim">Назначить</button>{% endif %}
+</form>
+{% endif %}
 {% if task.kind == "receive" %}
 <p>{% if task.ttn_number %}ТТН {{ task.ttn_number }}{% endif %}{% if task.doc_date %} {{ task.doc_date|date:"d.m.Y" }}{% endif %}</p>
 {% endif %}
@@ -39,15 +52,51 @@
 </nav>
 {% endif %}
 
-{% if task.kind != "receive" or tab != "manual" %}
+{% if task.kind == "pick" %}
+<h2>Строки задания</h2>
+<table>
+  <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">План, кг</th><th class="num">Отобрано, кг</th></tr>
+  {% for line in task.lines.all %}
+  <tr>
+    <td>{{ line.product.name }}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td class="num">{{ picked|get_item:line.id|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h2>Назначения</h2>
+<div class="stack">
+{% for item in allocations %}
+<div class="stack-row">
+  <span>
+    <a href="/pallets/{{ item.allocation.pallet.id }}">{{ item.allocation.pallet.number }}</a>
+    · {{ item.allocation.task_line.product.name }}
+    · план {{ item.allocation.qty_kg|kg }} кг
+    · факт {{ item.fact|kg }} кг
+  </span>
+  {% if task.is_working and item.left > 0 %}
+  <form method="post" action="/tasks/{{ task.id }}/pick" class="row">{% csrf_token %}
+    <input type="hidden" name="allocation_id" value="{{ item.allocation.id }}">
+    <label>Кг <input name="qty_kg" value="{{ item.left }}" inputmode="decimal"></label>
+    <button class="slim">Отобрать</button>
+  </form>
+  {% endif %}
+</div>
+{% empty %}
+<p>Назначений нет. Спланируйте задание.</p>
+{% endfor %}
+</div>
+{% elif task.kind != "receive" or tab != "manual" %}
 <h2>Строки задания</h2>
 <table>
   <tr><th>Номенклатура</th><th>Калибр</th><th>Сортность</th><th class="num">План, кг</th><th class="num">Принято, кг</th></tr>
   {% for line in task.lines.all %}
   <tr>
     <td>{{ line.product.name }}</td>
-    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% elif line.order_line_id %}любой{% endif %}</td>
-    <td>{% if line.grade %}{{ line.grade.name }}{% elif line.order_line_id %}любая{% endif %}</td>
+    <td>{% if line.caliber %}{{ line.caliber.name }}{% elif line.order_line.caliber_mode == "range" and line.order_line.caliber_from and line.order_line.caliber_to %}{{ line.order_line.caliber_from.name }}–{{ line.order_line.caliber_to.name }}{% endif %}</td>
+    <td>{% if line.grade %}{{ line.grade.name }}{% endif %}</td>
     <td class="num">{{ line.qty_kg|kg }}</td>
     <td class="num">{{ received|get_item:line.id|kg }}</td>
   </tr>
@@ -68,7 +117,7 @@
     · {% pallet_label movement.pallet.pallet_type %}
     · грязный {{ movement.pallet.units|sum_attr:'gross_kg'|kg }} · чистый {{ movement.qty_kg|kg }} кг
     · {{ movement.lot.product.name }} {{ movement.lot.caliber.name }} {{ movement.lot.grade.name }}
-    {% if movement.pallet.order %}· резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_client %}· резерв {{ movement.pallet.reserved_client.name }}{% endif %}
+    {% if movement.pallet.order %}· резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_consignee %}· резерв {{ movement.pallet.reserved_consignee.name }}{% endif %}
     {% endif %}
   </span>
   {% if movement.kind == "in" and movement.id in editable and user.role == "receiver" or movement.kind == "in" and movement.id in editable and user.is_office %}
@@ -89,26 +138,13 @@
 <p class="hint">{% if task.status == "closed" %}Задание закрыто, приёмка недоступна.{% else %}Приёмка доступна в статусе «К приемке».{% endif %}</p>
 {% endif %}
 
-{% if task.kind == "pick" and task.is_working and user.role == "warehouse" or task.kind == "pick" and task.is_working and user.is_office %}
-<h2>Паллеты к отбору</h2>
-{% for item in waiting %}
-<form method="post" action="/tasks/{{ task.id }}/pick" class="row">{% csrf_token %}
-  <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
-  <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
-  <span>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}{% if item.movement.pallet.order %} · резерв {{ item.movement.pallet.order.number }}{% elif item.movement.pallet.reserved_client %} · резерв {{ item.movement.pallet.reserved_client.name }}{% else %} · свободный остаток{% endif %}</span>
-  <button>Отобрать паллету</button>
-</form>
-{% empty %}
-<p>Свободных принятых паллет под это задание нет.</p>
-{% endfor %}
-{% endif %}
-
 {% if task.kind == "ship" and task.is_working and user.role == "warehouse" or task.kind == "ship" and task.is_working and user.is_office %}
 <h2>Паллеты в накладную</h2>
 {% for item in waiting %}
 <form method="post" action="/tasks/{{ task.id }}/ship" class="card">{% csrf_token %}
   <input type="hidden" name="task_line_id" value="{{ item.line.id }}">
   <input type="hidden" name="pallet_id" value="{{ item.movement.pallet.id }}">
+  <input type="hidden" name="movement_id" value="{{ item.movement.id }}">
   <p>{{ item.movement.pallet.number }} · {{ item.movement.qty_kg|kg }} кг · {{ item.movement.lot.product.name }} {{ item.movement.lot.caliber.name }} {{ item.movement.lot.grade.name }}</p>
   <label><input type="checkbox" name="confirm" value="1"> Условия отгрузки проверены: {% if task.order %}{{ task.order.shipping_terms }}{% else %}не указаны{% endif %}</label>
   <button>Провести в накладную</button>
@@ -120,7 +156,7 @@
 
 {% if user.is_office and task.is_working %}
 <form method="post" action="/tasks/{{ task.id }}/close">{% csrf_token %}<button>Закрыть задание</button></form>
-{% elif user.is_office and task.status == "closed" %}
+{% elif user.is_office and task.is_closed %}
   {% if task.purchase_order and task.purchase_order.status != "closed" or task.order and task.order.status != "closed" %}
   <form method="post" action="/tasks/{{ task.id }}/close-order">{% csrf_token %}<button>Закрыть заказ</button></form>
   {% endif %}

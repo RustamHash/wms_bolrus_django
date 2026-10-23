@@ -56,7 +56,6 @@ class Movement(models.Model):
         verbose_name = "Движение"
         verbose_name_plural = "Движения"
         constraints = [
-            models.UniqueConstraint(fields=["pallet", "kind"], name="movement_pallet_kind"),
             models.CheckConstraint(
                 condition=models.Q(task__isnull=False, task_line__isnull=False)
                 | models.Q(transform_document__isnull=False),
@@ -184,6 +183,14 @@ class InventoryLine(models.Model):
         "catalog.Supplier", on_delete=models.PROTECT, related_name="inventory_lines", verbose_name="Поставщик"
     )
     location = models.CharField("Место", max_length=120, blank=True, default="")
+    cell = models.ForeignKey(
+        "storage.WarehouseCell",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="inventory_lines",
+        verbose_name="Ячейка",
+    )
     book_kg = models.DecimalField("Учёт, кг", max_digits=12, decimal_places=3)
     fact_kg = models.DecimalField("Факт, кг", max_digits=12, decimal_places=3, null=True, blank=True)
     counted_by = models.ForeignKey(
@@ -195,6 +202,12 @@ class InventoryLine(models.Model):
         verbose_name="Посчитал",
     )
     counted_at = models.DateTimeField("Посчитано", null=True, blank=True)
+
+    @property
+    def place(self) -> str:
+        if self.cell_id:
+            return self.cell.label()
+        return self.location
 
     class Meta:
         db_table = "inventory_lines"
@@ -239,6 +252,29 @@ class TransformDocument(models.Model):
     tolerance_kg = models.DecimalField("Допуск, кг", max_digits=12, decimal_places=3, default=0)
     ledger_waste_kg = models.DecimalField("Отход в движениях, кг", max_digits=12, decimal_places=3, null=True, blank=True)
     notes = models.TextField("Примечание", blank=True, default="")
+    categories_set = models.BooleanField("Категории выхода заданы", default=False)
+    allowed_categories = models.ManyToManyField(
+        "catalog.ConsigneeCategory",
+        blank=True,
+        related_name="transform_documents",
+        verbose_name="Категории выхода",
+    )
+    output_consignee = models.ForeignKey(
+        "catalog.Consignee",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="transform_outputs_held",
+        verbose_name="Резерв выхода под грузополучателя",
+    )
+    output_line = models.ForeignKey(
+        "planning.OrderLine",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="transform_outputs_held",
+        verbose_name="Резерв выхода под строку",
+    )
     created_by = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="transform_documents_created", verbose_name="Создал"
     )

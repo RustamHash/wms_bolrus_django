@@ -1,0 +1,87 @@
+﻿                ('ledger_waste_kg', models.DecimalField(blank=True, decimal_places=3, max_digits=12, null=True, verbose_name='Отход в движениях, кг')),
+                ('notes', models.TextField(blank=True, default='', verbose_name='Примечание')),
+                ('posted_at', models.DateTimeField(blank=True, null=True, verbose_name='Проведено')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='Создано')),
+                ('created_by', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_documents_created', to=settings.AUTH_USER_MODEL, verbose_name='Создал')),
+                ('posted_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='transform_documents_posted', to=settings.AUTH_USER_MODEL, verbose_name='Провёл')),
+            ],
+            options={
+                'verbose_name': 'Переработка',
+                'verbose_name_plural': 'Переработка',
+                'db_table': 'transform_documents',
+                'ordering': ['-doc_date', '-id'],
+            },
+        ),
+        migrations.AddField(
+            model_name='movement',
+            name='transform_document',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='movements', to='inventory.transformdocument', verbose_name='Переработка'),
+        ),
+        migrations.AddConstraint(
+            model_name='movement',
+            constraint=models.CheckConstraint(condition=models.Q(models.Q(('task__isnull', False), ('task_line__isnull', False)), ('transform_document__isnull', False), _connector='OR'), name='movement_task_or_transform'),
+        ),
+        migrations.AddConstraint(
+            model_name='movement',
+            constraint=models.CheckConstraint(condition=models.Q(models.Q(('kind__in', ['transform_out', 'waste']), _negated=True), ('transform_document__isnull', False), _connector='OR'), name='movement_rework_has_document'),
+        ),
+        migrations.AddField(
+            model_name='transforminput',
+            name='document',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='inputs', to='inventory.transformdocument', verbose_name='Документ'),
+        ),
+        migrations.AddField(
+            model_name='transforminput',
+            name='lot',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_inputs', to='receiving.lot', verbose_name='Партия'),
+        ),
+        migrations.AddField(
+            model_name='transforminput',
+            name='pallet',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_inputs', to='storage.pallet', verbose_name='Паллета'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='caliber',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_outputs', to='catalog.caliber', verbose_name='Калибр'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='document',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='outputs', to='inventory.transformdocument', verbose_name='Документ'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='grade',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_outputs', to='catalog.grade', verbose_name='Сорт'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='lot',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='transform_outputs', to='receiving.lot', verbose_name='Партия'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='pallet',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='transform_outputs', to='storage.pallet', verbose_name='Паллета'),
+        ),
+        migrations.AddField(
+            model_name='transformoutput',
+            name='product',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transform_outputs', to='catalog.product', verbose_name='Товар'),
+        ),
+        migrations.AddField(
+            model_name='transformwaste',
+            name='document',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='wastes', to='inventory.transformdocument', verbose_name='Документ'),
+        ),
+        migrations.AddConstraint(
+            model_name='transformdocument',
+            constraint=models.CheckConstraint(condition=models.Q(('tolerance_kg__gte', 0)), name='transform_tolerance_nonnegative'),
+        ),
+        migrations.AddConstraint(
+            model_name='transforminput',
+            constraint=models.UniqueConstraint(fields=('document', 'pallet'), name='transform_input_document_pallet'),
+        ),
+    ]
+

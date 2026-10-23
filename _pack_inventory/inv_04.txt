@@ -1,0 +1,1416 @@
+﻿
+==============================================================================
+### FILE: apps\shipping\models.py
+### SIZE: 1924 bytes / 46 lines
+==============================================================================
+
+from django.db import models
+
+
+class Allocation(models.Model):
+    unit = models.OneToOneField("storage.HandlingUnit", on_delete=models.CASCADE, related_name="allocation")
+    order_line = models.ForeignKey("planning.OrderLine", on_delete=models.PROTECT, related_name="allocations")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "allocations"
+
+    def __str__(self):
+        return f"{self.unit} → {self.order_line}"
+
+
+class Shipment(models.Model):
+    number = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    order = models.ForeignKey("planning.Order", on_delete=models.PROTECT, related_name="shipments")
+    task = models.ForeignKey("planning.Task", null=True, blank=True, on_delete=models.PROTECT, related_name="shipments")
+    seller_name = models.CharField(max_length=200)
+    seller_requisites = models.TextField(blank=True, default="")
+    client_name = models.CharField(max_length=200)
+    shipping_terms = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="shipments_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+    units = models.ManyToManyField("storage.HandlingUnit", through="ShipmentUnit", related_name="shipments")
+
+    class Meta:
+        db_table = "shipments"
+        verbose_name = "Накладная"
+        verbose_name_plural = "Накладные"
+
+    def __str__(self):
+        return self.number or f"#{self.pk}"
+
+
+class ShipmentUnit(models.Model):
+    shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE)
+    unit = models.ForeignKey("storage.HandlingUnit", on_delete=models.PROTECT)
+
+    class Meta:
+        db_table = "shipment_units"
+        unique_together = (("shipment", "unit"),)
+
+    def __str__(self):
+        return f"{self.shipment} · {self.unit}"
+
+
+==============================================================================
+### FILE: apps\storage\categories.py
+### SIZE: 398 bytes / 12 lines
+==============================================================================
+
+def category_ids(pallet) -> set[int] | None:
+    found = {item.id for item in pallet.allowed_categories.all()}
+    if not found:
+        return None
+    return found
+
+
+def allows_consignee(pallet, consignee) -> bool:
+    allowed = category_ids(pallet)
+    if allowed is None:
+        return True
+    return bool(consignee and consignee.category_id and consignee.category_id in allowed)
+
+
+==============================================================================
+### FILE: apps\storage\models.py
+### SIZE: 4816 bytes / 120 lines
+==============================================================================
+
+from django.db import models
+
+
+class WarehouseZone(models.Model):
+    code = models.CharField("Код", max_length=32, unique=True)
+    name = models.CharField("Название", max_length=120, unique=True)
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_zones"
+        verbose_name = "Зона склада"
+        verbose_name_plural = "Зоны склада"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.name}"
+
+
+def cell_address(zone_code: str, code: str) -> str:
+    zone = (zone_code or "").strip()
+    place = (code or "").strip()
+    if not zone:
+        return place[:120]
+    prefix = f"{zone}-"
+    if place.casefold().startswith(prefix.casefold()):
+        return place[:120]
+    return f"{zone}-{place}"[:120]
+
+
+class WarehouseCell(models.Model):
+    zone = models.ForeignKey(WarehouseZone, on_delete=models.PROTECT, related_name="cells", verbose_name="Зона")
+    code = models.CharField("Код", max_length=32)
+    name = models.CharField("Название", max_length=120, blank=True, default="")
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_cells"
+        verbose_name = "Ячейка"
+        verbose_name_plural = "Ячейки"
+        ordering = ["zone__code", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["zone", "code"], name="warehouse_cell_zone_code"),
+        ]
+
+    def label(self) -> str:
+        return cell_address(self.zone.code, self.code)
+
+    def __str__(self) -> str:
+        return self.label()
+
+
+class Pallet(models.Model):
+    number = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    barcode = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    kind = models.CharField(max_length=32)
+    status = models.CharField(max_length=32, default="open")
+    location = models.CharField(max_length=120, blank=True, default="")
+    cell = models.ForeignKey(
+        WarehouseCell,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pallets",
+        verbose_name="Ячейка",
+    )
+    pallet_type = models.CharField(max_length=8, blank=True, default="")
+    order = models.ForeignKey("planning.Order", null=True, blank=True, on_delete=models.PROTECT, related_name="pallets")
+    reserved_consignee = models.ForeignKey(
+        "catalog.Consignee",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="held_pallets",
+        verbose_name="Резерв под грузополучателя",
+    )
+    reserved_line = models.ForeignKey(
+        "planning.OrderLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="reserved_pallets"
+    )
+    allowed_categories = models.ManyToManyField(
+        "catalog.ConsigneeCategory",
+        blank=True,
+        related_name="pallets",
+        verbose_name="Можно отгружать категориям",
+    )
+    created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="pallets_created")
+    closed_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.PROTECT, related_name="pallets_closed"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "pallets"
+        verbose_name = "Паллета"
+        verbose_name_plural = "Паллеты"
+
+    def __str__(self):
+        return self.number or self.barcode or f"#{self.pk}"
+
+
+class HandlingUnit(models.Model):
+    barcode = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    receipt = models.ForeignKey("receiving.Receipt", on_delete=models.PROTECT, related_name="units")
+    lot = models.ForeignKey("receiving.Lot", on_delete=models.PROTECT, related_name="units")
+    packaging = models.ForeignKey("catalog.Packaging", on_delete=models.PROTECT, related_name="units")
+    gross_kg = models.DecimalField(max_digits=12, decimal_places=3)
+    net_kg = models.DecimalField(max_digits=12, decimal_places=3)
+    grade = models.ForeignKey("catalog.Grade", on_delete=models.PROTECT, related_name="units")
+    pallet = models.ForeignKey(Pallet, null=True, blank=True, on_delete=models.PROTECT, related_name="units")
+    status = models.CharField(max_length=32, default="received", db_index=True)
+    reject_reason = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "handling_units"
+        verbose_name = "Место"
+        verbose_name_plural = "Места"
+
+    def __str__(self):
+        return self.barcode or f"#{self.pk}"
+
+
+==============================================================================
+### FILE: apps\storage\places.py
+### SIZE: 4059 bytes / 96 lines
+==============================================================================
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import text
+from apps.storage.models import WarehouseCell, WarehouseZone
+
+
+def place_form_context(cell: WarehouseCell | None = None) -> dict:
+    return {
+        "warehouse_zones": list(WarehouseZone.objects.order_by("code")),
+        "warehouse_cells": list(WarehouseCell.objects.select_related("zone").order_by("zone__code", "code")),
+        "selected_zone_id": cell.zone_id if cell is not None else None,
+        "selected_cell_id": cell.id if cell is not None else None,
+    }
+
+
+def resolve_place(form, *, required: bool) -> WarehouseCell | None:
+    zone_scan = text(form, "zone_scan")
+    cell_scan = text(form, "cell_scan")
+    zone_raw = text(form, "zone_id")
+    cell_raw = text(form, "cell_id")
+    if not any((zone_scan, cell_scan, zone_raw, cell_raw)):
+        if required:
+            raise WarehouseError("Укажите ячейку")
+        return None
+    zone = _zone(zone_raw, zone_scan)
+    cell = _cell(cell_raw, cell_scan, zone)
+    if zone is None and cell is not None:
+        zone = cell.zone
+    if cell is None:
+        raise WarehouseError("Укажите ячейку")
+    if zone is not None and cell.zone_id != zone.id:
+        raise WarehouseError("Ячейка не относится к этой зоне")
+    return cell
+
+
+def _int(raw: str, label: str) -> int:
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise WarehouseError(f"Выберите {label}") from exc
+
+
+def _zone(raw_id: str, scan: str) -> WarehouseZone | None:
+    zone = None
+    if raw_id:
+        zone = WarehouseZone.objects.filter(pk=_int(raw_id, "зону")).first()
+        if zone is None:
+            raise WarehouseError("Такой зоны нет")
+    if scan:
+        found = (
+            WarehouseZone.objects.filter(code__iexact=scan).first()
+            or WarehouseZone.objects.filter(barcode__iexact=scan).first()
+            or WarehouseZone.objects.filter(name__iexact=scan).first()
+        )
+        if found is None:
+            raise WarehouseError("Такой зоны нет")
+        if zone is not None and found.id != zone.id:
+            raise WarehouseError("Код зоны не совпадает с выбранной зоной")
+        zone = found
+    return zone
+
+
+def _cell(raw_id: str, scan: str, zone: WarehouseZone | None) -> WarehouseCell | None:
+    cell = None
+    if raw_id:
+        cell = WarehouseCell.objects.select_related("zone").filter(pk=_int(raw_id, "ячейку")).first()
+        if cell is None:
+            raise WarehouseError("Такой ячейки нет")
+    if scan:
+        found = _match_cell(scan, zone)
+        if cell is not None and found.id != cell.id:
+            raise WarehouseError("Код ячейки не совпадает с выбранной ячейкой")
+        cell = found
+    return cell
+
+
+def _match_cell(scan: str, zone: WarehouseZone | None) -> WarehouseCell:
+    query = WarehouseCell.objects.select_related("zone")
+    if zone is not None:
+        query = query.filter(zone=zone)
+    found = list(query.filter(barcode__iexact=scan)[:2])
+    if len(found) == 1:
+        return found[0]
+    if len(found) > 1:
+        raise WarehouseError("Такой QR есть у нескольких ячеек")
+    needle = "".join(scan.split()).casefold()
+    labeled = [cell for cell in query if "".join(cell.label().split()).casefold() == needle]
+    if len(labeled) == 1:
+        return labeled[0]
+    if len(labeled) > 1:
+        raise WarehouseError("Такое имя есть у нескольких ячеек")
+    coded = list(query.filter(code__iexact=scan)[:2])
+    if len(coded) == 1:
+        return coded[0]
+    if len(coded) > 1:
+        raise WarehouseError("Такое место есть в нескольких зонах. Укажите ячейку целиком, например А-01")
+    raise WarehouseError("Такой ячейки нет")
+
+
+==============================================================================
+### FILE: apps\storage\services.py
+### SIZE: 8837 bytes / 216 lines
+==============================================================================
+
+from datetime import datetime
+from decimal import Decimal
+
+from django.db import transaction
+from django.utils import timezone
+
+from apps.catalog.models import Grade
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import get_row
+from apps.common.kg import as_kg
+from apps.common.numbers import barcode, document_number
+from apps.inventory.services import inbound_for_pallet
+from apps.planning.models import Order
+from apps.shipping.models import Allocation
+from apps.storage.models import HandlingUnit, Pallet
+
+
+def active_units(pallet: Pallet) -> list[HandlingUnit]:
+    return [unit for unit in pallet.units.all() if unit.status != "rejected"]
+
+
+def unit_key(unit: HandlingUnit) -> tuple:
+    lot = unit.lot
+    return (lot.product_id, lot.caliber_id, unit.grade_id)
+
+
+def allocation_of(unit: HandlingUnit):
+    return Allocation.objects.filter(unit_id=unit.id).select_related("order_line").first()
+
+
+def _status_after_detach(pallet: Pallet, unit: HandlingUnit) -> str:
+    if unit.status == "allocated":
+        return "allocated"
+    if pallet.status == "closed":
+        return "in_stock"
+    return "received"
+
+
+def _locked_by_movement(unit: HandlingUnit) -> None:
+    if unit.pallet_id and inbound_for_pallet(unit.pallet_id) is not None:
+        raise WarehouseError("Эту паллету меняют в задании: правка идёт через движение прихода")
+
+
+@transaction.atomic
+def create_inbound_pallet(*, user, location: str = "", cell=None) -> Pallet:
+    if cell is not None:
+        location = cell.label()
+    pallet = Pallet.objects.create(
+        kind="inbound",
+        status="open",
+        location=location.strip(),
+        cell=cell,
+        created_by=user,
+    )
+    pallet.number = document_number("ПЛ", pallet.id)
+    pallet.barcode = barcode("PL", pallet.id)
+    pallet.save(update_fields=["number", "barcode"])
+    return pallet
+
+
+@transaction.atomic
+def create_outbound_pallet(*, order_id: int, user, location: str = "") -> Pallet:
+    order = get_row(Order, order_id, "заказ")
+    pallet = Pallet.objects.create(
+        kind="outbound",
+        status="open",
+        location=location.strip(),
+        order=order,
+        created_by=user,
+    )
+    pallet.number = document_number("ПЛ", pallet.id)
+    pallet.barcode = barcode("PL", pallet.id)
+    pallet.save(update_fields=["number", "barcode"])
+    return pallet
+
+
+def add_to_inbound(pallet: Pallet, unit: HandlingUnit) -> None:
+    if inbound_for_pallet(pallet.id) is not None:
+        raise WarehouseError("Принятую паллету меняют через движение задания")
+    if pallet.kind != "inbound":
+        raise WarehouseError("На входную паллету нельзя положить место с выхода")
+    if pallet.status != "open":
+        raise WarehouseError("Входная паллета закрыта. Откройте следующую")
+    if unit.status in ("shipped", "rejected"):
+        raise WarehouseError("Это место нельзя положить на паллету")
+    if unit.pallet_id and unit.pallet_id != pallet.id:
+        raise WarehouseError("Место уже лежит на другой паллете")
+    keys = {unit_key(item) for item in active_units(pallet) if item.id != unit.id}
+    if len(keys) > 1 or (keys and unit_key(unit) not in keys):
+        raise WarehouseError(
+            "На входе паллета только однородная: товар, калибр и сортность должны совпасть. Закройте паллету и откройте следующую"
+        )
+    unit.pallet = pallet
+    if unit.status != "allocated":
+        unit.status = "on_pallet"
+    unit.save(update_fields=["pallet", "status"])
+
+
+def add_to_outbound(pallet: Pallet, unit: HandlingUnit) -> None:
+    if pallet.kind != "outbound":
+        raise WarehouseError("Это не отгрузочная паллета")
+    if pallet.status != "open":
+        raise WarehouseError("Отгрузочная паллета закрыта")
+    allocation = allocation_of(unit)
+    if unit.status != "allocated" or allocation is None:
+        raise WarehouseError("На выход кладут только места, уже назначенные на заказ")
+    if allocation.order_line.order_id != pallet.order_id:
+        raise WarehouseError("Место назначено другому заказу")
+    if unit.pallet_id and unit.pallet and unit.pallet.kind == "outbound" and unit.pallet_id != pallet.id:
+        raise WarehouseError("Место уже на другой отгрузочной паллете")
+    unit.pallet = pallet
+    unit.save(update_fields=["pallet"])
+
+
+def detach_unit(unit: HandlingUnit) -> None:
+    _locked_by_movement(unit)
+    if unit.pallet_id is None:
+        return
+    pallet = unit.pallet
+    if unit.status == "shipped":
+        raise WarehouseError("Отгруженное место нельзя снять с паллеты")
+    unit.status = _status_after_detach(pallet, unit)
+    unit.pallet = None
+    unit.save(update_fields=["status", "pallet"])
+
+
+def close_pallet(pallet: Pallet, user) -> None:
+    if pallet.status == "closed":
+        return
+    units = active_units(pallet)
+    if pallet.kind == "inbound" and not units:
+        raise WarehouseError("Нельзя закрыть пустую паллету")
+    for unit in units:
+        if pallet.kind == "inbound" and unit.status == "on_pallet":
+            unit.status = "in_stock"
+            unit.save(update_fields=["status"])
+    pallet.status = "closed"
+    pallet.closed_at = timezone.now()
+    pallet.closed_by = user
+    pallet.save(update_fields=["status", "closed_at", "closed_by"])
+
+
+def change_grade(unit: HandlingUnit, grade_id: int) -> None:
+    _locked_by_movement(unit)
+    if unit.status in ("shipped", "rejected"):
+        raise WarehouseError("У этого места нельзя менять сортность")
+    if unit.pallet_id and unit.pallet.kind == "inbound":
+        raise WarehouseError("Снимите место с входной паллеты, затем меняйте сортность")
+    if allocation_of(unit) is not None:
+        raise WarehouseError("Снимите назначение на заказ, затем меняйте сортность")
+    grade = get_row(Grade, grade_id, "сортность")
+    unit.grade = grade
+    unit.save(update_fields=["grade"])
+
+
+def reject_unit(unit: HandlingUnit, reason: str) -> None:
+    _locked_by_movement(unit)
+    if unit.status == "shipped":
+        raise WarehouseError("Отгруженное место нельзя отправить в брак")
+    if unit.status == "rejected":
+        return
+    if unit.pallet_id and unit.pallet.kind == "inbound":
+        raise WarehouseError("Снимите место с входной паллеты, затем отметьте брак")
+    if allocation_of(unit) is not None:
+        raise WarehouseError("Снимите назначение на заказ, затем отметьте брак")
+    unit.status = "rejected"
+    unit.reject_reason = reason.strip()
+    unit.pallet = None
+    unit.save(update_fields=["status", "reject_reason", "pallet"])
+
+
+def stock_place_rows() -> list[dict]:
+    units = HandlingUnit.objects.filter(status__in=("received", "on_pallet", "in_stock", "allocated")).select_related(
+        "lot__product", "lot__caliber", "grade"
+    )
+    buckets: dict[tuple, dict] = {}
+    for unit in units:
+        lot = unit.lot
+        key = (lot.product.name, lot.caliber.name, unit.grade.name)
+        row = buckets.setdefault(
+            key,
+            {
+                "product": key[0],
+                "caliber": key[1],
+                "grade": key[2],
+                "free_kg": Decimal("0.000"),
+                "allocated_kg": Decimal("0.000"),
+                "places": 0,
+            },
+        )
+        kg = as_kg(unit.net_kg)
+        row["places"] += 1
+        if unit.status == "allocated":
+            row["allocated_kg"] += kg
+        else:
+            row["free_kg"] += kg
+    return [buckets[key] for key in sorted(buckets)]
+
+
+def find_by_barcode(code: str):
+    raw = (code or "").strip()
+    pieces = [raw]
+    first = raw.splitlines()[0].strip() if raw else ""
+    if first and first != raw:
+        pieces.append(first)
+    for piece in pieces:
+        normalized = piece.upper()
+        if not normalized:
+            continue
+        unit = HandlingUnit.objects.filter(barcode=normalized).first()
+        if unit:
+            return ("unit", unit)
+        pallet = Pallet.objects.filter(barcode=normalized).first() or Pallet.objects.filter(number=piece).first()
+        if pallet:
+            return ("pallet", pallet)
+    return (None, None)
+
+
+==============================================================================
+### FILE: config\urls.py
+### SIZE: 12002 bytes / 178 lines
+==============================================================================
+
+from django.conf import settings
+from django.urls import path
+
+from apps.common.http import accept
+from apps.accounts import views as accounts
+from apps.catalog import views as catalog
+from apps.inventory import count_views, transform_views, views as inventory
+from apps.picking import views as picking
+from apps.planning import views as planning
+from apps.printing import views as printing
+from apps.receiving import views as receiving
+from apps.logistics import views as logistics
+from apps.shipping import views as shipping
+from apps.storage import views as storage
+from apps.tsd import views as tsd
+from config.admin_site import wms_admin
+
+import config.register_admin  # noqa: F401
+
+urlpatterns = [
+    path("", accounts.home),
+    path("login", accept(accounts.login_form, accounts.login_submit)),
+    path("logout", accept(post=accounts.logout_submit)),
+    path("notices/seen", accept(post=accounts.notices_seen)),
+    path("service", accounts.service_home),
+    path("service/imports", accounts.service_imports),
+    path("service/imports/customers", accept(post=planning.customer_orders_import_excel)),
+    path("service/imports/suppliers", accept(post=planning.supplier_orders_import_excel)),
+    path("positions", accept(accounts.positions_list, accounts.positions_create)),
+    path("positions/new", accounts.positions_new),
+    path("positions/<int:item_id>/delete", accept(post=accounts.positions_delete)),
+    path("positions/<int:item_id>", accept(accounts.positions_edit, accounts.positions_update)),
+    path("staff", accept(accounts.staff_list, accounts.staff_create)),
+    path("staff/new", accounts.staff_new),
+    path("staff/<int:user_id>", accept(accounts.staff_edit, accounts.staff_update)),
+    path("users", accept(accounts.users_list, accounts.users_create)),
+    path("users/new", accounts.users_new),
+    path("users/<int:user_id>/badge.png", accounts.users_badge_png),
+    path("users/<int:user_id>/badge", accept(accounts.users_badge_page, accounts.users_new_badge)),
+    path("users/<int:user_id>", accept(accounts.users_edit, accounts.users_update)),
+    path("office", catalog.office_home),
+    path("masters", catalog.masters_home),
+    path("masters/consignee-zones/<int:consignee_id>", accept(post=catalog.consignee_zone_save)),
+    path("masters/consignee-zones", catalog.consignee_zones),
+    path("masters/consignee-grades/<int:consignee_id>", accept(post=catalog.consignee_grades_save)),
+    path("masters/consignee-grades", catalog.consignee_grades),
+    path("masters/<slug:kind>/new", catalog.master_new),
+    path("masters/<slug:kind>/<int:item_id>/delete", accept(post=catalog.master_delete)),
+    path("masters/<slug:kind>/<int:item_id>", accept(catalog.master_edit, catalog.master_update)),
+    path("masters/<slug:kind>", accept(catalog.master_list, catalog.master_create)),
+    path("orders", accept(planning.order_home, planning.order_create)),
+    path("orders/suppliers/new", planning.supplier_order_new),
+    path("orders/suppliers/import", accept(post=planning.supplier_orders_import)),
+    path("orders/suppliers/tasks", accept(post=planning.supplier_orders_tasks)),
+    path("orders/suppliers/revisions", planning.supplier_revision_report),
+    path("orders/suppliers/<int:purchase_id>/revisions", planning.supplier_order_revisions),
+    path("orders/suppliers/<int:purchase_id>/task", accept(post=planning.supplier_order_task)),
+    path("orders/suppliers/<int:purchase_id>/fact", planning.supplier_order_fact),
+    path("orders/suppliers/<int:purchase_id>", accept(planning.supplier_order_detail, planning.supplier_order_save)),
+    path("orders/suppliers", accept(planning.supplier_orders, planning.supplier_order_create)),
+    path("orders/customers/import", accept(post=planning.customer_orders_import)),
+    path("orders/customers/tasks", accept(post=planning.customer_orders_tasks)),
+    path("orders/customers/revisions", planning.order_revision_report),
+    path("orders/customers", planning.customer_orders),
+    path("orders/new", planning.order_new),
+    path("orders/<int:order_id>/revisions", planning.order_revisions),
+    path("orders/<int:order_id>/tasks", accept(post=planning.order_task)),
+    path("orders/<int:order_id>", accept(planning.order_detail, planning.order_save)),
+    path("tasks", accept(planning.task_list, planning.tasks_bulk)),
+    path("tasks/<int:task_id>/print", printing.task_sheet),
+    path("tasks/<int:task_id>/status", accept(post=planning.task_status)),
+    path("tasks/<int:task_id>/assign", accept(post=planning.task_assign)),
+    path("tasks/<int:task_id>/close", planning.task_close),
+    path("tasks/<int:task_id>/close-order", accept(post=planning.task_close_order)),
+    path("tasks/<int:task_id>/receive", receiving.task_receive),
+    path("tasks/<int:task_id>/pick", picking.task_pick),
+    path("tasks/<int:task_id>/ship", shipping.task_ship),
+    path("tasks/<int:task_id>", planning.task_detail),
+    path("reports", inventory.reports_home),
+    path("reports/nomenclature", inventory.nomenclature_report),
+    path("warehouse", inventory.warehouse_home),
+    path("inventory", accept(count_views.inventory_list, count_views.inventory_create)),
+    path("inventory/new", count_views.inventory_new),
+    path("inventory/<int:doc_id>/found/<int:line_id>/delete", accept(post=count_views.inventory_delete_found)),
+    path("inventory/<int:doc_id>/found", accept(post=count_views.inventory_add_found)),
+    path("inventory/<int:doc_id>/line", accept(post=count_views.inventory_save_line)),
+    path("inventory/<int:doc_id>", accept(count_views.inventory_detail, count_views.inventory_action)),
+    path("transform", accept(transform_views.transform_list, transform_views.transform_create)),
+    path("transform/new", transform_views.transform_new),
+    path("transform/<int:doc_id>/inputs/<int:line_id>/delete", accept(post=transform_views.transform_delete_input)),
+    path("transform/<int:doc_id>/outputs/<int:line_id>/delete", accept(post=transform_views.transform_delete_output)),
+    path("transform/<int:doc_id>/waste/<int:line_id>/delete", accept(post=transform_views.transform_delete_waste)),
+    path("transform/<int:doc_id>/inputs", accept(post=transform_views.transform_add_input)),
+    path("transform/<int:doc_id>/outputs", accept(post=transform_views.transform_add_output)),
+    path("transform/<int:doc_id>/waste", accept(post=transform_views.transform_add_waste)),
+    path("transform/<int:doc_id>", accept(transform_views.transform_detail, transform_views.transform_action)),
+    path("lots/<int:lot_id>", accept(receiving.lot_passport, receiving.lot_passport_save)),
+    path("stock/<int:lot_id>", inventory.stock_lot, name="stock_lot"),
+    path("stock", inventory.stock),
+    path("demand", inventory.demand),
+    path("pallets", accept(storage.pallet_list, storage.pallet_create)),
+    path("pallets/<int:pallet_id>/location", storage.pallet_location),
+    path("pallets/<int:pallet_id>/close", storage.pallet_close),
+    path("pallets/<int:pallet_id>/units", storage.pallet_add),
+    path("pallets/<int:pallet_id>", storage.pallet_detail),
+    path("units/<int:unit_id>/detach", storage.unit_detach),
+    path("units/<int:unit_id>/quality", storage.unit_quality),
+    path("units/<int:unit_id>/reject", storage.unit_reject),
+    path("units/<int:unit_id>", storage.unit_detail),
+    path("receipts", receiving.receipts_redirect),
+    path("receipts/<int:receipt_id>", receiving.receipts_redirect),
+    path("movements/<int:movement_id>/delete", receiving.movement_delete),
+    path("movements/<int:movement_id>", receiving.movement_edit),
+    path("crossdock", shipping.crossdock_redirect),
+    path("shipments", shipping.shipment_list),
+    path("shipments/<int:shipment_id>", shipping.shipment_detail),
+    path("shift", logistics.shift_board),
+    path("shift/orders/print", logistics.shift_orders_print),
+    path("shift/incoming/print", logistics.shift_incoming_print),
+    path("shift/routes/print", logistics.shift_routes_print),
+    path("shift/routes/<int:route_id>/dock", accept(post=logistics.shift_dock)),
+    path("shift/routes/<int:route_id>/ship", accept(post=logistics.shift_ship)),
+    path("shift/routes/<int:route_id>/revert", accept(post=logistics.shift_revert)),
+    path("shift/routes/<int:route_id>/arrive", accept(post=logistics.shift_arrive)),
+    path("shift/routes/<int:route_id>/depart", accept(post=logistics.shift_depart)),
+    path("shift/incoming/<int:order_id>/comment", accept(post=logistics.shift_incoming_comment)),
+    path("shift/incoming/<int:order_id>/arrive", accept(post=logistics.shift_incoming_arrive)),
+    path("shift/incoming/<int:order_id>/gate", accept(post=logistics.shift_incoming_gate)),
+    path("shift/incoming/<int:order_id>/finish", accept(post=logistics.shift_incoming_finish)),
+    path("shift/incoming/<int:order_id>/depart", accept(post=logistics.shift_incoming_depart)),
+    path("logistics", logistics.index),
+    path("logistics/vehicles", accept(logistics.vehicle_list, logistics.vehicle_create)),
+    path("logistics/vehicles/new", logistics.vehicle_new),
+    path("logistics/vehicles/<int:item_id>", accept(logistics.vehicle_edit, logistics.vehicle_update)),
+    path("logistics/drivers", accept(logistics.driver_list, logistics.driver_create)),
+    path("logistics/drivers/new", logistics.driver_new),
+    path("logistics/drivers/<int:item_id>", accept(logistics.driver_edit, logistics.driver_update)),
+    path("logistics/routing", accept(logistics.routing, logistics.routing_create)),
+    path("logistics/routing/assign", accept(post=logistics.routing_assign)),
+    path("logistics/routing/assign-order", accept(post=logistics.routing_assign_order)),
+    path("logistics/routing/add", accept(post=logistics.routing_add_to_route)),
+    path("logistics/routes", logistics.route_list),
+    path("logistics/routes/bulk", accept(post=logistics.routes_bulk)),
+    path("logistics/routes/<int:route_id>/add", accept(post=logistics.route_add_orders)),
+    path("logistics/routes/<int:route_id>/delete", accept(post=logistics.route_delete)),
+    path("logistics/routes/<int:route_id>/orders/<int:order_id>/move", accept(post=logistics.route_move_order)),
+    path("logistics/routes/<int:route_id>/reorder", accept(post=logistics.route_reorder)),
+    path("logistics/routes/<int:route_id>/orders/<int:order_id>/remove", accept(post=logistics.route_remove_order)),
+    path("logistics/routes/<int:route_id>/print", printing.route_sheet),
+    path("logistics/routes/<int:route_id>", accept(logistics.route_detail, logistics.route_save)),
+    path("logistics/schedule", accept(logistics.schedule, logistics.schedule_set_time)),
+    path("logistics/schedule/print", printing.schedule_sheet),
+    path("print/units/<int:unit_id>.pdf", printing.unit_pdf),
+    path("print/units/<int:unit_id>", printing.unit_print),
+    path("print/pallets/<int:pallet_id>.pdf", printing.pallet_pdf),
+    path("print/pallets/<int:pallet_id>", printing.pallet_print),
+    path("print/shipments/<int:shipment_id>/sticker.pdf", printing.sticker_pdf),
+    path("print/shipments/<int:shipment_id>/waybill.pdf", printing.waybill_pdf),
+    path("print/shipments/<int:shipment_id>", printing.shipment_print),
+    path("print/printers/<int:printer_id>/test", printing.printer_test),
+    path("tsd/login", accept(accounts.tsd_login_form, accounts.tsd_login_submit)),
+    path("tsd", tsd.tsd_menu),
+    path("tsd/receive", tsd.tsd_receive),
+    path("tsd/pick", tsd.tsd_pick),
+    path("tsd/ship", tsd.tsd_ship),
+    path("tsd/move", accept(tsd.tsd_move, tsd.tsd_move_save)),
+    path("tsd/tasks/<int:task_id>", tsd.tsd_task),
+    path("tsd/inventory/<int:doc_id>/found", accept(post=tsd.tsd_inventory_add)),
+    path("tsd/inventory/<int:doc_id>", accept(tsd.tsd_inventory, tsd.tsd_inventory_save)),
+    path("tsd/inventory", tsd.tsd_inventory_list),
+    path("tsd/find", tsd.tsd_find),
+    path("admin/", wms_admin.urls),
+]
+
+if settings.DEBUG:
+    from debug_toolbar.toolbar import debug_toolbar_urls
+
+    urlpatterns += debug_toolbar_urls()
+
+
+==============================================================================
+### FILE: templates\base.html
+### SIZE: 5352 bytes / 104 lines
+==============================================================================
+
+{% extends "layout.html" %}
+{% load wms %}
+{% block header %}
+<header class="top">
+  <a class="brand" href="/">WMS</a>
+  <nav>
+    {% if user.is_authenticated and user|screen:"web_orders" %}
+    <div class="menu-group">
+      <a href="/orders" class="{% if request.path|startswith:'/orders' %}active{% endif %}">Заказы</a>
+      <div>
+        <a href="/orders/suppliers">Поставщикам</a>
+        <a href="/orders/customers">Грузополучателям</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_tasks" %}
+    <div class="menu-group">
+      <a href="/tasks" class="{% if request.path|startswith:'/tasks' %}active{% endif %}">Задания</a>
+      <div>
+        <a href="/tasks?kind=all">Все</a>
+        <a href="/tasks?kind=receive">Приёмка</a>
+        <a href="/tasks?kind=pick">Отбор</a>
+        <a href="/tasks?kind=ship">На отгрузку</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_reports" %}
+    <div class="menu-group">
+      <a href="/reports" class="{% if request.path|startswith:'/reports' or request.path|startswith:'/stock' or request.path|startswith:'/demand' or request.path|startswith:'/pallets' or request.path|startswith:'/units' or request.path|startswith:'/inventory' or request.path|startswith:'/transform' or request.path|startswith:'/lots' %}active{% endif %}">Отчеты</a>
+      <div>
+        <a href="/stock">Остатки</a>
+        <a href="/demand">Потребность</a>
+        <a href="/reports/nomenclature">Номенклатура 1С</a>
+        <a href="/orders/customers/revisions">Расхождения заказов</a>
+        <a href="/pallets">Паллеты</a>
+        <a href="/inventory">Инвентаризация</a>
+        <a href="/transform">Переработка</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_shipments" %}
+    <a href="/shipments" class="{% if request.path|startswith:'/shipments' %}active{% endif %}">Накладные</a>
+    {% endif %}
+    {% if user.is_authenticated and user.can_shift %}
+    <a href="/shift" class="{% if request.path|startswith:'/shift' %}active{% endif %}">Смена</a>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_logistics" %}
+    <div class="menu-group">
+      <a href="/logistics" class="{% if request.path|startswith:'/logistics' %}active{% endif %}">Логистика</a>
+      <div>
+        <a href="/logistics/routing">Маршрутизация</a>
+        <a href="/logistics/routes">Маршруты</a>
+        <a href="/logistics/schedule">График отгрузки</a>
+        <a href="/logistics/drivers">Водители</a>
+        <a href="/logistics/vehicles">Автомобили</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_masters" %}
+      <a href="/masters" class="{% if request.path|startswith:'/masters' or request.path|startswith:'/users' or request.path|startswith:'/staff' or request.path|startswith:'/positions' or request.path|startswith:'/office' %}active{% endif %}">Справочники</a>
+    {% endif %}
+    {% if user.is_authenticated %}
+    {% if user.opens_admin or user|screen:"web_service" %}
+    <div class="menu-group">
+      <a href="/service" class="{% if request.path|startswith:'/service' or request.path|startswith:'/admin' %}active{% endif %}">Сервис</a>
+      <div>
+        <a href="/tsd">ТСД</a>
+        {% if user.opens_admin %}<a href="/admin/">Админка</a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </nav>
+  {% if user.is_authenticated %}
+  <div class="account">
+  <div class="menu-group notices">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <button type="button" class="notice-btn" aria-haspopup="true" aria-label="Уведомления">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 22a2.2 2.2 0 0 0 2.1-1.5H9.9A2.2 2.2 0 0 0 12 22zm7-6V11a7 7 0 0 0-5-6.7V3.5a2 2 0 1 0-4 0v.8A7 7 0 0 0 5 11v5l-1.7 1.7A1 1 0 0 0 4 19.4h16a1 1 0 0 0 .7-1.7z"/></svg>
+      {% if notice_unread %}<span class="notice-badge">{{ notice_unread }}</span>{% endif %}
+    </button>
+    <div class="notice-menu">
+      {% for item in notices %}
+      <p{% if item.unread %} class="unread"{% endif %}>{{ item.text }}</p>
+      {% empty %}
+      <p class="muted">Нет уведомлений</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="menu-group profile">
+    <button type="button" class="profile-btn" aria-haspopup="true" aria-label="Профиль">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>
+      <span class="profile-label">{{ user.name }}</span>
+    </button>
+    <div class="profile-menu">
+      <p class="who">{{ user.name }}</p>
+      <p class="profile-role">{% if user.position %}{{ user.position.name }}{% else %}{{ ROLE_LABELS|label:user.role }}{% endif %}</p>
+      <form method="post" action="/logout">{% csrf_token %}<button class="link" type="submit">Выход</button></form>
+    </div>
+  </div>
+  </div>
+  {% endif %}
+</header>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\detail.html
+### SIZE: 6649 bytes / 138 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/inventory">К списку</a>
+      {% if document.status == "draft" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <button class="slim" type="submit">Начать</button>
+      </form>
+      {% endif %}
+      {% if document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести инвентаризацию и поправить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      {% endif %}
+      {% if document.status == "draft" or document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить инвентаризацию?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }} · {{ document.get_scope_display }}{% if document.status == "counting" or document.status == "posted" %} · посчитано {{ counted }} из {{ lines|length }}{% endif %}{% if document.notes %} · {{ document.notes }}{% endif %}</p>
+{% if products %}
+<p class="hint">Номенклатура: {% for product in products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+{% endif %}
+
+{% if document.status == "draft" %}
+<p class="hint">Нажмите «Начать», чтобы зафиксировать учётный вес паллет на складе.</p>
+{% elif open %}
+<p class="hint">Паспорт не нужен: факт и поставщик вводятся в строке. Ноль — паллеты нет. Если паллеты нет в учёте, добавьте её внизу: на остаток она встанет после проводки.</p>
+{% endif %}
+
+{% if lines %}
+<table class="sheet">
+  <tr>
+    <th>Паллета</th>
+    <th>Товар</th>
+    <th>Место</th>
+    <th>Учёт, кг</th>
+    <th>Факт, кг</th>
+    <th>Поставщик</th>
+    <th>Расхождение</th>
+    {% if open %}<th></th>{% endif %}
+  </tr>
+  {% for line in lines %}
+  <tr>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number|default:line.pallet_id }}</a>{% else %}новая{% endif %}</td>
+    <td>{% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</td>
+    <td>{{ line.place|default:"—" }}</td>
+    <td>{{ line.book_kg|kg }}</td>
+    <td>
+      {% if open %}
+      <input form="line-{{ line.id }}" name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal">
+      {% elif line.fact_kg != None %}{{ line.fact_kg|kg }}{% else %}—{% endif %}
+    </td>
+    <td>
+      {% if open %}
+      <select form="line-{{ line.id }}" name="supplier_id">
+        {% for supplier in suppliers %}
+        <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+        {% endfor %}
+      </select>
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% else %}
+      {{ line.supplier.name }}
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% endif %}
+    </td>
+    <td>{% if line.delta_kg != None %}{{ line.delta_kg|kg }}{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form id="line-{{ line.id }}" method="post" action="/inventory/{{ document.id }}/line" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="line_id" value="{{ line.id }}">
+        <button class="slim" type="submit">Сохранить</button>
+      </form>
+      {% if line.found %}
+      <form method="post" action="/inventory/{{ document.id }}/found/{{ line.id }}/delete" class="inline-form" onsubmit="return confirm('Убрать эту паллету из документа?');">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif document.status != "draft" %}
+<p class="hint">В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+{% endif %}
+{% if open %}
+<h2>Паллета не из учёта</h2>
+<form method="post" action="/inventory/{{ document.id }}/found" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in all_products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% include "partials/cell_pick.html" %}
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\list.html
+### SIZE: 993 bytes / 25 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Инвентаризация</h1>
+    <a class="btn slim" href="/inventory/new">Новая</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Режим</th><th>Статус</th><th>Посчитано</th></tr>
+  {% for document in documents %}
+  <tr data-href="/inventory/{{ document.id }}">
+    <td><a href="/inventory/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_scope_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{% if document.status == "draft" %}—{% else %}{{ document.counted_count }} из {{ document.line_count }}{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\new.html
+### SIZE: 1237 bytes / 29 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая инвентаризация</h1>
+    <a class="btn slim" href="/inventory">К списку</a>
+  </div>
+</div>
+<form method="post" action="/inventory" class="card">{% csrf_token %}
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Режим
+    <select name="scope">
+      <option value="all">Весь склад</option>
+      <option value="products">Выбранные номенклатуры</option>
+    </select>
+  </label>
+  <label>Номенклатура
+    <select name="product_id" multiple size="12">
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Для режима «Выбранные номенклатуры» отметьте товары. Калибр и сорт не ограничивают снимок.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\detail.html
+### SIZE: 10347 bytes / 192 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.get_kind_display }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform">К списку</a>
+      {% if open %}
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести документ и изменить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      <form method="post" action="/transform/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить документ?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }}. Вход {{ input_kg|kg }} кг, выход {{ output_kg|kg }} кг, отход {{ waste_kg|kg }} кг, расхождение {{ gap_kg|kg }} кг, допуск {{ tolerance_kg|kg }} кг.{% if inputs %} {% if fits %}Масса сходится.{% else %}Масса не сходится, проводка остановится.{% endif %}{% endif %}</p>
+{% if document.ledger_waste_kg != None %}
+<p class="hint">В движениях списан отход {{ document.ledger_waste_kg|kg }} кг. Отдельная партия отхода не создаётся. Резерв с исходных паллет снят. Выход получил категории из шапки. Жёсткий резерв входа на выход не переносится.</p>
+{% endif %}
+{% if document.notes and not open %}<p class="hint">{{ document.notes }}</p>{% endif %}
+
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}" class="card grid">{% csrf_token %}
+  <input type="hidden" name="action" value="save">
+  <label>Дата <input type="date" name="doc_date" value="{{ document.doc_date|date:'Y-m-d' }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="{{ document.tolerance_kg|kg }}" inputmode="decimal"></label>
+  <label>Примечание <textarea name="notes">{{ document.notes }}</textarea></label>
+  <fieldset>
+    <legend>Категории выхода</legend>
+    {% for item in consignee_categories %}
+    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}" {% if item.on %}checked{% endif %}> {{ item.name }}</label>
+    {% empty %}
+    <p class="hint">Категорий грузополучателей нет. Выход можно отгрузить любой.</p>
+    {% endfor %}
+    {% if category_conflict %}<p class="hint">У входных паллет нет общей категории. Отметьте, кому можно отгрузить выход, и сохраните шапку.</p>{% elif not document.categories_set %}<p class="hint">Пока шапка не сохранена, отмечены общие категории входа. Пустой список — выход можно отдать любой категории.</p>{% else %}<p class="hint">Список сохранён. Пустой список — выход можно отдать любой категории.</p>{% endif %}
+  </fieldset>
+  <label>Резерв под грузополучателя
+    <select name="output_consignee_id">
+      <option value="">Нет</option>
+      {% for item in consignees %}
+      <option value="{{ item.id }}" {% if document.output_consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Резерв под строку заказа
+    <select name="output_line_id">
+      <option value="">Нет</option>
+      {% for item in order_lines %}
+      <option value="{{ item.id }}" {% if document.output_line_id == item.id %}selected{% endif %}>{{ item.order.number }} · {{ item.order.consignee.name }} · {{ item.product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions"><button class="slim" type="submit">Сохранить шапку</button></div>
+</form>
+<p class="hint">Паллета списывается целиком. Часть веса уходит в дочерние партии, остаток — в отход. Исходную паллету в другую партию не переносят. Дата и допуск берутся из сохранённой шапки.</p>
+{% endif %}
+
+<h2>Вход</h2>
+{% if inputs %}
+<table class="sheet">
+  <tr><th>Паллета</th><th>Партия</th><th>Товар</th><th class="num">Кг</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in inputs %}
+  <tr>
+    <td><a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a></td>
+    <td><a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a></td>
+    <td>{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/inputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Вход пуст.</p>
+{% endif %}
+{% if open %}
+{% if choices %}
+<form method="post" action="/transform/{{ document.id }}/inputs" class="card grid">{% csrf_token %}
+  <label>Паллета на складе
+    <select name="pallet_id" required>
+      <option value=""></option>
+      {% for choice in choices %}
+      <option value="{{ choice.id }}">{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% else %}
+<p class="hint">Свободных паллет на складе нет.</p>
+{% endif %}
+{% endif %}
+
+<h2>Выход</h2>
+<p class="hint">Каждая строка становится дочерней партией и новой паллетой. Сорт берётся из справочника. Жёсткий резерв входа на выход не переносится.</p>
+{% if outputs %}
+<table class="sheet">
+  <tr><th>Товар</th><th>Срок</th><th class="num">Кг</th><th>Партия</th><th>Паллета</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in outputs %}
+  <tr>
+    <td>{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}</td>
+    <td>{% if line.expires_on %}{{ line.expires_on|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{% if line.lot_id %}<a href="/lots/{{ line.lot_id }}">{{ line.lot.number }}</a>{% else %}после проводки{% endif %}</td>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number }}</a>{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/outputs/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="hint">Выхода нет. Весь вход можно списать в отход.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/outputs" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Срок годности <input type="date" name="expires_on"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+
+<h2>Отход</h2>
+<p class="hint">Отход — списание с исходной партии, а не новая партия. Если строка чуть не сходится с весом паллет, в движения уходит разница входа и выхода, пока она внутри допуска.</p>
+{% if wastes %}
+<table class="sheet">
+  <tr><th class="num">Кг</th><th>Причина</th>{% if open %}<th></th>{% endif %}</tr>
+  {% for line in wastes %}
+  <tr>
+    <td class="num">{{ line.qty_kg|kg }}</td>
+    <td>{{ line.reason|default:"—" }}</td>
+    {% if open %}
+    <td>
+      <form method="post" action="/transform/{{ document.id }}/waste/{{ line.id }}/delete" class="inline-form">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif not open %}
+<p class="hint">Отхода в строках нет.</p>
+{% endif %}
+{% if open %}
+<form method="post" action="/transform/{{ document.id }}/waste" class="card grid">{% csrf_token %}
+  <label>Вес, кг <input name="qty_kg" inputmode="decimal" required></label>
+  <label>Причина <input name="reason" maxlength="200"></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\list.html
+### SIZE: 1060 bytes / 28 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Переработка</h1>
+    <div class="actions">
+      <a class="btn slim" href="/transform/new?kind=rework">Переборка</a>
+      <a class="btn slim" href="/transform/new?kind=workshop">Цех</a>
+    </div>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Вид</th><th>Статус</th><th>Вход</th><th>Выход</th></tr>
+  {% for document in documents %}
+  <tr data-href="/transform/{{ document.id }}">
+    <td><a href="/transform/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_kind_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{{ document.input_count }}</td>
+    <td>{{ document.output_count }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\transform\new.html
+### SIZE: 1293 bytes / 23 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая переработка</h1>
+    <a class="btn slim" href="/transform">К списку</a>
+  </div>
+</div>
+<form method="post" action="/transform" class="card">{% csrf_token %}
+  <label>Вид
+    <select name="kind">
+      <option value="rework" {% if kind == "rework" %}selected{% endif %}>Переборка</option>
+      <option value="workshop" {% if kind == "workshop" %}selected{% endif %}>Цех</option>
+    </select>
+  </label>
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Допуск, кг <input name="tolerance_kg" value="0" inputmode="decimal"></label>
+  <p class="hint">Проводка сверяет вход с суммой выхода и отхода. Расхождение больше допуска документ не проводит. Ноль — массы должны сойтись точно. Отход списывается и не становится партией.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\inventory.html
+### SIZE: 4472 bytes / 88 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ document.number }}</h1>
+<p class="hint">{{ document.doc_date|date:"d.m.Y" }}. Паспорт не обязателен: откройте паллету в списке по товару и месту. Скан — если паспорт на месте.</p>
+<form method="get" action="/tsd/inventory/{{ document.id }}">
+  <label>Паллета
+    <input name="barcode" value="{{ barcode }}" autofocus placeholder="Номер или штрихкод">
+  </label>
+  <button class="btn menu">Найти</button>
+</form>
+{% if line %}
+<p>{% if line.pallet_id %}{{ line.pallet.number|default:line.pallet_id }}{% else %}Новая паллета{% endif %} · {% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</p>
+<p class="hint">Учёт {{ line.book_kg|kg }} кг{% if line.place %} · {{ line.place }}{% endif %}.{% if line.lot_id %} В учёте поставщик {{ line.lot.supplier.name }}.{% endif %}</p>
+<form method="post" action="/tsd/inventory/{{ document.id }}">{% csrf_token %}
+  <input type="hidden" name="line_id" value="{{ line.id }}">
+  <label>Факт, кг
+    <input name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal" required>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Ноль — паллеты нет на складе.</p>
+  <button class="btn menu" type="submit">Сохранить</button>
+</form>
+{% elif missing %}
+<p>Паллеты нет в этом документе.</p>
+{% endif %}
+{% if not line %}
+<nav class="digit-menu">
+  {% for item in lines %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}?line={{ item.id }}">
+    <span>{% if item.pallet_id %}{{ item.pallet.number|default:item.pallet_id }}{% else %}Новая{% endif %} · {% if item.lot_id %}{{ item.lot.product.name }} · {{ item.lot.caliber.name }} · {{ item.lot.grade.name }}{% else %}{{ item.product.name }} · {{ item.caliber.name }} · {{ item.grade.name }}{% endif %} · {{ item.supplier.name }} · {% if item.fact_kg != None %}факт {{ item.fact_kg|kg }}{% else %}учёт {{ item.book_kg|kg }}{% endif %} кг{% if item.place %} · {{ item.place }}{% endif %}</span>
+  </a>
+  {% empty %}
+  <p>В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+  {% endfor %}
+</nav>
+<h2>Нет в учёте</h2>
+<form method="post" action="/tsd/inventory/{{ document.id }}/found">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% include "partials/cell_pick.html" %}
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <button class="btn menu" type="submit">Добавить на остаток</button>
+</form>
+{% else %}
+<p><a href="/tsd/inventory/{{ document.id }}">Все паллеты</a></p>
+{% endif %}
+<nav class="digit-menu">
+  <a class="btn menu back" data-digit="0" href="/tsd/inventory"><span class="digit">0</span>К списку</a>
+</nav>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\tsd\inventory_list.html
+### SIZE: 722 bytes / 16 lines
+==============================================================================
+
+{% extends "tsd_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>Инвентаризация</h1>
+<nav class="digit-menu">
+  {% for document in documents %}
+  <a class="btn menu" href="/tsd/inventory/{{ document.id }}" {% if forloop.counter <= 9 %}data-digit="{{ forloop.counter }}"{% endif %}>
+    {% if forloop.counter <= 9 %}<span class="digit">{{ forloop.counter }}</span>{% endif %}
+    <span>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</span>
+  </a>
+  {% empty %}
+  <p>Открытых подсчётов нет.</p>
+  {% endfor %}
+  <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
+</nav>
+{% endblock %}
+

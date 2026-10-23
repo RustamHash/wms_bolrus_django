@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
+from django.contrib import messages
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from apps.catalog.models import ProductGroup
@@ -11,7 +12,9 @@ from apps.common.forms import query_date
 from apps.common.http import roles_required
 from apps.common.kg import as_kg
 from apps.common.xlsx import write_book
-from apps.inventory.services import stock_rows
+from apps.inventory.models import Balance
+from apps.inventory.services import lot_journal, lot_reserve_rows, stock_rows
+from apps.receiving.models import Lot
 from apps.planning.services import demand_report, group_demand
 
 GROUP_FIELDS = (
@@ -31,11 +34,13 @@ DEMAND_COLUMNS = (
     ("spec", "Спецификация", False),
     ("ordered", "Заказано", True),
     ("picked", "Отобрано", True),
-    ("stock", "Остаток", True),
+    ("reserve", "В резерве", True),
+    ("free", "Свободно своей категории", True),
+    ("blocked", "Есть, но нельзя", True),
     ("incoming", "Ожидается приход", True),
     ("short", "Не хватает", True),
 )
-DEFAULT_COLUMNS = ("order", "ship_date", "consignee", "spec", "ordered", "picked", "stock", "incoming", "short")
+DEFAULT_COLUMNS = ("order", "ship_date", "consignee", "spec", "ordered", "picked", "reserve", "free", "blocked", "incoming", "short")
 PICK_FIELDS = (
     ("order_number", "Заказ"),
     ("ship_date", "Отгрузка"),
@@ -46,7 +51,9 @@ PICK_FIELDS = (
     ("spec", "Спецификация"),
     ("ordered", "Заказано"),
     ("picked", "Отобрано"),
-    ("stock", "Остаток"),
+    ("reserve", "В резерве"),
+    ("free", "Свободно своей категории"),
+    ("blocked", "Есть, но нельзя"),
     ("incoming", "Ожидается приход"),
     ("short", "Не хватает"),
 )
@@ -73,6 +80,9 @@ VALUE_KEYS = {
     "order_number": "order_number",
     "ordered": "ordered_kg",
     "picked": "picked_kg",
+    "reserve": "reserve_kg",
+    "free": "free_kg",
+    "blocked": "blocked_kg",
     "stock": "stock_kg",
     "incoming": "incoming_kg",
     "short": "short_kg",
@@ -89,12 +99,59 @@ def reports_home(request):
             "items": [
                 {"href": "/stock", "title": "Остатки"},
                 {"href": "/demand", "title": "Потребность"},
+                {"href": "/reports/nomenclature", "title": "Номенклатура 1С"},
                 {"href": "/orders/customers/revisions", "title": "Расхождения заказов"},
                 {"href": "/pallets", "title": "Паллеты"},
                 {"href": "/transform", "title": "Переработка"},
             ],
         },
     )
+
+
+@roles_required("receiver", "warehouse")
+def nomenclature_report(request):
+    from apps.onec.exceptions import OnecError
+    from apps.onec.nomenclature import nomenclature_rows
+
+    try:
+        rows = nomenclature_rows()
+    except OnecError as exc:
+        messages.error(request, str(exc))
+        return redirect("/reports")
+    header = [
+        ("Код", "header"),
+        ("Наименование", "header"),
+        ("Артикул", "header"),
+        ("Группа", "header"),
+        ("Путь", "header"),
+        ("Единица", "header"),
+        ("Это группа", "header"),
+        ("Пометка удаления", "header"),
+    ]
+    sheet = [header]
+    for row in rows:
+        sheet.append(
+            [
+                row["code"],
+                row["name"],
+                row["article"],
+                row["group"],
+                row["path"],
+                row["unit"],
+                "да" if row["folder"] else "",
+                "да" if row["deleted"] else "",
+            ]
+        )
+    if len(sheet) == 1:
+        sheet.append([("В 1С нет номенклатуры", "text")])
+    content = write_book([("Номенклатура", sheet)])
+    name = "номенклатура-1с.xlsx"
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename=nomenclature.xlsx; filename*=UTF-8''{quote(name)}"
+    return response
 
 
 @roles_required("receiver", "warehouse")
@@ -118,6 +175,30 @@ def stock(request):
         request,
         "stock.html",
         {"built": built, "rows": rows, "product": product, "supplier": supplier},
+    )
+
+
+@roles_required("receiver", "warehouse")
+def stock_lot(request, lot_id):
+    lot = get_object_or_404(
+        Lot.objects.select_related("product", "caliber", "grade", "supplier", "receipt"),
+        pk=lot_id,
+    )
+    product = (request.GET.get("product") or "").strip()
+    supplier = (request.GET.get("supplier") or "").strip()
+    back = "/stock?run=1"
+    if product or supplier:
+        back += f"&product={quote(product)}&supplier={quote(supplier)}"
+    return render(
+        request,
+        "stock_lot.html",
+        {
+            "lot": lot,
+            "balance": Balance.objects.filter(lot_id=lot.id).first(),
+            "lines": lot_reserve_rows(lot.id),
+            "journal": lot_journal(lot.id),
+            "back": back,
+        },
     )
 
 
@@ -480,6 +561,9 @@ def _demand_categories(request):
 _LINE_KG = {
     "ordered": "ordered_kg",
     "picked": "picked_kg",
+    "reserve": "reserve_kg",
+    "free": "free_kg",
+    "blocked": "blocked_kg",
     "stock": "stock_kg",
     "incoming": "incoming_kg",
     "short": "short_kg",
@@ -530,6 +614,9 @@ def _demand_order_rows(context) -> list[list]:
             "title": "Итого",
             "ordered_kg": context["ordered_total"],
             "picked_kg": context["picked_total"],
+            "reserve_kg": context["reserve_total"],
+            "free_kg": context["free_total"],
+            "blocked_kg": context["blocked_total"],
             "stock_kg": context["stock_total"],
             "incoming_kg": context["incoming_total"],
             "short_kg": context["short_total"],
@@ -646,6 +733,9 @@ def demand(request):
         "has_orders": False,
         "ordered_total": Decimal("0"),
         "picked_total": Decimal("0"),
+        "reserve_total": Decimal("0"),
+        "free_total": Decimal("0"),
+        "blocked_total": Decimal("0"),
         "stock_total": Decimal("0"),
         "incoming_total": Decimal("0"),
         "short_total": Decimal("0"),
@@ -674,6 +764,9 @@ def demand(request):
             "has_orders": report["has_orders"],
             "ordered_total": as_kg(sum((row["ordered_kg"] for row in lines), Decimal("0"))),
             "picked_total": as_kg(sum((row["picked_kg"] for row in lines), Decimal("0"))),
+            "reserve_total": as_kg(sum((row["reserve_kg"] for row in lines), Decimal("0"))),
+            "free_total": as_kg(sum((row["free_kg"] for row in lines), Decimal("0"))),
+            "blocked_total": as_kg(sum((row["blocked_kg"] for row in lines), Decimal("0"))),
             "stock_total": as_kg(sum((row["stock_kg"] for row in lines), Decimal("0"))),
             "incoming_total": as_kg(sum((row["incoming_kg"] for row in lines), Decimal("0"))),
             "short_total": as_kg(sum((row["short_kg"] for row in lines), Decimal("0"))),

@@ -17,6 +17,7 @@ from apps.inventory.count import (
     start_document,
 )
 from apps.inventory.models import InventoryDocument, InventoryLine
+from apps.storage.places import place_form_context, resolve_place
 
 
 def _documents():
@@ -38,6 +39,7 @@ def _lines(document: InventoryDocument):
         "caliber",
         "grade",
         "counted_by",
+        "cell__zone",
     ).order_by("id")
 
 
@@ -109,6 +111,7 @@ def _detail_context(document: InventoryDocument) -> dict:
         "grades": Grade.objects.order_by("sort_order", "name"),
         "counted": sum(1 for line in lines if line.fact_kg is not None),
         "open": document.status == InventoryDocument.Status.COUNTING,
+        **place_form_context(),
     }
 
 
@@ -187,7 +190,7 @@ def inventory_add_found(request, doc_id):
             caliber_id=_choice_id(request.POST, "caliber_id", "калибр"),
             grade_id=_choice_id(request.POST, "grade_id", "сорт"),
             supplier_id=_choice_id(request.POST, "supplier_id", "поставщика"),
-            location=text(request.POST, "location"),
+            cell=resolve_place(request.POST, required=True),
             qty_kg=parse_fact_kg(text(request.POST, "fact_kg")),
             user=request.user,
         )

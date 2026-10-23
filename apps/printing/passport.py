@@ -51,10 +51,10 @@ def _context(pallet, units) -> dict:
 
 
 def _client_name(pallet) -> str:
-    if pallet.reserved_client_id:
-        return (pallet.reserved_client.name or "").strip()
-    if pallet.order_id and pallet.order.client_id:
-        return (pallet.order.client.name or "").strip()
+    if pallet.reserved_consignee_id:
+        return (pallet.reserved_consignee.name or "").strip()
+    if pallet.order_id and pallet.order.consignee_id:
+        return (pallet.order.consignee.name or "").strip()
     return ""
 
 

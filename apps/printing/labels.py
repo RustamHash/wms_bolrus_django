@@ -7,8 +7,8 @@ FONT = "3"
 FONT_WIDTH = 16
 FONT_HEIGHT = 24
 
-# Ширина, высота и зазор, мм. Свой размер у каждого документа.
-# Зазор 0: длина берётся из высоты этого задания, датчик зазора не переключается.
+# Поле для вёрстки, мм. Высоту этикетки (SIZE) в принтер не шлём: она остаётся той,
+# что настроена на TSC. Зазор нужен только чтобы найти разрез и не печатать на две наклейки.
 LABEL_MM = {
     "unit": (58, 40, 0),
     "pallet": (100, 70, 0),
@@ -51,27 +51,34 @@ def _wrap(text: str, max_chars: int) -> list[str]:
     return lines
 
 
-def _label(lines: list[str], barcode: str, label_w: int, label_h: int) -> str:
-    barcode_h = 64
-    text_bottom = label_h - barcode_h - 28
-    if text_bottom < FONT_HEIGHT + 16:
-        text_bottom = max(FONT_HEIGHT + 16, label_h - 8)
-        barcode_y = None
-    else:
-        barcode_y = text_bottom + 6
+def _label(lines: list[str], barcode: str, label_w: int, label_h: int, dpi: int, copies: int = 1) -> str:
+    # 5 мм слева: печатающая головка TSC не начинает с самого края наклейки.
+    left = mm_to_dots(5, dpi)
+    top = mm_to_dots(3, dpi)
+    right = mm_to_dots(4, dpi)
+    bottom = mm_to_dots(3, dpi)
+    gap = mm_to_dots(2, dpi)
+    barcode_h = mm_to_dots(10, dpi)
+    human = mm_to_dots(4, dpi) if barcode else 0
+    band = barcode_h + human + gap if barcode else 0
+    text_bottom = label_h - bottom - band
+    if text_bottom < top + FONT_HEIGHT:
+        text_bottom = label_h - bottom
+        band = 0
 
+    usable = max(1, label_w - left - right)
     scale = 2
     step = FONT_HEIGHT * scale + 4
-    max_chars = max(1, (label_w - 40) // (FONT_WIDTH * scale))
+    max_chars = max(1, usable // (FONT_WIDTH * scale))
     wrapped: list[str] = []
     for line in lines:
         wrapped.extend(_wrap(line, max_chars))
     if not wrapped:
         wrapped = [""]
-    if 16 + len(wrapped) * step > text_bottom:
+    if top + len(wrapped) * step > text_bottom:
         scale = 1
         step = FONT_HEIGHT + 4
-        max_chars = max(1, (label_w - 40) // FONT_WIDTH)
+        max_chars = max(1, usable // FONT_WIDTH)
         wrapped = []
         for line in lines:
             wrapped.extend(_wrap(line, max_chars))
@@ -79,30 +86,38 @@ def _label(lines: list[str], barcode: str, label_w: int, label_h: int) -> str:
             wrapped = [""]
 
     commands = ["CLS\r\n", "CODEPAGE 1251\r\n"]
-    y = 16
+    y = top
     for line in wrapped:
         if y + FONT_HEIGHT * scale > text_bottom:
             break
-        commands.append(f'TEXT 20,{y},"{FONT}",0,{scale},{scale},"{line}"\r\n')
+        commands.append(f'TEXT {left},{y},"{FONT}",0,{scale},{scale},"{line}"\r\n')
         y += step
-    if barcode_y is not None and barcode:
-        commands.append(f'BARCODE 16,{barcode_y},"128",{barcode_h},1,0,2,2,"{_clean(barcode)}"\r\n')
-    commands.append("PRINT 1,1\r\n")
+    if band and barcode:
+        # Тот же левый край, что у текста, и сразу под последней строкой.
+        # wide=4: у Code 128 широкая полоса вдвое шире узкой, иначе штрихкод съезжает.
+        barcode_y = min(y + gap, label_h - bottom - barcode_h - human)
+        commands.append(f'BARCODE {left},{barcode_y},"128",{barcode_h},1,0,2,4,"{_clean(barcode)}"\r\n')
+    copies = max(1, int(copies))
+    commands.append(f"PRINT 1,{copies}\r\n")
     return "".join(commands)
 
 
-def _job(printer, kind: str, labels: list[tuple[list[str], str]]) -> bytes:
-    width_mm, height_mm, gap_mm = LABEL_MM[kind]
+def _job(printer, kind: str, labels: list[tuple[list[str], str]], copies: int = 1) -> bytes:
+    width_mm, height_mm, _gap_mm = LABEL_MM[kind]
     dpi = int(printer.dpi or 203)
     label_w = mm_to_dots(width_mm, dpi)
     label_h = mm_to_dots(height_mm, dpi)
+    gap_mm = int(getattr(printer, "gap_mm", 0) or 0)
+    if gap_mm <= 0:
+        gap_mm = 2
     parts = [
-        f"SIZE {width_mm} mm,{height_mm} mm\r\n",
         f"GAP {gap_mm} mm,0 mm\r\n",
+        "OFFSET 0 mm\r\n",
+        "REFERENCE 0,0\r\n",
         "DIRECTION 1\r\n",
     ]
     for lines, barcode in labels:
-        parts.append(_label(lines, barcode, label_w, label_h))
+        parts.append(_label(lines, barcode, label_w, label_h, dpi, copies))
     return "".join(parts).encode("cp1251", errors="replace")
 
 
@@ -110,9 +125,39 @@ def unit_label(printer, unit) -> bytes:
     return _job(printer, "unit", [(unit_lines(unit), unit.barcode)])
 
 
-def pallet_labels(printer, pallet) -> bytes:
+def _supplier_line(groups) -> str:
+    names = []
+    for group in groups:
+        for unit in group.units:
+            name = (unit.lot.supplier.name or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return ", ".join(names)
+
+
+def _party_lines(pallet) -> list[str]:
+    lines = []
+    if pallet.order_id:
+        number = (pallet.order.number or "").strip()
+        if number:
+            lines.append(f"Заказ {number}")
+    if pallet.reserved_consignee_id:
+        client = (pallet.reserved_consignee.name or "").strip()
+    elif pallet.order_id and pallet.order.consignee_id:
+        client = (pallet.order.consignee.name or "").strip()
+    else:
+        client = ""
+    if client:
+        lines.append(client)
+    return lines
+
+
+def pallet_labels(printer, pallet, copies: int = 2) -> bytes:
     groups = group_units(pallet.units.all())
-    lines = [pallet.number, "Вход" if pallet.kind == "inbound" else "Выход"]
+    lines = [pallet.number, *_party_lines(pallet)]
+    supplier = _supplier_line(groups)
+    if supplier:
+        lines.append(supplier)
     if pallet.kind == "inbound" and len(groups) == 1:
         group = groups[0]
         lines.extend(
@@ -132,7 +177,7 @@ def pallet_labels(printer, pallet) -> bytes:
         lines.append("Пусто")
     capacity = 8
     chunks = [lines[i : i + capacity] for i in range(0, len(lines), capacity)] or [lines]
-    return _job(printer, "pallet", [(chunk, pallet.barcode) for chunk in chunks])
+    return _job(printer, "pallet", [(chunk, pallet.barcode) for chunk in chunks], copies)
 
 
 def shipment_sticker(printer, shipment, groups) -> bytes:

@@ -14,7 +14,7 @@
   <input type="hidden" name="unit_id" value="{{ obj.id }}">
   <input type="hidden" name="line_id" value="{{ line.id }}">
   <input type="hidden" name="barcode" value="{{ barcode }}">
-  <p>{{ line.order.number }} · {{ line.order.client.name }}</p>
+  <p>{{ line.order.number }} · {{ line.order.consignee.name }}</p>
   <p>{{ line|describe }}</p>
   <p>Осталось {{ line|remaining|kg }} кг</p>
   {% if reason %}<p>{{ reason }}</p>{% else %}<button>Назначить</button>{% endif %}
@@ -29,7 +29,7 @@
   <input type="hidden" name="pallet_id" value="{{ obj.id }}">
   <input type="hidden" name="line_id" value="{{ line.id }}">
   <input type="hidden" name="barcode" value="{{ barcode }}">
-  <p>{{ line.order.number }} · {{ line.order.client.name }}</p>
+  <p>{{ line.order.number }} · {{ line.order.consignee.name }}</p>
   <p>{{ line|describe }}</p>
   <button>Назначить паллету</button>
 </form>

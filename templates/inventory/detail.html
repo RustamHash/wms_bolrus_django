@@ -55,7 +55,7 @@
   <tr>
     <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number|default:line.pallet_id }}</a>{% else %}новая{% endif %}</td>
     <td>{% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</td>
-    <td>{{ line.location|default:"—" }}</td>
+    <td>{{ line.place|default:"—" }}</td>
     <td>{{ line.book_kg|kg }}</td>
     <td>
       {% if open %}
@@ -130,7 +130,7 @@
       {% endfor %}
     </select>
   </label>
-  <label>Место <input name="location" maxlength="120"></label>
+  {% include "partials/cell_pick.html" %}
   <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
   <div class="actions"><button type="submit">Добавить</button></div>
 </form>

@@ -26,7 +26,7 @@
     <td>{{ row.revision.created_at|date:"d.m.Y H:i" }}</td>
     <td><a href="/orders/{{ row.revision.order_id }}/revisions">{{ row.revision.order.number }}</a></td>
     <td>{{ row.revision.order.external_number|default:"" }}</td>
-    <td>{% if row.revision.order.consignee_id %}{{ row.revision.order.consignee.name }}{% else %}{{ row.revision.order.client.name }}{% endif %}</td>
+    <td>{% if row.revision.order.consignee_id %}{{ row.revision.order.consignee.name }}{% endif %}</td>
     <td>{{ row.revision.revision }}</td>
     <td>{{ row.summary }}</td>
   </tr>

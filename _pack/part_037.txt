@@ -1,0 +1,6 @@
+﻿    <button name="action" value="tsc">Принять и TSC</button>
+    <button name="action" value="network">Принять и сетевой</button>
+    <button name="action" value="both">Оба принтера</button>
+  </div>
+</form>
+

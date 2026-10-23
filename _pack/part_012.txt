@@ -1,0 +1,25 @@
+﻿        "external": external_updated,
+        "groups": ProductGroup.objects.count(),
+    }
+
+
+def _warehouse_group(name: str) -> str:
+    return GROUP_NAMES.get(name.casefold(), name)[:120]
+
+
+def _group_path(row: dict, by_key: dict[str, dict]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    parent = str(row.get("Parent_Key") or "")
+    while parent and parent != EMPTY_GUID and parent not in seen:
+        seen.add(parent)
+        folder = by_key.get(parent)
+        if folder is None:
+            break
+        title = str(folder.get("Description") or "").strip()
+        if title:
+            names.append(title)
+        parent = str(folder.get("Parent_Key") or "")
+    names.reverse()
+    return names
+

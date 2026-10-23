@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% load wms %}
-{% block title %}{% if order %}{{ order.number }}{% else %}Заказ покупателя{% endif %}{% endblock %}
+{% block title %}{% if order %}{{ order.number }}{% else %}Заказ{% endif %}{% endblock %}
 {% block content %}
-<h1>Заказ покупателя{% if order %} {{ order.number }} от {{ order.ship_date|date:"d.m.Y" }}{% endif %}</h1>
+<h1>Заказ{% if order %} {{ order.number }} от {{ order.ship_date|date:"d.m.Y" }}{% endif %}</h1>
 {% if order and order.revision > 1 %}
 <p class="hint">Версия {{ order.revision }}. <a href="/orders/{{ order.id }}/revisions">Расхождения</a></p>
 {% endif %}
@@ -37,16 +37,12 @@
 {% endif %}
 <form id="customer-order" method="post" action="{% if order %}/orders/{{ order.id }}{% else %}/orders{% endif %}">{% csrf_token %}
   <div class="doc-head">
-    <label>Покупатель
-      <select name="client_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
-        {% for item in clients %}
-        <option value="{{ item.id }}" {% if order and order.client_id == item.id %}selected{% endif %}>{{ item.name }}</option>
-        {% endfor %}
-      </select>
+    <label>Номер
+      <input name="number" value="{% if order %}{{ order.number }}{% endif %}" placeholder="Номер 1С" {% if not editable %}disabled{% endif %}>
     </label>
     <label>Грузополучатель
-      <select name="consignee_id" {% if not editable %}disabled{% endif %}>
-        <option value="">Как покупатель</option>
+      <select name="consignee_id" {% if not editable %}disabled{% endif %} {% if editable %}required{% endif %}>
+        <option value=""></option>
         {% for item in consignees %}
         <option value="{{ item.id }}" data-grade="{% if item.category_id %}{{ item.category.grade_id }}{% endif %}" {% if order and order.consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
         {% endfor %}
@@ -78,6 +74,14 @@
       <input name="shipping_terms" value="{% if order %}{{ order.shipping_terms }}{% else %}{% endif %}" {% if not editable %}disabled{% endif %}>
     </label>
   </div>
+  {% if order %}
+  <div class="settings-tabs" id="order-tabs">
+    <button type="button" class="settings-tab on" data-order-tab="plan">План</button>
+    <button type="button" class="settings-tab" data-order-tab="fact">Факт</button>
+    <button type="button" class="settings-tab" data-order-tab="lots">Партии</button>
+  </div>
+  {% endif %}
+  <div data-order-pane="plan">
   <div class="doc-bar">
     {% if editable %}<button type="button" class="slim" id="add-line">+</button>{% endif %}
   </div>
@@ -161,7 +165,7 @@
     </tr>
     {% endfor %}
     {% else %}
-    {% for line in order.lines %}
+    {% for line in order.lines.all %}
     <tr>
       <td class="n"></td>
       <td>{% if line.external_title %}{{ line.external_title }}{% else %}—{% endif %}</td>
@@ -177,6 +181,46 @@
     {% endif %}
   </table>
   <p class="doc-total">Итого <b>{% if order %}{{ order.lines.all|goods_kg|kg }}{% else %}0,000{% endif %}</b> кг</p>
+  </div>
+  {% if order %}
+  <div data-order-pane="fact" hidden>
+    <p class="hint">Факт собран из движений отбора. Неотобранное остаётся в плане и с остатка не списывается.</p>
+    <table class="sheet">
+      <tr><th>Номенклатура</th><th class="num">План, кг</th><th class="num">Факт, кг</th><th class="num">Расхождение, кг</th></tr>
+      {% for row in fact_rows %}
+      <tr>
+        <td>{{ row.line.product_title }}</td>
+        <td class="num">{{ row.plan|kg }}</td>
+        <td class="num">{{ row.fact|kg }}</td>
+        <td class="num">{{ row.gap|kg }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">Строк плана нет</td></tr>
+      {% endfor %}
+    </table>
+    <p class="doc-total">План <b>{{ plan_total|kg }}</b> кг · факт <b>{{ fact_total|kg }}</b> кг · не отобрано <b>{{ gap_total|kg }}</b> кг</p>
+  </div>
+  <div data-order-pane="lots" hidden>
+    <p class="hint">Каждая строка — движение отбора: какой товар и из какой партии ушёл в заказ.</p>
+    <table class="sheet">
+      <tr><th>Партия</th><th>Товар</th><th>Калибр</th><th>Сорт</th><th>Поставщик</th><th>Паллета</th><th>Задание</th><th class="num">Кг</th></tr>
+      {% for movement in pick_lots %}
+      <tr>
+        <td>{% if movement.lot.number %}{{ movement.lot.number }}{% else %}#{{ movement.lot_id }}{% endif %}</td>
+        <td>{{ movement.lot.product.name }}</td>
+        <td>{{ movement.lot.caliber.name }}</td>
+        <td>{{ movement.lot.grade.name }}</td>
+        <td>{{ movement.lot.supplier.name }}</td>
+        <td>{% if movement.pallet_id %}{{ movement.pallet.number }}{% endif %}</td>
+        <td>{% if movement.task_id %}<a href="/tasks/{{ movement.task_id }}">{{ movement.task.number }}</a>{% endif %}</td>
+        <td class="num">{{ movement.qty_kg|kg }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Отбора ещё нет</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
   {% if can_status %}<button>Записать</button>{% endif %}
 </form>
 <template id="customer-line">
@@ -204,6 +248,15 @@
 {% endblock %}
 {% block scripts %}
 <script>
+  document.querySelectorAll("[data-order-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const name = button.dataset.orderTab;
+      document.querySelectorAll("[data-order-tab]").forEach((item) => item.classList.toggle("on", item === button));
+      document.querySelectorAll("[data-order-pane]").forEach((pane) => {
+        pane.hidden = pane.dataset.orderPane !== name;
+      });
+    });
+  });
   const table = document.getElementById("lines");
 
   function renumber() {

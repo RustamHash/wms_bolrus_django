@@ -5,11 +5,11 @@
 <h1>Заказы</h1>
 {% if user.is_office %}<p><a class="btn" href="/orders/new">Новый заказ</a></p>{% endif %}
 <table>
-  <tr><th>Номер</th><th>Клиент</th><th>Продавец</th><th>Дата</th><th>Статус</th></tr>
+  <tr><th>Номер</th><th>Грузополучатель</th><th>Продавец</th><th>Дата</th><th>Статус</th></tr>
   {% for order in orders %}
   <tr>
     <td><a href="/orders/{{ order.id }}">{{ order.number }}</a></td>
-    <td>{{ order.client.name }}</td>
+    <td>{{ order.consignee.name }}</td>
     <td>{{ order.seller.name }}</td>
     <td>{{ order.ship_date|date:"d.m.Y" }}</td>
     <td>{{ DOC_STATUS|label:order.status }}</td>

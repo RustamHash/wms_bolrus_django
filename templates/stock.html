@@ -30,7 +30,9 @@
     <td><a href="/lots/{{ row.lot_id }}">{{ row.number }}</a></td>
     <td>{{ row.product }}</td><td>{{ row.caliber }}</td><td>{{ row.grade }}</td>
     <td>{{ row.supplier }}</td><td>{{ row.source }}</td><td>{{ row.receipt }}</td>
-    <td class="num">{{ row.free_kg|kg }}</td><td class="num">{{ row.reserved_kg|kg }}</td><td class="num">{{ row.picked_kg|kg }}</td>
+    <td class="num">{{ row.free_kg|kg }}</td>
+    <td class="num">{% if row.reserved_kg %}<a href="/stock/{{ row.lot_id }}?product={{ product|urlencode }}&amp;supplier={{ supplier|urlencode }}">{{ row.reserved_kg|kg }}</a>{% else %}{{ row.reserved_kg|kg }}{% endif %}</td>
+    <td class="num">{{ row.picked_kg|kg }}</td>
   </tr>
   {% empty %}
   <tr><td colspan="10">{% if product or supplier %}Ничего не найдено.{% else %}Остатков нет{% endif %}</td></tr>

@@ -1,8 +1,10 @@
 from django.contrib import messages
+from django.db.models import ProtectedError
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.catalog.models import Consignee, ConsigneeCategory, DeliveryZone, ExternalProduct, Grade, Product, ProductGroup
+from apps.storage.models import WarehouseZone
 from apps.catalog.services import MODELS, NAV, TITLES, apply_master, assign_consignee_grades, assign_consignee_zone, master_rows
 from apps.common.exceptions import WarehouseError
 from apps.common.http import done, guarded, roles_required
@@ -115,6 +117,7 @@ def _form_context(kind, item, *, external_product_id=None):
         "zones": list(DeliveryZone.objects.order_by("name")),
         "grades": list(Grade.objects.order_by("sort_order", "name")),
         "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
+        "warehouse_zones": list(WarehouseZone.objects.order_by("code")),
         "external_product_id": external_product_id,
         "installed_printers": [],
         "installed_error": "",
@@ -215,7 +218,10 @@ def master_delete(request, kind, item_id):
         item = MODELS[kind].objects.filter(pk=item_id).first()
         if item is None:
             raise WarehouseError("Запись не найдена")
-        item.delete()
+        try:
+            item.delete()
+        except ProtectedError as exc:
+            raise WarehouseError("Запись используется и её нельзя удалить") from exc
 
     result, response = guarded(request, f"/masters/{kind}", action)
     if response:

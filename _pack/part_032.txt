@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: project_structure_clean.txt
+### SIZE: 14609 bytes / 384 lines
+==============================================================================
+
+[DIR]  .github\
+[DIR]  apps\
+[DIR]  config\
+[DIR]  deploy\
+[DIR]  docs\
+[DIR]  scripts\
+[DIR]  static\
+[DIR]  templates\
+       .env
+       .env.example
+       .gitignore
+       manage.py
+       project_structure.txt
+       project_structure_clean.txt
+       README.md
+       requirements-server.txt
+       requirements.txt
+       wms_inbound_sorting_spec.md
+       _cells.txt
+[DIR]  .github\workflows\
+       .github\workflows\deploy.yml
+[DIR]  apps\accounts\
+[DIR]  apps\catalog\
+[DIR]  apps\common\
+[DIR]  apps\inventory\
+[DIR]  apps\logistics\
+[DIR]  apps\onec\
+[DIR]  apps\picking\
+[DIR]  apps\planning\
+[DIR]  apps\printing\
+[DIR]  apps\receiving\
+[DIR]  apps\shipping\
+[DIR]  apps\storage\
+[DIR]  apps\tsd\
+       apps\__init__.py
+[DIR]  apps\accounts\management\
+[DIR]  apps\accounts\migrations\
+       apps\accounts\access.py
+       apps\accounts\apps.py
+       apps\accounts\gate.py
+       apps\accounts\models.py
+       apps\accounts\services.py
+       apps\accounts\views.py
+       apps\accounts\__init__.py
+[DIR]  apps\accounts\management\commands\
+       apps\accounts\management\__init__.py
+       apps\accounts\management\commands\seed.py
+       apps\accounts\management\commands\__init__.py
+       apps\accounts\migrations\0001_initial.py
+       apps\accounts\migrations\0002_employee_access.py
+       apps\accounts\migrations\0003_position.py
+       apps\accounts\migrations\0004_employee_fio.py
+       apps\accounts\migrations\0005_user_access_managed.py
+       apps\accounts\migrations\0006_user_screen_permissions.py
+       apps\accounts\migrations\0007_user_employee.py
+       apps\accounts\migrations\0008_one_person.py
+       apps\accounts\migrations\0009_drop_user_employee.py
+       apps\accounts\migrations\__init__.py
+[DIR]  apps\catalog\migrations\
+       apps\catalog\apps.py
+       apps\catalog\families.py
+       apps\catalog\from_orders.py
+       apps\catalog\grade_policy.py
+       apps\catalog\import_nomenclature.py
+       apps\catalog\models.py
+       apps\catalog\parties.py
+       apps\catalog\services.py
+       apps\catalog\views.py
+       apps\catalog\__init__.py
+       apps\catalog\migrations\0001_initial.py
+       apps\catalog\migrations\0002_customer_order_import.py
+       apps\catalog\migrations\0003_parties.py
+       apps\catalog\migrations\0004_consignee_address_zone.py
+       apps\catalog\migrations\0005_consignee_shipping_terms.py
+       apps\catalog\migrations\0006_supplier_code.py
+       apps\catalog\migrations\0007_consignee_allowed_grades.py
+       apps\catalog\migrations\0008_consignee_category.py
+       apps\catalog\migrations\0009_consignee_delivery_order.py
+       apps\catalog\migrations\0010_temryuk_route_zones.py
+       apps\catalog\migrations\0011_belorechensk_sochi_apsheronsk_routes.py
+       apps\catalog\migrations\0012_category_allowed_grades.py
+       apps\catalog\migrations\0013_consignee_only.py
+       apps\catalog\migrations\__init__.py
+[DIR]  apps\common\migrations\
+[DIR]  apps\common\templatetags\
+       apps\common\apps.py
+       apps\common\constants.py
+       apps\common\context.py
+       apps\common\exceptions.py
+       apps\common\fonts.py
+       apps\common\forms.py
+       apps\common\http.py
+       apps\common\kg.py
+       apps\common\models.py
+       apps\common\notices.py
+       apps\common\numbers.py
+       apps\common\periods.py
+       apps\common\present.py
+       apps\common\xlsx.py
+       apps\common\__init__.py
+       apps\common\migrations\0001_notices.py
+       apps\common\migrations\__init__.py
+       apps\common\templatetags\wms.py
+       apps\common\templatetags\__init__.py
+[DIR]  apps\inventory\migrations\
+       apps\inventory\apps.py
+       apps\inventory\count.py
+       apps\inventory\count_views.py
+       apps\inventory\models.py
+       apps\inventory\services.py
+       apps\inventory\tests.py
+       apps\inventory\transform.py
+       apps\inventory\transform_views.py
+       apps\inventory\views.py
+       apps\inventory\__init__.py
+       apps\inventory\migrations\0001_initial.py
+       apps\inventory\migrations\0002_balance_reserved.py
+       apps\inventory\migrations\0003_inventory_document.py
+       apps\inventory\migrations\0004_inventory_found_line.py
+       apps\inventory\migrations\0005_transform_document.py
+       apps\inventory\migrations\0006_transform_output_reserve.py
+       apps\inventory\migrations\0007_pick_kg_plan.py
+       apps\inventory\migrations\0008_consignee_only.py
+       apps\inventory\migrations\0009_pick_leaves_stock.py
+       apps\inventory\migrations\0010_line_cell.py
+       apps\inventory\migrations\__init__.py
+[DIR]  apps\logistics\migrations\
+       apps\logistics\apps.py
+       apps\logistics\dirs.py
+       apps\logistics\models.py
+       apps\logistics\queries.py
+       apps\logistics\routes.py
+       apps\logistics\routing.py
+       apps\logistics\schedule.py
+       apps\logistics\shift.py
+       apps\logistics\views.py
+       apps\logistics\__init__.py
+       apps\logistics\migrations\0001_initial.py
+       apps\logistics\migrations\0002_driver_capacity.py
+       apps\logistics\migrations\0003_vehicle_capacity.py
+       apps\logistics\migrations\0004_route_actual_load.py
+       apps\logistics\migrations\0005_route_docked.py
+       apps\logistics\migrations\0006_route_gate.py
+       apps\logistics\migrations\__init__.py
+[DIR]  apps\onec\management\
+       apps\onec\apps.py
+       apps\onec\catalogs.py
+       apps\onec\client.py
+       apps\onec\dto.py
+       apps\onec\exceptions.py
+       apps\onec\nomenclature.py
+       apps\onec\orders.py
+       apps\onec\sync.py
+       apps\onec\__init__.py
+[DIR]  apps\onec\management\commands\
+       apps\onec\management\__init__.py
+       apps\onec\management\commands\onec_orders.py
+       apps\onec\management\commands\onec_sync_orders.py
+       apps\onec\management\commands\__init__.py
+[DIR]  apps\picking\migrations\
+       apps\picking\apps.py
+       apps\picking\models.py
+       apps\picking\services.py
+       apps\picking\tests.py
+       apps\picking\views.py
+       apps\picking\__init__.py
+       apps\picking\migrations\0001_pick_kg_plan.py
+       apps\picking\migrations\__init__.py
+[DIR]  apps\planning\migrations\
+       apps\planning\apps.py
+       apps\planning\import_customer.py
+       apps\planning\import_supplier.py
+       apps\planning\models.py
+       apps\planning\purchase_revisions.py
+       apps\planning\reserve.py
+       apps\planning\revisions.py
+       apps\planning\services.py
+       apps\planning\spec.py
+       apps\planning\views.py
+       apps\planning\__init__.py
+       apps\planning\migrations\0001_initial.py
+       apps\planning\migrations\0002_customer_order_import.py
+       apps\planning\migrations\0003_parties.py
+       apps\planning\migrations\0004_order_revision.py
+       apps\planning\migrations\0005_order_line_feedback.py
+       apps\planning\migrations\0006_purchase_external_number.py
+       apps\planning\migrations\0007_purchase_order_revision.py
+       apps\planning\migrations\0008_purchase_line_external.py
+       apps\planning\migrations\0009_taskline_caliber_optional.py
+       apps\planning\migrations\0010_purchase_customer_line.py
+       apps\planning\migrations\0011_task_work_status.py
+       apps\planning\migrations\0012_order_line_grade_manual.py
+       apps\planning\migrations\0013_purchase_gate.py
+       apps\planning\migrations\0014_receive_assignee_printer.py
+       apps\planning\migrations\0015_consignee_only.py
+       apps\planning\migrations\0016_pick_order_status.py
+       apps\planning\migrations\0017_receive_assigned_status.py
+       apps\planning\migrations\0018_pick_status_flow.py
+       apps\planning\migrations\0019_pick_partial_plan.py
+       apps\planning\migrations\__init__.py
+[DIR]  apps\printing\docx\
+[DIR]  apps\printing\migrations\
+       apps\printing\apps.py
+       apps\printing\installed.py
+       apps\printing\labels.py
+       apps\printing\models.py
+       apps\printing\passport.py
+       apps\printing\pdfs.py
+       apps\printing\print_queue.ps1
+       apps\printing\services.py
+       apps\printing\views.py
+       apps\printing\word_pdf.ps1
+       apps\printing\__init__.py
+       apps\printing\docx\pallet_passport.docx
+       apps\printing\migrations\0001_initial.py
+       apps\printing\migrations\__init__.py
+[DIR]  apps\receiving\migrations\
+       apps\receiving\apps.py
+       apps\receiving\models.py
+       apps\receiving\services.py
+       apps\receiving\views.py
+       apps\receiving\__init__.py
+       apps\receiving\migrations\0001_initial.py
+       apps\receiving\migrations\0002_lot_passport.py
+       apps\receiving\migrations\__init__.py
+[DIR]  apps\shipping\migrations\
+       apps\shipping\apps.py
+       apps\shipping\models.py
+       apps\shipping\services.py
+       apps\shipping\views.py
+       apps\shipping\__init__.py
+       apps\shipping\migrations\0001_initial.py
+       apps\shipping\migrations\__init__.py
+[DIR]  apps\storage\migrations\
+       apps\storage\apps.py
+       apps\storage\categories.py
+       apps\storage\models.py
+       apps\storage\places.py
+       apps\storage\services.py
+       apps\storage\views.py
+       apps\storage\__init__.py
+       apps\storage\migrations\0001_initial.py
+       apps\storage\migrations\0002_pallet_reserved_line.py
+       apps\storage\migrations\0003_pallet_reserved_client.py
+       apps\storage\migrations\0004_pallet_allowed_categories.py
+       apps\storage\migrations\0005_consignee_only.py
+       apps\storage\migrations\0006_warehouse_cells.py
+       apps\storage\migrations\__init__.py
+       apps\tsd\apps.py
+       apps\tsd\views.py
+       apps\tsd\__init__.py
+       config\admin_site.py
+       config\register_admin.py
+       config\settings.py
+       config\urls.py
+       config\wsgi.py
+       config\__init__.py
+[DIR]  deploy\traefik\
+[DIR]  deploy\windows\
+       deploy\99-wms-fonts.conf
+       deploy\bootstrap-server.sh
+       deploy\install-print.sh
+       deploy\migrate-runner-to-wms.sh
+       deploy\README.md
+       deploy\update.sh
+       deploy\wms.service
+[DIR]  deploy\traefik\dynamic\
+       deploy\traefik\docker-compose.yml
+       deploy\traefik\traefik.yml
+       deploy\traefik\dynamic\wms.yml
+       deploy\windows\set-wms-hosts.cmd
+       deploy\windows\set-wms-hosts.ps1
+       docs\пользователь.md
+       docs\регламент-приемки.docx
+       docs\регламент-приемки.md
+       scripts\controlgate.py
+       scripts\tsc_paper_test.py
+       scripts\tsc_print.py
+       static\app.js
+       static\style.css
+[DIR]  templates\inventory\
+[DIR]  templates\logistics\
+[DIR]  templates\lots\
+[DIR]  templates\masters\
+[DIR]  templates\orders\
+[DIR]  templates\pallets\
+[DIR]  templates\partials\
+[DIR]  templates\positions\
+[DIR]  templates\receipts\
+[DIR]  templates\service\
+[DIR]  templates\shipments\
+[DIR]  templates\staff\
+[DIR]  templates\tasks\
+[DIR]  templates\transform\
+[DIR]  templates\tsd\
+[DIR]  templates\units\
+[DIR]  templates\users\
+       templates\base.html
+       templates\crossdock.html
+       templates\demand.html
+       templates\home.html
+       templates\hub.html
+       templates\layout.html
+       templates\login.html
+       templates\stock.html
+       templates\stock_lot.html
+       templates\tsd_base.html
+       templates\tsd_login.html
+       templates\inventory\detail.html
+       templates\inventory\list.html
+       templates\inventory\new.html
+       templates\logistics\driver_form.html
+       templates\logistics\driver_list.html
+       templates\logistics\index.html
+       templates\logistics\route_detail.html
+       templates\logistics\route_list.html
+       templates\logistics\routing.html
+       templates\logistics\schedule.html
+       templates\logistics\shift.html
+       templates\logistics\vehicle_form.html
+       templates\logistics\vehicle_list.html
+       templates\logistics\_shift_incoming.html
+       templates\logistics\_shift_orders.html
+       templates\logistics\_shift_routes.html
+       templates\logistics\_shift_stamp.html
+       templates\logistics\_shift_tools.html
+       templates\lots\passport.html
+       templates\masters\consignee_grades.html
+       templates\masters\consignee_zones.html
+       templates\masters\form.html
+       templates\masters\list.html
+       templates\masters\nav.html
+       templates\orders\customers.html
+       templates\orders\detail.html
+       templates\orders\form.html
+       templates\orders\import_result.html
+       templates\orders\list.html
+       templates\orders\purchase_revisions.html
+       templates\orders\purchase_revision_detail.html
+       templates\orders\revisions.html
+       templates\orders\revision_detail.html
+       templates\orders\revision_diff.html
+       templates\orders\supplier.html
+       templates\orders\suppliers.html
+       templates\orders\_period.html
+       templates\pallets\detail.html
+       templates\pallets\list.html
+       templates\partials\accept_loose.html
+       templates\partials\accept_pallet.html
+       templates\partials\cell_pick.html
+       templates\partials\demand_nodes.html
+       templates\partials\pallet_weight.html
+       templates\partials\receive_form.html
+       templates\positions\form.html
+       templates\positions\list.html
+       templates\receipts\detail.html
+       templates\receipts\form.html
+       templates\receipts\list.html
+       templates\service\imports.html
+       templates\shipments\detail.html
+       templates\shipments\list.html
+       templates\staff\form.html
+       templates\staff\list.html
+       templates\tasks\detail.html
+       templates\tasks\list.html
+       templates\tasks\_assignee.html
+       templates\transform\detail.html
+       templates\transform\list.html
+       templates\transform\new.html
+       templates\tsd\allocate.html
+       templates\tsd\find.html
+       templates\tsd\inventory.html
+       templates\tsd\inventory_list.html
+       templates\tsd\menu.html
+       templates\tsd\move.html
+       templates\tsd\pallet.html
+       templates\tsd\receive.html
+       templates\tsd\task.html
+       templates\tsd\tasks.html
+       templates\units\detail.html
+       templates\users\access_grid.html
+       templates\users\badge.html
+       templates\users\form.html
+       templates\users\list.html
+
+
+==============================================================================
+### FILE: README.md
+### SIZE: 524 bytes / 18 lines
+==============================================================================
+
+# WMS
+
+Нужен PostgreSQL: база `wms_django`, пользователь `wms`, пароль `wms`.
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
+py manage.py makemigrations
+py manage.py migrate
+py manage.py seed
+py manage.py runserver
+```
+
+Сайт: http://127.0.0.1:8000/login
+
+После `seed`, если пользователей ещё не было: `admin` / `admin`, `receiver` / `receiver`, `warehouse` / `warehouse`.
+
+
+==============================================================================
+### FILE: requirements.txt
+### SIZE: 155 bytes / 9 lines
+==============================================================================
+
+Django>=5.2,<5.3
+django-debug-toolbar>=6.0,<7
+psycopg[binary]>=3.2
+pillow>=11
+qrcode>=8
+reportlab>=4.2
+docxtpl>=0.20
+python-dotenv>=1.0
+whitenoise>=6.8,<7
+
+
+==============================================================================
+### FILE: requirements-server.txt
+### SIZE: 37 bytes / 2 lines
+==============================================================================
+
+-r requirements.txt
+gunicorn>=23,<24
+
+
+==============================================================================
+### FILE: scripts\controlgate.py
+### SIZE: 680 bytes / 17 lines
+==============================================================================
+
+import requests
+from requests.auth import HTTPBasicAuth
+import urllib3
+
+# Отключаем предупреждения о самоподписанном сертификате
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+url = "https://192.168.1.109:9999/api/v1/status"  # Обратите внимание: https
+auth = HTTPBasicAuth("admin", "admin")
+
+try:
+    # verify=False отключает проверку сертификата
+    response = requests.get(url, auth=auth, timeout=10, verify=False)
+    response.raise_for_status()
+    print("Успех!", response.json())
+except Exception as e:
+    print(f"Ошибка: {e}")
+
+
+==============================================================================
+### FILE: scripts\tsc_paper_test.py
+### SIZE: 4282 bytes / 107 lines
+==============================================================================
+
+"""Одна и та же команда TSC без SIZE, GAP и DENSITY.
+
+На этом компьютере принтер сидит на USB, очередь Windows «TSC TE200».
+Скрипт кладёт байты в очередь как RAW, драйвер их не перерисовывает.
+
+Запуск на USB:
+    python scripts/tsc_paper_test.py
+
+Другая очередь:
+    python scripts/tsc_paper_test.py --queue "TSC TE200"
+
+Сеть, порт 9100:
+    python scripts/tsc_paper_test.py 192.168.1.50
+"""
+
+import ctypes
+import socket
+import sys
+from ctypes import wintypes
+
+PAYLOAD = (
+    "CLS\r\n"
+    'TEXT 20,20,"3",0,1,1,"NO SIZE"\r\n'
+    'TEXT 20,70,"3",0,1,1,"SAME JOB"\r\n'
+    "BAR 20,130,280,8\r\n"
+    "PRINT 1\r\n"
+)
+
+DEFAULT_QUEUE = "TSC TE200"
+
+
+class DOCINFO(ctypes.Structure):
+    _fields_ = [
+        ("pDocName", wintypes.LPWSTR),
+        ("pOutputFile", wintypes.LPWSTR),
+        ("pDatatype", wintypes.LPWSTR),
+    ]
+
+
+def send_queue(queue: str, payload: bytes) -> None:
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), wintypes.LPVOID]
+    winspool.OpenPrinterW.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
+    winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOCINFO)]
+    winspool.StartDocPrinterW.restype = wintypes.DWORD
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.WritePrinter.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    winspool.WritePrinter.restype = wintypes.BOOL
+
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        raise OSError(ctypes.get_last_error(), f"очередь «{queue}» не открылась")
+    try:
+        info = DOCINFO("tsc-paper-test", None, "RAW")
+        if not winspool.StartDocPrinterW(handle, 1, ctypes.byref(info)):
+            raise OSError(ctypes.get_last_error(), "Windows не приняла задание")
+        try:
+            if not winspool.StartPagePrinter(handle):
+                raise OSError(ctypes.get_last_error(), "Windows не открыла страницу")
+            written = wintypes.DWORD()
+            buffer = ctypes.create_string_buffer(payload)
+            if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
+                raise OSError(ctypes.get_last_error(), "Windows не записала данные")
+            if written.value != len(payload):
+                raise OSError(0, f"ушло {written.value} байт из {len(payload)}")
+            winspool.EndPagePrinter(handle)
+        finally:
+            winspool.EndDocPrinter(handle)
+    finally:
+        winspool.ClosePrinter(handle)
+
+
+def send_tcp(host: str, port: int, payload: bytes) -> None:
+    with socket.create_connection((host, port), timeout=5) as sock:
+        sock.sendall(payload)
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    data = PAYLOAD.encode("ascii")
+    print(PAYLOAD, end="")
+    if not args:
+        send_queue(DEFAULT_QUEUE, data)
+        print(f"Отправлено {len(data)} байт в очередь «{DEFAULT_QUEUE}»")
+        return
+    if args[0] == "--queue":
+        if len(args) < 2:
+            print("Нужно имя очереди: python scripts/tsc_paper_test.py --queue \"TSC TE200\"")
+            sys.exit(1)
+        send_queue(args[1], data)
+        print(f"Отправлено {len(data)} байт в очередь «{args[1]}»")
+        return
+    host = args[0]
+    port = int(args[1]) if len(args) > 1 else 9100
+    send_tcp(host, port, data)
+    print(f"Отправлено {len(data)} байт на {host}:{port}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+==============================================================================
+### FILE: scripts\tsc_print.py
+### SIZE: 2395 bytes / 73 lines
+==============================================================================
+
+"""Печать текста на TSC по сети, порт 9100.
+
+Меняйте переменные ниже и запускайте:
+    python scripts/tsc_print.py
+
+Обязательны: HOST, WIDTH_MM, HEIGHT_MM, LINES.
+Без SIZE принтер эту команду молча не печатает.
+GAP_MM = 0 протягивает ровно HEIGHT_MM и не ищет зазор между наклейками.
+"""
+
+import socket
+
+# Куда слать. Порт 9100 — сырой вход TSC, его менять не нужно.
+HOST = "192.168.1.133"
+PORT = 9100
+
+# Размер этикетки в миллиметрах. Эти числа попадают в команду SIZE.
+WIDTH_MM = 100
+HEIGHT_MM = 70
+
+# Зазор между наклейками, мм. 0 — не искать зазор, протянуть HEIGHT_MM.
+GAP_MM = 2
+
+# Что печатать. Каждая строка списка — отдельная строка на этикетке.
+LINES = [
+    "WMS OK",
+    "Проверка",
+]
+
+# Кодовая страница кириллицы у TSC. Латиница печатается и без неё.
+CODEPAGE = "1251"
+
+# Встроенный шрифт «3», увеличение 2. Координаты в точках, не в миллиметрах.
+FONT = "3"
+SCALE = 2
+X = 50
+FIRST_Y = 50
+LINE_STEP = 50
+
+
+def build() -> bytes:
+    if not LINES:
+        raise SystemExit("LINES пустой: нечего печатать")
+    parts = [
+        f"SIZE {int(WIDTH_MM)} mm,{int(HEIGHT_MM)} mm\r\n",
+        f"GAP {int(GAP_MM)} mm,0 mm\r\n",
+        "DIRECTION 1\r\n",
+        "CLS\r\n",
+        f"CODEPAGE {CODEPAGE}\r\n",
+    ]
+    y = FIRST_Y
+    for line in LINES:
+        text = str(line).replace('"', "'")
+        parts.append(f'TEXT {X},{y},"{FONT}",0,{SCALE},{SCALE},"{text}"\r\n')
+        y += LINE_STEP
+    parts.append("PRINT 1,1\r\n")
+    return "".join(parts).encode("cp1251", errors="replace")
+
+
+def send(payload: bytes) -> None:
+    with socket.create_connection((HOST, PORT), timeout=5) as sock:
+        sock.sendall(payload)
+
+
+def main() -> None:
+    payload = build()
+    print(payload.decode("cp1251"))
+    send(payload)
+    print(f"Отправлено {len(payload)} байт на {HOST}:{PORT}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+==============================================================================
+### FILE: static\app.js
+### SIZE: 27933 bytes / 753 lines
+==============================================================================
+
+function bindVarietyFilter() {
+  const product = document.querySelector("[data-product]");
+  const variety = document.querySelector("[data-variety]");
+  const data = document.getElementById("variety-data");
+  if (!product || !variety || !data) return;
+  const items = JSON.parse(data.textContent || "[]");
+  const allowAny = variety.hasAttribute("data-variety-any");
+  let preferred = variety.dataset.selected || variety.value;
+  const apply = () => {
+    variety.innerHTML = "";
+    if (allowAny) {
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Любой";
+      if (!preferred) blank.selected = true;
+      variety.appendChild(blank);
+    }
+    items.filter((item) => String(item.product_id) === String(product.value)).forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.name;
+      if (String(item.id) === String(preferred)) option.selected = true;
+      variety.appendChild(option);
+    });
+    preferred = variety.value;
+  };
+  product.addEventListener("change", apply);
+  apply();
+}
+
+function bindCaliberMode() {
+  const radios = document.querySelectorAll("input[name=caliber_mode]");
+  if (!radios.length) return;
+  const exact = document.querySelector("[data-caliber-exact]");
+  const range = document.querySelector("[data-caliber-range]");
+  const apply = () => {
+    const mode = document.querySelector("input[name=caliber_mode]:checked");
+    const value = mode ? mode.value : "any";
+    if (exact) exact.hidden = value !== "exact";
+    if (range) range.hidden = value !== "range";
+  };
+  radios.forEach((radio) => radio.addEventListener("change", apply));
+  apply();
+}
+
+function bindClientTerms() {
+  const client = document.querySelector("[data-client]");
+  const terms = document.querySelector("[data-terms]");
+  if (!client || !terms) return;
+  client.addEventListener("change", () => {
+    const option = client.selectedOptions[0];
+    if (option) terms.value = option.dataset.terms || "";
+  });
+}
+
+function bindDigitMenu() {
+  document.addEventListener("keydown", (event) => {
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (!/^[0-9]$/.test(event.key)) return;
+    const active = document.activeElement;
+    if (active && (active.closest("input, textarea, select") || active.isContentEditable)) return;
+    const opened = document.querySelector("details.menu-group[open] [data-digit='" + event.key + "']");
+    const item = opened || document.querySelector("main [data-digit='" + event.key + "']");
+    if (!item) return;
+    event.preventDefault();
+    item.click();
+  });
+}
+
+function bindRowLinks() {
+  document.querySelectorAll("tr[data-href]").forEach((row) => {
+    row.addEventListener("dblclick", (event) => {
+      if (event.target.closest("a, button, input, select, textarea, label")) return;
+      window.location.href = row.dataset.href;
+    });
+  });
+}
+
+function bindBack() {
+  const button = document.getElementById("go-back");
+  if (!button) return;
+  const key = "wms-trail";
+  const here = location.pathname + location.search;
+  const skipped = here === "/login" || here === "/tsd/login";
+  let stack = [];
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(key) || "[]");
+    if (Array.isArray(stored)) stack = stored.filter((item) => item !== "/login" && item !== "/tsd/login");
+  } catch (error) {
+    stack = [];
+  }
+  if (!skipped) {
+    const index = stack.lastIndexOf(here);
+    if (index >= 0) stack = stack.slice(0, index + 1);
+    else stack.push(here);
+    sessionStorage.setItem(key, JSON.stringify(stack));
+  }
+  const place = stack.lastIndexOf(here);
+  const target = place > 0 ? stack[place - 1] : "";
+  if (!target) return;
+  button.hidden = false;
+  button.addEventListener("click", () => {
+    const next = stack.slice(0, place);
+    sessionStorage.setItem(key, JSON.stringify(next));
+    location.href = target;
+  });
+}
+
+function bindFilePick() {
+  document.querySelectorAll("[data-import]").forEach((button) => {
+    const form = button.closest("form");
+    const input = form ? form.querySelector("[data-import-file]") : null;
+    if (!input) return;
+    button.addEventListener("click", () => {
+      input.value = "";
+      input.click();
+    });
+    input.addEventListener("change", () => {
+      if (input.files && input.files[0]) form.requestSubmit();
+    });
+  });
+}
+
+function sheetDataRows(table) {
+  return [...table.rows].filter((row) => row.querySelector("input.pick-row"));
+}
+
+function refreshSheetMarks(table) {
+  let number = 0;
+  let chosen = 0;
+  let visible = 0;
+  sheetDataRows(table).forEach((row) => {
+    const box = row.querySelector("input.pick-row");
+    const count = row.querySelector("td.count");
+    if (row.hidden) {
+      box.checked = false;
+      box.disabled = true;
+      if (count) count.textContent = "";
+      return;
+    }
+    box.disabled = false;
+    visible += 1;
+    number += 1;
+    if (count) count.textContent = String(number);
+    if (box.checked) chosen += 1;
+  });
+  const all = table.querySelector("input.pick-all");
+  if (all) {
+    all.checked = visible > 0 && chosen === visible;
+    all.indeterminate = chosen > 0 && chosen < visible;
+  }
+  const target = table.dataset.bulk;
+  if (!target) return;
+  const label = document.querySelector('[data-bulk-count="' + target + '"]');
+  if (label) label.textContent = "Выбрано: " + chosen;
+}
+
+function bindSheetMarks() {
+  document.querySelectorAll("table.sheet").forEach((table) => {
+    if (table.closest("form") || table.hasAttribute("data-zone-map") || table.hasAttribute("data-setup") || table.querySelector("th.pick")) return;
+    const header = [...table.rows].find((row) => row.querySelector("th"));
+    if (!header) return;
+    const pickHead = document.createElement("th");
+    pickHead.className = "pick";
+    const all = document.createElement("input");
+    all.type = "checkbox";
+    all.className = "pick-all";
+    all.setAttribute("aria-label", "Выбрать все");
+    pickHead.appendChild(all);
+    const countHead = document.createElement("th");
+    countHead.className = "count";
+    countHead.textContent = "№";
+    header.insertBefore(countHead, header.firstChild);
+    header.insertBefore(pickHead, header.firstChild);
+    [...table.rows].forEach((row) => {
+      if (row === header) return;
+      const first = row.cells[0];
+      if (row.classList.contains("subtotal") || row.classList.contains("group")) {
+        if (first && first.colSpan > 1 && row.cells.length === 1) {
+          first.colSpan += 2;
+          return;
+        }
+        const countGap = document.createElement("td");
+        countGap.className = "count";
+        const pickGap = document.createElement("td");
+        pickGap.className = "pick";
+        row.insertBefore(countGap, row.firstChild);
+        row.insertBefore(pickGap, row.firstChild);
+        return;
+      }
+      if (first && first.colSpan > 1 && row.cells.length === 1) {
+        first.colSpan += 2;
+        return;
+      }
+      const countCell = document.createElement("td");
+      countCell.className = "count";
+      const pickCell = document.createElement("td");
+      pickCell.className = "pick";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "pick-row";
+      box.setAttribute("aria-label", "Выбрать строку");
+      if (row.dataset.id && table.dataset.bulk) {
+        box.name = "id";
+        box.value = row.dataset.id;
+        box.setAttribute("form", table.dataset.bulk);
+      }
+      pickCell.appendChild(box);
+      row.insertBefore(countCell, row.firstChild);
+      row.insertBefore(pickCell, row.firstChild);
+    });
+    table.addEventListener("change", (event) => {
+      if (event.target.classList.contains("pick-all")) {
+        const on = event.target.checked;
+        sheetDataRows(table).forEach((row) => {
+          if (row.hidden) return;
+          row.querySelector("input.pick-row").checked = on;
+        });
+      }
+      if (!event.target.classList.contains("pick-row") && !event.target.classList.contains("pick-all")) return;
+      refreshSheetMarks(table);
+    });
+    refreshSheetMarks(table);
+  });
+}
+
+function bindExcelFilters() {
+  if (document.body.classList.contains("tsd")) return;
+  const menu = document.createElement("div");
+  menu.className = "xl-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+  const tables = new WeakMap();
+  const arrow = '<svg viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M2 4.2h8L6 9z"/></svg>';
+  const funnel = '<svg viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M1 1.5h10L7.2 6.1V10L4.8 8.7V6.1z"/></svg>';
+
+  function stateOf(table) {
+    let state = tables.get(table);
+    if (!state) {
+      state = { filters: new Map(), sort: null };
+      tables.set(table, state);
+    }
+    return state;
+  }
+
+  function headerRow(table) {
+    return [...table.rows].find((row) => row.querySelector("th")) || null;
+  }
+
+  function columnCount(table) {
+    const header = headerRow(table);
+    return header ? header.cells.length : 0;
+  }
+
+  function isData(row, count) {
+    if (row.querySelector("th")) return false;
+    if (row.classList.contains("group") || row.classList.contains("subtotal")) return false;
+    const cells = [...row.cells];
+    if (cells.length === 1 && cells[0].colSpan >= count) return false;
+    return cells.length > 0;
+  }
+
+  function rowsOf(table) {
+    const count = columnCount(table);
+    return [...table.rows].filter((row) => isData(row, count));
+  }
+
+  function textOf(cell) {
+    if (!cell) return "";
+    const fields = [...cell.querySelectorAll("input, select, textarea")].filter((field) => field.type !== "hidden");
+    if (fields.length) {
+      return fields.map((field) => {
+        if (field.tagName === "SELECT") {
+          const option = field.selectedOptions[0];
+          return option ? option.textContent.trim() : "";
+        }
+        return field.value.trim();
+      }).filter(Boolean).join(" ");
+    }
+    return cell.innerText.replace(/\s+/g, " ").trim();
+  }
+
+  function valueAt(row, index) {
+    let cursor = 0;
+    for (const cell of row.cells) {
+      const span = cell.colSpan || 1;
+      if (index >= cursor && index < cursor + span) return textOf(cell);
+      cursor += span;
+    }
+    return "";
+  }
+
+  function asNumber(text) {
+    const clean = text.replace(/\s/g, "").replace(",", ".");
+    if (!/^-?\d+(\.\d+)?$/.test(clean)) return null;
+    return Number(clean);
+  }
+
+  function asDate(text) {
+    const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text);
+    if (!match) return null;
+    return Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  }
+
+  function columnKind(table, index) {
+    const values = rowsOf(table).map((row) => valueAt(row, index)).filter((value) => value !== "");
+    if (values.length && values.every((value) => asNumber(value) !== null)) return "number";
+    if (values.length && values.every((value) => asDate(value) !== null)) return "date";
+    return "text";
+  }
+
+  function compare(left, right, kind) {
+    if (left === "" || right === "") {
+      if (left === right) return 0;
+      return left === "" ? 1 : -1;
+    }
+    if (kind === "number") return asNumber(left) - asNumber(right);
+    if (kind === "date") return asDate(left) - asDate(right);
+    return left.localeCompare(right, "ru", { numeric: true, sensitivity: "base" });
+  }
+
+  function sortRows(table) {
+    const sort = stateOf(table).sort;
+    if (!sort) return;
+    const count = columnCount(table);
+    const all = [...table.rows];
+    const data = all.filter((row) => isData(row, count));
+    const sorted = [...data].sort((left, right) => {
+      const base = compare(valueAt(left, sort.index), valueAt(right, sort.index), sort.kind);
+      if (valueAt(left, sort.index) === "" || valueAt(right, sort.index) === "") return base;
+      return sort.dir === "asc" ? base : -base;
+    });
+    const parent = headerRow(table).parentNode;
+    let cursor = 0;
+    all.map((row) => (isData(row, count) ? sorted[cursor++] : row)).forEach((row) => parent.appendChild(row));
+  }
+
+  function syncStructure(table) {
+    const count = columnCount(table);
+    const rows = [...table.rows].filter((row) => !row.querySelector("th"));
+    rows.forEach((row, index) => {
+      if (row.classList.contains("group")) {
+        let any = false;
+        for (let next = index + 1; next < rows.length; next++) {
+          if (rows[next].classList.contains("group") || rows[next].classList.contains("subtotal")) break;
+          if (isData(rows[next], count) && !rows[next].hidden) any = true;
+        }
+        row.hidden = !any;
+      } else if (row.classList.contains("subtotal")) {
+        let sawData = false;
+        let any = false;
+        for (let prev = index - 1; prev >= 0; prev--) {
+          if (rows[prev].classList.contains("group") || rows[prev].classList.contains("subtotal")) break;
+          if (isData(rows[prev], count)) {
+            sawData = true;
+            if (!rows[prev].hidden) any = true;
+          }
+        }
+        if (!sawData) any = rowsOf(table).some((item) => !item.hidden);
+        row.hidden = !any;
+      }
+    });
+  }
+
+  function paint(table) {
+    const state = stateOf(table);
+    const header = headerRow(table);
+    if (!header) return;
+    [...header.cells].forEach((cell) => {
+      const button = cell.querySelector(".xl-filter");
+      if (!button) return;
+      const filtered = state.filters.has(cell.cellIndex);
+      button.classList.toggle("on", filtered);
+      button.innerHTML = filtered ? funnel : arrow;
+    });
+  }
+
+  function apply(table) {
+    sortRows(table);
+    const state = stateOf(table);
+    rowsOf(table).forEach((row) => {
+      let visible = true;
+      state.filters.forEach((allowed, index) => {
+        if (!allowed.has(valueAt(row, index))) visible = false;
+      });
+      row.hidden = !visible;
+    });
+    syncStructure(table);
+    paint(table);
+    if (table.querySelector("input.pick-row")) refreshSheetMarks(table);
+  }
+
+  function closeMenu() {
+    menu.hidden = true;
+  }
+
+  function menuItem(text, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "xl-item";
+    button.textContent = text;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function openMenu(table, cell) {
+    const state = stateOf(table);
+    const index = cell.cellIndex;
+    const kind = columnKind(table, index);
+    const seen = new Set();
+    const values = [];
+    rowsOf(table).forEach((row) => {
+      const value = valueAt(row, index);
+      if (seen.has(value)) return;
+      seen.add(value);
+      values.push(value);
+    });
+    values.sort((left, right) => {
+      if (left === "") return -1;
+      if (right === "") return 1;
+      return compare(left, right, kind);
+    });
+    const selected = state.filters.get(index);
+    const asc = kind === "number" ? "Сортировка от минимального к максимальному" : kind === "date" ? "Сортировка от старых к новым" : "Сортировка от А до Я";
+    const desc = kind === "number" ? "Сортировка от максимального к минимальному" : kind === "date" ? "Сортировка от новых к старым" : "Сортировка от Я до А";
+    menu.replaceChildren();
+    menu.append(
+      menuItem(asc, () => {
+        state.sort = { index: index, dir: "asc", kind: kind };
+        apply(table);
+        closeMenu();
+      }),
+      menuItem(desc, () => {
+        state.sort = { index: index, dir: "desc", kind: kind };
+        apply(table);
+        closeMenu();
+      }),
+      document.createElement("hr"),
+    );
+    const clear = menuItem("Снять фильтр с «" + cell.dataset.xlTitle + "»", () => {
+      state.filters.delete(index);
+      apply(table);
+      closeMenu();
+    });
+    clear.disabled = !selected;
+    menu.append(clear, document.createElement("hr"));
+    const search = document.createElement("input");
+    search.className = "xl-search";
+    search.type = "search";
+    search.placeholder = "Поиск";
+    const allLabel = document.createElement("label");
+    allLabel.className = "xl-all";
+    const allBox = document.createElement("input");
+    allBox.type = "checkbox";
+    allLabel.append(allBox, document.createTextNode("(Выделить все)"));
+    const list = document.createElement("div");
+    list.className = "xl-values";
+    const boxes = values.map((value) => {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = !selected || selected.has(value);
+      label.append(box, document.createTextNode(value === "" ? "(Пустые)" : value));
+      list.appendChild(label);
+      return { box: box, label: label, value: value };
+    });
+    const actions = document.createElement("div");
+    actions.className = "xl-actions";
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.textContent = "OK";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "xl-cancel";
+    cancel.textContent = "Отмена";
+    actions.append(ok, cancel);
+    menu.append(search, allLabel, list, actions);
+
+    function visibleBoxes() {
+      return boxes.filter((item) => !item.label.hidden);
+    }
+    function syncAll() {
+      const shown = visibleBoxes();
+      const checked = shown.filter((item) => item.box.checked).length;
+      allBox.checked = shown.length > 0 && checked === shown.length;
+      allBox.indeterminate = checked > 0 && checked < shown.length;
+    }
+    syncAll();
+    allBox.addEventListener("change", () => {
+      visibleBoxes().forEach((item) => {
+        item.box.checked = allBox.checked;
+      });
+      allBox.indeterminate = false;
+    });
+    boxes.forEach((item) => item.box.addEventListener("change", syncAll));
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      boxes.forEach((item) => {
+        const text = item.value === "" ? "(пустые)" : item.value.toLowerCase();
+        item.label.hidden = query !== "" && !text.includes(query);
+      });
+      syncAll();
+    });
+    function commit() {
+      const query = search.value.trim();
+      const pool = query ? visibleBoxes() : boxes;
+      const chosen = pool.filter((item) => item.box.checked).map((item) => item.value);
+      if (chosen.length === boxes.length) state.filters.delete(index);
+      else state.filters.set(index, new Set(chosen));
+      apply(table);
+      closeMenu();
+    }
+    ok.addEventListener("click", commit);
+    search.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      commit();
+    });
+    cancel.addEventListener("click", closeMenu);
+    menu.hidden = false;
+    const anchor = cell.querySelector(".xl-filter").getBoundingClientRect();
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    let left = Math.min(Math.max(8, anchor.right - width), window.innerWidth - width - 8);
+    let top = anchor.bottom + 2;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, anchor.top - height - 2);
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    search.focus();
+  }
+
+  document.querySelectorAll("table").forEach((table) => {
+    if (table.hasAttribute("data-setup")) return;
+    const header = headerRow(table);
+    if (!header) return;
+    [...header.cells].forEach((cell) => {
+      if (cell.tagName !== "TH") return;
+      if (cell.classList.contains("pick") || cell.classList.contains("count")) return;
+      const title = cell.textContent.replace(/\s+/g, " ").trim();
+      if (!title || cell.querySelector(".xl-filter")) return;
+      cell.dataset.xlTitle = title;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "xl-filter";
+      button.setAttribute("aria-label", "Фильтр: " + title);
+      button.innerHTML = arrow;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openMenu(table, cell);
+      });
+      cell.appendChild(button);
+    });
+  });
+
+  document.addEventListener("mousedown", (event) => {
+    if (menu.hidden) return;
+    if (menu.contains(event.target) || event.target.closest(".xl-filter")) return;
+    closeMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
+}
+
+function bindColumnResize() {
+  document.querySelectorAll(".journal-table table.sheet").forEach((table) => {
+    const header = [...table.rows].find((row) => row.querySelector("th"));
+    if (!header || table.querySelector("colgroup")) return;
+    const cells = [...header.cells];
+    table.style.tableLayout = "auto";
+    table.style.width = "max-content";
+    const widths = cells.map((cell) => {
+      const measured = Math.ceil(cell.getBoundingClientRect().width);
+      if (cell.classList.contains("pick") || cell.classList.contains("count")) return Math.max(28, measured);
+      return Math.max(48, Math.min(240, measured));
+    });
+    table.style.tableLayout = "fixed";
+    const colgroup = document.createElement("colgroup");
+    const cols = widths.map((width) => {
+      const col = document.createElement("col");
+      col.style.width = width + "px";
+      colgroup.appendChild(col);
+      return col;
+    });
+    table.insertBefore(colgroup, table.firstChild);
+    const fit = () => {
+      const sum = cols.reduce((total, col) => total + parseInt(col.style.width, 10), 0);
+      table.style.width = sum + "px";
+      const room = table.parentElement.clientWidth;
+      table.style.width = Math.max(sum, room) + "px";
+    };
+    fit();
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(table.parentElement);
+    cells.forEach((cell, index) => {
+      if (cell.classList.contains("pick") || cell.classList.contains("count")) return;
+      const handle = document.createElement("span");
+      handle.className = "col-resize";
+      handle.title = "Ширина колонки";
+      handle.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const startX = event.clientX;
+        const startW = parseInt(cols[index].style.width, 10);
+        const move = (ev) => {
+          cols[index].style.width = Math.max(36, startW + ev.clientX - startX) + "px";
+          fit();
+        };
+        const up = () => {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+          document.body.classList.remove("col-resizing");
+        };
+        document.body.classList.add("col-resizing");
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      });
+      cell.appendChild(handle);
+    });
+  });
+}
+
+function bindNotices() {
+  const box = document.querySelector(".notices");
+  if (!box) return;
+  let sent = false;
+  const mark = () => {
+    if (sent) return;
+    sent = true;
+    const token = box.querySelector("[name=csrfmiddlewaretoken]");
+    if (!token) return;
+    fetch("/notices/seen", {
+      method: "POST",
+      headers: { "X-CSRFToken": token.value },
+      credentials: "same-origin",
+    });
+    const badge = box.querySelector(".notice-badge");
+    if (badge) badge.remove();
+    box.querySelectorAll(".unread").forEach((item) => item.classList.remove("unread"));
+  };
+  box.addEventListener("mouseenter", mark);
+  box.addEventListener("focusin", mark);
+}
+
+function openImportLogModal(title) {
+  document.querySelectorAll("[data-import-log-modal]").forEach((node) => node.remove());
+  const modal = document.createElement("div");
+  modal.className = "setup-modal import-log-modal";
+  modal.setAttribute("data-import-log-modal", "");
+  modal.innerHTML =
+    `<div class="card import-log-card" role="dialog" aria-modal="true" aria-labelledby="import-log-title">` +
+    `<div class="import-log-head">` +
+    `<h3 id="import-log-title"></h3>` +
+    `<button type="button" class="slim alt" data-close>Закрыть</button>` +
+    `</div>` +
+    `<pre class="import-log" data-onec-log></pre>` +
+    `<div class="actions import-log-actions">` +
+    `<button type="button" class="slim alt" data-close>Закрыть</button>` +
+    `</div>` +
+    `</div>`;
+  modal.querySelector("#import-log-title").textContent = title || "Импорт из 1С";
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    modal.remove();
+  };
+  modal.querySelectorAll("[data-close]").forEach((btn) => btn.addEventListener("click", close));
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(modal);
+  return modal.querySelector("[data-onec-log]");
+}
+
+function bindOnecImport() {
+  document.querySelectorAll("form[data-onec-import]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const byNumber = form.elements.namedItem("by_number");
+      const orderNumber = form.elements.namedItem("order_number");
+      if (byNumber && byNumber.checked && orderNumber && !(orderNumber.value || "").trim()) {
+        alert("Укажите номер заказа 1С");
+        return;
+      }
+      const title = form.getAttribute("data-onec-title") || "Импорт из 1С";
+      const log = openImportLogModal(title);
+      log.textContent = "Запрос к серверу…\n";
+      log.scrollTop = log.scrollHeight;
+      const button = form.querySelector("button.slim, button[type='submit']");
+      if (button) button.disabled = true;
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          headers: { "X-Onec-Stream": "1", Accept: "text/plain" },
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.body) {
+          log.textContent = `Ошибка HTTP ${response.status}\n`;
+          return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let pending = "";
+        const append = (raw) => {
+          // Сервер добивает строки пробелами для сброса буфера — убираем их.
+          pending += raw.replace(/ +\n/g, "\n");
+          const parts = pending.split("\n");
+          pending = parts.pop() || "";
+          if (!parts.length) return;
+          log.textContent += parts.join("\n") + "\n";
+          log.scrollTop = log.scrollHeight;
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          append(decoder.decode(value, { stream: true }));
+        }
+        append(decoder.decode());
+        if (pending) {
+          log.textContent += pending.replace(/ +$/g, "") + "\n";
+          log.scrollTop = log.scrollHeight;
+        }
+        if (!response.ok && log.textContent.trim() === "Запрос к серверу…") {
+          log.textContent = `Ошибка HTTP ${response.status}\n`;
+        }
+      } catch (err) {
+        log.textContent += `Ошибка: ${err}\n`;
+      } finally {
+        if (button) button.disabled = false;
+      }
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  bindNotices();
+  bindVarietyFilter();
+  bindCaliberMode();
+  bindClientTerms();
+  bindDigitMenu();
+  bindRowLinks();
+  bindBack();
+  bindFilePick();
+  bindSheetMarks();
+  bindExcelFilters();
+  bindColumnResize();
+  bindOnecImport();
+});
+
+
+==============================================================================
+### FILE: static\style.css
+### SIZE: 38084 bytes / 447 lines
+==============================================================================
+
+:root { color-scheme: light; --green: #1f6b45; --ink: #1c241f; --line: #d7e0d8; --paper: #f6f7f4; --bad: #8d2b2b; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; font: 16px/1.4 "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+a { color: var(--green); }
+header.top { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 12px 20px; background: var(--green); color: white; }
+header.top a, header.top .who { color: white; text-decoration: none; }
+.brand { font-weight: 700; margin-right: 8px; }
+nav { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; flex: 1; }
+nav a.active, nav summary.active { text-decoration: underline; }
+.menu-group { position: relative; }
+.menu-group > a { display: inline-block; padding: 6px 0; }
+.menu-group div { display: none; position: absolute; z-index: 5; top: 100%; left: 0; min-width: 180px; flex-direction: column; gap: 2px; padding: 8px; background: white; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.account { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.profile { margin-left: 0; }
+button.notice-btn { position: relative; width: 40px; height: 40px; margin: 0; padding: 0; border-radius: 50%; background: rgba(255, 255, 255, .2); color: white; }
+button.notice-btn svg { width: 22px; height: 22px; display: block; margin: 0 auto; }
+.notice-badge { position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #c0392b; color: white; font-size: 11px; line-height: 16px; font-weight: 700; text-align: center; }
+.menu-group.notices div { left: auto; right: 0; width: 420px; max-height: 360px; overflow: auto; }
+.notice-menu p { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 400; line-height: 1.35; }
+.notice-menu p:last-child { border-bottom: 0; }
+.notice-menu p.unread { font-weight: 700; }
+.notice-menu p.muted { color: #5d6b61; font-weight: 400; }
+button.profile-btn { display: inline-flex; align-items: center; gap: 8px; margin: 0; padding: 4px 14px 4px 4px; border-radius: 999px; background: rgba(255, 255, 255, .2); color: white; font-weight: 700; }
+button.profile-btn svg { width: 32px; height: 32px; padding: 5px; border-radius: 50%; background: white; color: var(--green); }
+.profile-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-group.profile div { left: auto; right: 0; min-width: 220px; }
+header.top .profile-menu .who { display: block; margin: 0; padding: 8px 10px 0; color: var(--ink); font-size: 16px; font-weight: 700; }
+.profile-role { margin: 0; padding: 0 10px 8px; color: #5d6b61; font-size: 13px; }
+header.top .profile-menu button.link { display: block; width: 100%; margin: 0; padding: 8px 10px; border-radius: 6px; color: var(--ink); text-align: left; }
+header.top .profile-menu button.link:hover { background: var(--paper); }
+.menu-group div::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 10px; }
+.menu-group:hover div, .menu-group:focus-within div { display: flex; }
+.menu-group div a { color: var(--ink); padding: 8px 10px; border-radius: 6px; }
+.menu-group div a:hover { background: var(--paper); }
+.hub { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 320px)); gap: 16px; }
+.hub-card { display: flex; align-items: center; min-height: 120px; padding: 24px; background: white; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 22px; font-weight: 600; }
+.hub-card:hover { border-color: var(--green); }
+body.tsd .menu-group div { min-width: 220px; }
+main { padding: 16px 20px; width: 100%; }
+body.login-page main { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+body.login-page .flash { width: min(380px, 100%); }
+.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 28px 24px 22px; background: white; border: 1px solid var(--line); border-radius: 12px; }
+.login-card h1 { margin: 0 0 4px; font-size: 24px; }
+.login-card input { width: 100%; }
+.login-card button { width: 100%; min-height: 44px; margin-top: 4px; font-weight: 600; }
+.login-card .login-alt { text-align: center; font-size: 14px; }
+h1 { font-size: 28px; margin: 0 0 16px; }
+table { width: 100%; border-collapse: collapse; background: white; }
+th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px; vertical-align: top; }
+body:not(.tsd) table { font-size: 13px; border: 1px solid var(--line); }
+body:not(.tsd) th, body:not(.tsd) td { padding: 3px 8px; vertical-align: middle; }
+body:not(.tsd) th { background: #eef2ee; font-weight: 600; position: relative; padding-right: 26px; white-space: nowrap; }
+body:not(.tsd) th a { color: inherit; text-decoration: none; }
+body:not(.tsd) th a:hover { text-decoration: underline; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+input, select, textarea, button { font: inherit; }
+input, select, textarea { padding: 8px; border: 1px solid #b7c4b8; border-radius: 6px; background: white; }
+textarea { min-height: 80px; }
+button, .btn { background: var(--green); color: white; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
+a.btn.on { background: white; color: var(--green); box-shadow: inset 0 0 0 2px var(--green); }
+button.back { background: white; color: var(--ink); border: 1px solid var(--line); margin: 0 0 12px; }
+button.link { background: transparent; color: white; padding: 0; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.stack { display: flex; flex-direction: column; width: min(720px, 100%); background: white; border: 1px solid var(--line); border-radius: 6px; }
+.stack-row { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.stack-row:last-child { border-bottom: 0; }
+.stack-row span { flex: 1; font-size: 14px; }
+.stack-row form { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.grid > .wide,
+.grid > .grades { grid-column: 1 / -1; }
+.grades { margin: 0; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.grades legend { padding: 0 6px; font-size: 14px; }
+.grade-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.grade-picks label { flex-direction: row; align-items: center; width: auto; gap: 8px; margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: #f7faf7; }
+.grade-picks input { width: 16px; height: 16px; margin: 0; padding: 0; }
+.grades .hint { margin: 8px 0 0; }
+.card { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.flash { padding: 10px 12px; border-radius: 6px; background: #e5f4ea; margin: 0 0 8px; }
+.flash.error { background: #fde8e8; color: var(--bad); }
+.muted { color: #5d6b61; }
+.inline { display: inline; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.stat { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.stat b { display: block; font-size: 28px; }
+body.tsd { font-size: 20px; }
+body.tsd main { max-width: 720px; }
+body.tsd input, body.tsd select, body.tsd button, body.tsd .btn { min-height: 56px; font-size: 20px; }
+body.tsd button.link, body.tsd button.back { min-height: 0; font-size: 18px; }
+body.tsd button.back { min-height: 48px; }
+body.tsd .grid { grid-template-columns: 1fr; }
+body.tsd header.top { gap: 10px; padding: 10px 12px; }
+body.tsd header.top nav a, body.tsd header.top summary {
+  display: inline-flex; align-items: center; min-height: 48px; padding: 8px 14px;
+  background: rgba(255, 255, 255, .14); border-radius: 10px; font-size: 18px;
+}
+body.tsd .menu-group div { min-width: 260px; gap: 6px; padding: 10px; }
+body.tsd .menu-group div a { min-height: 56px; font-size: 20px; gap: 12px; }
+body.tsd .digit-menu { display: flex; flex-direction: column; gap: 12px; }
+body.tsd a.btn.menu, body.tsd button.btn.menu {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px;
+  margin: 0; padding: 12px 16px; text-align: left; font-size: 22px; border-radius: 12px;
+}
+body.tsd a.btn.menu.back { background: white; color: var(--ink); border: 2px solid var(--green); }
+body.tsd .digit {
+  flex: 0 0 48px; width: 48px; height: 48px; display: grid; place-items: center;
+  border-radius: 10px; font-weight: 700; font-size: 24px; background: rgba(255, 255, 255, .22);
+}
+body.tsd a.btn.menu.back .digit, body.tsd .menu-group .digit { background: var(--paper); color: var(--green); }
+body.tsd label { font-size: 18px; }
+body.tsd form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
+.hint { font-size: 14px; color: #5d6b61; }
+.printer-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.printer-list label { display: flex; gap: 8px; align-items: center; }
+.import-log {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  background: #f4f7f5;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 13px/1.45 Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+.import-log[hidden] { display: none; }
+.page-bar .doc-filter .import-log { max-width: 720px; }
+.client-pick { position: relative; display: block; }
+.client-pick input { width: 100%; }
+.client-pick ul { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 280px; overflow: auto; background: white; border: 1px solid #b7c4b8; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.client-pick li { margin: 0; }
+.client-pick button, body.tsd .client-pick button { display: block; width: 100%; margin: 0; padding: 8px 10px; background: white; color: var(--ink); text-align: left; font-weight: 400; border-radius: 6px; min-height: 40px; }
+.client-pick button.mark, .client-pick button:hover { background: #e7f3ec; }
+body.tsd .client-pick ul { max-height: 320px; }
+body.tsd .client-pick button { min-height: 52px; font-size: 20px; }
+main:has(.page-bar) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 8px; row-gap: 4px; }
+main:has(.page-bar) > .back { grid-column: 1; grid-row: 1; align-self: start; height: 24px; margin: 2px 0 0; padding: 2px 8px; font-size: 13px; }
+main:has(.page-bar) > .flash { grid-column: 1 / -1; }
+main:has(.page-bar) > .page-bar { display: contents; }
+main:has(.page-bar) > :not(.back):not(.flash):not(.page-bar) { grid-column: 1 / -1; }
+.page-bar-row { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; flex-wrap: nowrap; }
+.page-tools { grid-column: 1 / -1; display: flex; align-items: stretch; justify-content: flex-start; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.page-bar h1 { margin: 0 4px 0 0; font-size: 16px; line-height: 28px; white-space: nowrap; }
+.page-bar form { display: flex; align-items: center; gap: 6px; margin: 0; }
+.tool-box { display: flex; align-items: center; gap: 2px; height: 26px; padding: 0 3px; background: white; border: 1px solid var(--green); border-radius: 6px; }
+.tool-box.stack { flex-direction: column; justify-content: space-evenly; align-items: center; width: 36px; height: auto; align-self: stretch; padding: 4px; }
+.page-bar .tool-box form { gap: 2px; }
+.page-bar .tool-box.stack form { flex-direction: column; align-items: center; gap: 6px; }
+.tool-box .icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; margin: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--green); line-height: 0; }
+.tool-box .icon-btn svg { width: 16px; height: 16px; display: block; }
+.tool-box .icon-btn:hover { background: #e7f0ea; }
+.tool-box input[type="checkbox"] { width: 14px; height: 14px; margin: 0; padding: 0; }
+.tool-box .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 30; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.tool-box .icon-btn[data-tip]:hover::after, .tool-box .icon-btn[data-tip]:focus-within::after { opacity: 1; }
+.page-bar .doc-filter { flex-direction: column; align-items: flex-start; gap: 8px; width: fit-content; max-width: calc(100% - 52px); height: auto; margin: 0; padding: 8px 12px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.page-bar .filter-row { display: flex; align-items: flex-end; gap: 16px; height: auto; }
+.page-bar .doc-filter label { flex-direction: column; align-items: flex-start; gap: 3px; font-size: 12px; color: #4d5c53; }
+.page-bar .doc-filter .dates { display: flex; align-items: center; gap: 4px; }
+.page-bar .doc-filter .sep { color: #7b8a80; }
+.page-bar .doc-filter input[name="party"], .page-bar .doc-filter input[name="product"], .page-bar .doc-filter input[name="supplier"], .page-bar .doc-filter input[type="search"] { width: 220px; }
+.page-bar .doc-filter input[name="number"], .page-bar .doc-filter input[name="document"], .page-bar .doc-filter input[name="location"] { width: 150px; }
+.page-bar .doc-filter label.check { flex-direction: row; align-items: center; align-self: flex-end; height: 24px; gap: 6px; }
+.page-bar .doc-filter select { width: 160px; }
+.page-bar .doc-filter select[name="status"] { width: 180px; }
+.page-bar .doc-filter select.period-type { width: 210px; }
+.page-bar .doc-filter select[name="supplier_id"] { width: 220px; }
+.page-bar input:not([type="checkbox"]):not([type="file"]), .page-bar select, .page-bar button.slim, .page-bar a.slim { height: 24px; box-sizing: border-box; }
+.doc-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.doc-bar form { margin: 0; }
+.doc-filter { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0; padding: 4px 8px; background: white; border: 1px solid var(--line); border-bottom: 0; }
+.doc-filter label { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; }
+.doc-filter input, .doc-filter select, .sheet input, .sheet select, button.slim, a.slim { padding: 2px 6px; min-height: 0; font-size: 13px; }
+table.sheet { font-size: 13px; border: 1px solid var(--line); }
+table.sheet th, table.sheet td { padding: 3px 8px; }
+table.sheet th { background: #eef2ee; font-weight: 600; padding-right: 26px; }
+table.sheet th a { color: inherit; text-decoration: none; }
+table.sheet th a:hover { text-decoration: underline; }
+table.sheet tr[data-href] { cursor: pointer; }
+table.sheet td.num, table.sheet th.num { text-align: right; white-space: nowrap; }
+table.sheet th.pick, table.sheet td.pick { width: 28px; padding-right: 8px; text-align: center; }
+table.sheet th.count, table.sheet td.count { width: 36px; padding-right: 8px; text-align: right; color: #5d6b61; }
+table.sheet th.pick input, table.sheet td.pick input { width: 14px; height: 14px; margin: 0; padding: 0; }
+.bulk-count { display: inline-flex; align-items: center; height: 24px; font-size: 13px; font-weight: 600; }
+table.sheet td.short, .hint .short { color: var(--bad); font-weight: 700; }
+table.sheet tr.route-stop[draggable="true"] { cursor: grab; }
+table.sheet tr.route-stop.dragging { opacity: 0.45; }
+table.sheet th.grip, table.sheet td.grip { width: 22px; padding-right: 4px; text-align: center; color: #7b8a80; cursor: grab; user-select: none; }
+table.sheet tr.group { cursor: pointer; }
+table.sheet tr.group td { background: #e7f0ea; font-weight: 700; }
+table.sheet tr.group .fold { display: inline-block; width: 1em; }
+table.sheet tr.folded { display: none; }
+.page-bar .filter-row.wrap { flex-wrap: wrap; align-items: center; max-width: 980px; }
+.page-bar .filter-name { font-size: 12px; color: #4d5c53; align-self: center; }
+.group-picks { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.group-pick { display: inline-flex; align-items: center; gap: 2px; }
+.group-pick button { padding: 0 4px; min-width: 0; }
+.demand-body { display: flex; align-items: flex-start; gap: 8px; }
+.demand-main { flex: 1; min-width: 0; overflow-x: auto; }
+.report-settings { width: 440px; flex: 0 0 440px; background: #f7f8f6; border: 1px solid var(--line); border-radius: 6px; max-height: calc(100vh - 160px); overflow: auto; }
+.report-settings[hidden] { display: none; }
+.settings-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; background: white; border-bottom: 1px solid var(--line); }
+.settings-head strong { color: var(--green); font-size: 13px; font-weight: 600; }
+.settings-tabs { display: flex; flex-wrap: wrap; background: white; border-bottom: 1px solid var(--line); }
+.settings-tab { height: auto; padding: 6px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ink); }
+.settings-tab.on { background: #e7f0ea; border-bottom-color: var(--green); color: var(--green); font-weight: 600; }
+.settings-pane { display: none; padding: 8px; background: white; }
+.settings-pane.on { display: block; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.report-settings button.slim.alt { background: white; color: var(--ink); border: 1px solid var(--line); }
+table.grouping-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.grouping-table th, table.grouping-table td { border: 1px solid var(--line); padding: 2px 4px; text-align: left; vertical-align: top; }
+table.grouping-table th { background: #eef2ee; font-weight: 600; }
+table.grouping-table th.grip, table.grouping-table td.grip { width: 18px; padding: 0; text-align: center; color: #7b8a80; cursor: grab; user-select: none; }
+table.grouping-table td.grip:active { cursor: grabbing; }
+table.grouping-table th.mark, table.grouping-table td.mark { width: 28px; text-align: center; }
+table.grouping-table tbody tr.dragging { opacity: 0.45; }
+table.grouping-table tbody tr.drop-before td { box-shadow: inset 0 2px 0 var(--green); }
+table.grouping-table tbody tr.drop-after td { box-shadow: inset 0 -2px 0 var(--green); }
+table.grouping-table tbody tr { cursor: pointer; }
+table.grouping-table tbody tr:hover td { background: #f3f6f4; }
+table.grouping-table select, table.grouping-table input[type="text"], table.grouping-table textarea { width: 100%; box-sizing: border-box; font: inherit; }
+table.grouping-table textarea { min-height: 52px; resize: vertical; }
+.setup-modal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; background: rgba(0, 0, 0, .35); }
+.setup-modal .card { width: min(480px, 100%); max-height: 70vh; overflow: auto; }
+.setup-modal h3 { margin: 0 0 8px; font-size: 16px; }
+.import-log-modal { z-index: 50; align-items: center; }
+.import-log-modal .import-log-card {
+  width: min(720px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+  overflow: hidden;
+}
+.import-log-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-log-head h3 { margin: 0; font-size: 16px; }
+.import-log-modal .import-log {
+  flex: 1 1 auto;
+  margin: 0;
+  max-height: none;
+  min-height: 240px;
+  overflow: auto;
+}
+.import-log-actions { display: flex; justify-content: flex-end; margin: 0; }
+.setup-pick { max-height: 360px; overflow: auto; margin-bottom: 8px; }
+table.sheet tr.subtotal td { background: #f7f8f6; font-weight: 600; }
+h2.sheet-title { margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
+.catalog-nav { display: grid; gap: 8px; margin: 0 0 8px; padding: 8px 10px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.page-tools .catalog-nav { flex: 1 1 100%; margin: 0; }
+.catalog-by-groups { flex-direction: row; align-items: center; gap: 6px; width: auto; margin: 0; font-size: 13px; }
+.catalog-by-groups input { width: 16px; height: 16px; margin: 0; padding: 0; }
+.catalog-group { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 8px; align-items: start; }
+.catalog-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.catalog-nav a { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; background: white; color: var(--ink); border: 1px solid var(--line); text-decoration: none; font-size: 13px; }
+.catalog-nav a.on, .catalog-nav a:hover { background: var(--green); color: white; border-color: var(--green); }
+.catalog-nav:not(.by-groups) .catalog-toggle { border: 0; background: transparent; padding: 0; height: auto; min-height: 0; font-size: 12px; font-weight: 600; line-height: 24px; color: #5c6b60; text-align: left; cursor: default; }
+.catalog-nav.by-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.catalog-nav.by-groups > .catalog-by-groups { flex: 1 0 100%; }
+.catalog-nav.by-groups > .catalog-group { display: contents; }
+.catalog-nav.by-groups .catalog-toggle { order: 0; height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font-size: 13px; font-weight: 400; line-height: 22px; }
+.catalog-nav.by-groups .catalog-group.current .catalog-toggle,
+.catalog-nav.by-groups .catalog-group.open .catalog-toggle,
+.catalog-nav.by-groups .catalog-toggle:hover { background: var(--green); color: white; border-color: var(--green); }
+.catalog-nav.by-groups .catalog-items { display: none; flex-basis: 100%; order: 1; }
+.catalog-nav.by-groups .catalog-group.open .catalog-items { display: flex; }
+@media (max-width: 760px) {
+  .catalog-nav:not(.by-groups) .catalog-group { grid-template-columns: 1fr; gap: 4px; }
+}
+.sheet-tabs { display: flex; gap: 6px; margin: 12px 0 8px; }
+.sheet-tabs a, .sheet-tabs button { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; background: white; color: var(--ink); border: 1px solid var(--line); text-decoration: none; font-size: 13px; }
+.sheet-tabs a.on, .sheet-tabs a:hover, .sheet-tabs button.on, .sheet-tabs button:hover { background: var(--green); color: white; border-color: var(--green); }
+table.access-grid td, table.access-grid th { text-align: center; }
+table.access-grid td.screen, table.access-grid td.screen .hint { text-align: left; }
+table.access-grid input { width: 16px; height: 16px; margin: 0; }
+a.icon-btn, button.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin: 0; padding: 0; }
+a.icon-btn svg, button.icon-btn svg { width: 18px; height: 18px; }
+.doc-head { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 8px 12px; background: white; border: 1px solid var(--line); padding: 8px 10px; margin-bottom: 8px; }
+.doc-head label.wide { grid-column: 1 / -1; }
+.doc-head input, .doc-head select { padding: 3px 6px; font-size: 14px; }
+.doc-total { margin: 8px 0; }
+button.slim.ghost { background: white; color: var(--bad); border: 1px solid var(--line); }
+table.sheet input.zone-input { width: 240px; }
+table.sheet td.fit { white-space: nowrap; }
+.zone-status { margin-left: 8px; font-size: 12px; color: var(--green); }
+.zone-status.bad { color: var(--bad); }
+.combo-menu { position: fixed; z-index: 30; max-height: 220px; overflow: auto; background: white; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.combo-menu button { display: block; width: 100%; margin: 0; padding: 6px 8px; border: 0; border-radius: 0; background: white; color: var(--ink); text-align: left; font-size: 13px; }
+.combo-menu button:hover, .combo-menu button.on { background: #eef2ee; }
+button.xl-filter { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; margin: 0; padding: 0; border: 1px solid #c5d0c6; border-radius: 2px; background: linear-gradient(#fff, #e7eee8); color: #3d4a40; }
+button.xl-filter.on { background: var(--green); border-color: var(--green); color: white; }
+button.xl-filter svg { width: 12px; height: 12px; display: block; margin: 0 auto; }
+.xl-menu { position: fixed; z-index: 40; width: 240px; padding: 4px 0; background: white; border: 1px solid #b7c4b8; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); color: var(--ink); font-size: 13px; font-weight: 400; }
+.xl-menu button.xl-item { display: block; width: 100%; margin: 0; padding: 5px 12px; border: 0; border-radius: 0; background: white; color: var(--ink); text-align: left; font-size: 13px; font-weight: 400; }
+.xl-menu button.xl-item:hover:not(:disabled) { background: #e8f2ec; }
+.xl-menu button.xl-item:disabled { color: #9aa59c; cursor: default; }
+.xl-menu hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
+.xl-menu .xl-search { display: block; width: calc(100% - 16px); margin: 6px 8px; padding: 4px 6px; font-size: 13px; }
+.xl-menu .xl-all { display: flex; flex-direction: row; align-items: center; gap: 6px; margin: 0; padding: 4px 10px; font-size: 13px; font-weight: 400; }
+.xl-values { max-height: 180px; overflow: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.xl-values label { display: flex; flex-direction: row; align-items: center; gap: 6px; margin: 0; padding: 3px 10px; font-size: 13px; font-weight: 400; }
+.xl-values label[hidden] { display: none; }
+.xl-values label:hover { background: #f4f7f4; }
+.xl-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px; }
+.xl-actions button { padding: 4px 14px; font-size: 13px; }
+.xl-actions button.xl-cancel { background: white; color: var(--ink); border: 1px solid var(--line); }
+.inline-form { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
+
+body:has(.journal) { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body:has(.journal) main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 6px; overflow: hidden; }
+body:has(.journal) button.back { align-self: flex-start; height: 20px; margin: 0; padding: 0 8px; font-size: 0.7rem; }
+.journal { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.journal-tools { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; padding-top: 28px; margin-top: -28px; }
+.journal-tools.band { flex-wrap: nowrap; overflow-x: auto; }
+.journal-tools.band > .journal-bar:not(.journal-filter) { flex: 0 0 auto; align-items: center; flex-wrap: nowrap; }
+.journal-tools.band > .journal-bar:not(.journal-filter) .journal-fields { flex-wrap: nowrap; align-items: center; }
+.journal-tools.band > .journal-bar:not(.journal-filter) .icon-btn,
+.journal-tools.band > .journal-bar:not(.journal-filter) .bulk-count,
+.journal-tools.band > .journal-bar:not(.journal-filter) .import-flags,
+.journal-tools.band > .journal-bar:not(.journal-filter) label.check { align-self: center; }
+.journal-bar.journal-filter { width: auto; flex: 0 0 auto; align-items: center; }
+.journal-bar.journal-filter label.check { align-self: center; }
+.journal .filter-actions { display: flex; align-items: center; gap: 4px; align-self: center; }
+.journal .filter-actions .icon-btn { align-self: center; }
+.journal-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0; padding: 0.3rem 0.5rem; background: #f5f7fa; border: 1px solid #e1e8ed; border-radius: 3px; }
+.journal-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.journal-title { align-self: center; font-size: 0.7rem; font-weight: 500; color: #2c3e50; line-height: 1.2; white-space: nowrap; }
+.journal-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.6rem; height: 1rem; margin-left: 0.35rem; padding: 0 0.3rem; border-radius: 999px; background: #2c3e50; color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 1; }
+.journal label { gap: 2px; font-size: 0.65rem; line-height: 1.2; color: #555; }
+.journal label.check { flex-direction: row; align-items: center; align-self: flex-end; height: 20px; gap: 4px; font-size: 0.7rem; }
+.journal .icon-btn { position: relative; align-self: flex-end; width: 20px; height: 20px; margin: 0; padding: 0; border: 1px solid #c5d0c6; border-radius: 3px; background: #fff; color: var(--green); }
+.journal .icon-btn svg { width: 14px; height: 14px; display: block; }
+.journal .icon-btn:hover { background: #e7f0ea; }
+.journal .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; left: 50%; top: auto; bottom: calc(100% + 6px); transform: translateX(-50%); z-index: 40; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.journal .icon-btn[data-tip]:hover::after, .journal .icon-btn[data-tip]:focus-visible::after { opacity: 1; }
+.journal .import-flags { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-self: flex-end; width: 14px; height: 20px; }
+.journal .import-flags input { width: 12px; height: 12px; margin: 0; padding: 0; }
+.journal .import-flags input[data-tip]::after { content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 30; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.journal .import-flags input[data-tip]:hover::after, .journal .import-flags input[data-tip]:focus-visible::after { opacity: 1; }
+.journal .bulk-count { height: 20px; font-size: 0.7rem; align-self: flex-end; }
+.journal .tool-box.stack { width: 22px; padding: 2px; border-radius: 3px; border-color: #e1e8ed; }
+.journal .tool-box .icon-btn { width: 18px; height: 18px; }
+.journal .tool-box .icon-btn svg { width: 12px; height: 12px; }
+.journal .dates { display: flex; align-items: center; gap: 0.25rem; font-size: 0.65rem; }
+#customers-filter,
+#tasks-filter.with-period { display: grid; grid-template-columns: auto auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
+#tasks-filter { display: grid; grid-template-columns: auto auto auto; align-items: center; width: auto; flex: 0 0 auto; column-gap: 8px; }
+#customers-filter .journal-title,
+#customers-filter .period-grid,
+#customers-filter .field-grid,
+#customers-filter .filter-actions,
+#tasks-filter .journal-title,
+#tasks-filter .period-grid,
+#tasks-filter .field-grid,
+#tasks-filter .filter-actions { grid-row: 1 / span 2; }
+#customers-filter .period-grid,
+#tasks-filter .period-grid { display: grid; grid-template-columns: auto auto auto auto; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
+#customers-filter select.period-type,
+#tasks-filter select.period-type { width: 148px; }
+#customers-filter .period-caption,
+#tasks-filter .period-caption { grid-column: 1; grid-row: 1 / span 2; }
+#customers-filter .from-word,
+#tasks-filter .from-word { grid-column: 2; grid-row: 1; }
+#customers-filter .from-select,
+#tasks-filter .from-select { grid-column: 3; grid-row: 1; }
+#customers-filter .from-date,
+#tasks-filter .from-date { grid-column: 4; grid-row: 1; }
+#customers-filter .to-word,
+#tasks-filter .to-word { grid-column: 2; grid-row: 2; }
+#customers-filter .to-select,
+#tasks-filter .to-select { grid-column: 3; grid-row: 2; }
+#customers-filter .to-date,
+#tasks-filter .to-date { grid-column: 4; grid-row: 2; }
+#customers-filter .field-grid,
+#tasks-filter .field-grid { display: grid; grid-template-columns: auto 160px; align-items: center; column-gap: 4px; row-gap: 3px; font-size: 0.65rem; color: #555; }
+#customers-filter .field-grid input, #customers-filter .field-grid select,
+#tasks-filter .field-grid input, #tasks-filter .field-grid select { width: 100%; min-width: 0; }
+.journal input:not([type="checkbox"]):not([type="file"]),
+.journal select,
+.journal button.slim,
+.journal a.slim { height: 20px; padding: 0 0.4rem; border: 1px solid #ddd; border-radius: 3px; font-size: 0.7rem; line-height: 1.1; }
+.journal button.slim, .journal a.slim { display: inline-flex; align-items: center; background: var(--green); color: #fff; border-color: var(--green); }
+.journal select.period-type { width: 188px; }
+.journal input[type="search"] { width: 200px; }
+.journal select[name="driver"],
+.journal select[name="kind"],
+.journal select[name="action"] { width: 160px; }
+.journal select[name="supplier_id"] { width: 220px; }
+.journal select[name="status"] { width: 170px; }
+.journal select[name="user_id"] { width: 180px; }
+.journal input[name="party"] { width: 180px; }
+.journal input[name="number"],
+.journal input[name="order_number"] { width: 140px; }
+.journal input[type="date"] { width: 118px; }
+.journal > .hint { margin: 0; padding: 0 2px; font-size: 0.7rem; line-height: 1.3; }
+.journal .catalog-nav { flex: 1 1 100%; margin: 0; padding: 0.3rem 0.5rem; background: #f5f7fa; border: 1px solid #e1e8ed; border-radius: 3px; gap: 4px; }
+.journal .catalog-by-groups { font-size: 0.7rem; }
+.journal .catalog-nav a,
+.journal .catalog-nav.by-groups .catalog-toggle { height: 20px; padding: 0 0.4rem; border-radius: 3px; font-size: 0.7rem; line-height: 18px; }
+.journal-table { flex: 1; min-height: 0; overflow: auto; background: #fff; border: 1px solid #e1e8ed; }
+.journal-table table.sheet { width: 100%; min-width: 100%; border: 0; border-collapse: separate; border-spacing: 0; font-size: 0.7rem; }
+.journal-table table.sheet tr:first-child th { position: sticky; top: 0; z-index: 3; height: 22px; padding: 0.15rem 1.15rem 0.15rem 0.25rem; background: #2c3e50; color: #fff; border: 1px solid #3d566e; font-size: 0.7rem; font-weight: 500; line-height: 1.1; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.12); overflow: hidden; text-overflow: ellipsis; }
+.journal-table table.sheet td { height: 20px; padding: 0.15rem 0.25rem; border: 1px solid #ddd; font-size: 0.7rem; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal-table table.sheet td.comment { height: auto; white-space: normal; max-width: 360px; }
+.journal-table table.sheet td:has(input, select, textarea, button) { height: auto; overflow: visible; }
+.journal-table table.sheet tr.group td { height: auto; background: #e7f0ea; color: var(--ink); font-weight: 700; overflow: visible; }
+.journal-table .col-resize { position: absolute; top: 0; right: -4px; z-index: 5; width: 6px; height: 100%; cursor: col-resize; }
+.journal-table .col-resize:hover { background: rgba(255, 255, 255, .45); }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
+.journal-table table.sheet tr[data-href]:hover td { background: #f0f0f0; }
+.journal-table table.sheet th.pick, .journal-table table.sheet td.pick { width: 28px; max-width: 28px; text-align: center; }
+.journal-table table.sheet th.count, .journal-table table.sheet td.count { width: 32px; max-width: 36px; color: #5d6b61; }
+.journal-table table.sheet tr:first-child th.pick, .journal-table table.sheet tr:first-child th.count { color: #fff; }
+.journal-table button.xl-filter { width: 14px; height: 14px; right: 2px; }
+.journal-table button.xl-filter svg { width: 10px; height: 10px; }
+
+body:has(.shift-page) { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body:has(.shift-page) main { flex: 1; min-width: 0; width: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.shift-page { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+.shift-page .page-bar { margin-bottom: 8px; }
+.shift-presets { display: flex; gap: 6px; align-items: flex-end; }
+.shift-board { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.shift-pane { flex: 1; min-width: 0; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+.shift-pane.routes { flex: 1.25; }
+.shift-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; flex: 0 0 auto; }
+.shift-head h2 { margin: 0; font-size: 15px; }
+.shift-head .actions { display: flex; align-items: center; gap: 6px; }
+.shift-head .icon-btn { position: relative; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--green); }
+.shift-head .icon-btn svg { width: 16px; height: 16px; }
+.shift-head .icon-btn:hover { background: #e7f0ea; }
+.shift-head .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 30; padding: 3px 8px; border-radius: 4px; background: var(--ink); color: white; font-size: 12px; line-height: 1.3; font-weight: 400; white-space: nowrap; pointer-events: none; opacity: 0; }
+.shift-head .icon-btn[data-tip]:hover::after, .shift-head .icon-btn[data-tip]:focus-visible::after { opacity: 1; }
+td.comment { max-width: 360px; white-space: normal; }
+.shift-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; background: #fff; }
+.shift-scroll table.sheet { width: 100%; min-width: max(100%, max-content); border-collapse: separate; border-spacing: 0; }
+.shift-scroll table.sheet tr:first-child th { position: sticky; top: 0; z-index: 2; background: #eef2ee; }
+
+
+==============================================================================
+### FILE: templates\base.html
+### SIZE: 5352 bytes / 104 lines
+==============================================================================
+
+{% extends "layout.html" %}
+{% load wms %}
+{% block header %}
+<header class="top">
+  <a class="brand" href="/">WMS</a>
+  <nav>
+    {% if user.is_authenticated and user|screen:"web_orders" %}
+    <div class="menu-group">
+      <a href="/orders" class="{% if request.path|startswith:'/orders' %}active{% endif %}">Заказы</a>
+      <div>
+        <a href="/orders/suppliers">Поставщикам</a>
+        <a href="/orders/customers">Грузополучателям</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_tasks" %}
+    <div class="menu-group">
+      <a href="/tasks" class="{% if request.path|startswith:'/tasks' %}active{% endif %}">Задания</a>
+      <div>
+        <a href="/tasks?kind=all">Все</a>
+        <a href="/tasks?kind=receive">Приёмка</a>
+        <a href="/tasks?kind=pick">Отбор</a>
+        <a href="/tasks?kind=ship">На отгрузку</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_reports" %}
+    <div class="menu-group">
+      <a href="/reports" class="{% if request.path|startswith:'/reports' or request.path|startswith:'/stock' or request.path|startswith:'/demand' or request.path|startswith:'/pallets' or request.path|startswith:'/units' or request.path|startswith:'/inventory' or request.path|startswith:'/transform' or request.path|startswith:'/lots' %}active{% endif %}">Отчеты</a>
+      <div>
+        <a href="/stock">Остатки</a>
+        <a href="/demand">Потребность</a>
+        <a href="/reports/nomenclature">Номенклатура 1С</a>
+        <a href="/orders/customers/revisions">Расхождения заказов</a>
+        <a href="/pallets">Паллеты</a>
+        <a href="/inventory">Инвентаризация</a>
+        <a href="/transform">Переработка</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_shipments" %}
+    <a href="/shipments" class="{% if request.path|startswith:'/shipments' %}active{% endif %}">Накладные</a>
+    {% endif %}
+    {% if user.is_authenticated and user.can_shift %}
+    <a href="/shift" class="{% if request.path|startswith:'/shift' %}active{% endif %}">Смена</a>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_logistics" %}
+    <div class="menu-group">
+      <a href="/logistics" class="{% if request.path|startswith:'/logistics' %}active{% endif %}">Логистика</a>
+      <div>
+        <a href="/logistics/routing">Маршрутизация</a>
+        <a href="/logistics/routes">Маршруты</a>
+        <a href="/logistics/schedule">График отгрузки</a>
+        <a href="/logistics/drivers">Водители</a>
+        <a href="/logistics/vehicles">Автомобили</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if user.is_authenticated and user|screen:"web_masters" %}
+      <a href="/masters" class="{% if request.path|startswith:'/masters' or request.path|startswith:'/users' or request.path|startswith:'/staff' or request.path|startswith:'/positions' or request.path|startswith:'/office' %}active{% endif %}">Справочники</a>
+    {% endif %}
+    {% if user.is_authenticated %}
+    {% if user.opens_admin or user|screen:"web_service" %}
+    <div class="menu-group">
+      <a href="/service" class="{% if request.path|startswith:'/service' or request.path|startswith:'/admin' %}active{% endif %}">Сервис</a>
+      <div>
+        <a href="/tsd">ТСД</a>
+        {% if user.opens_admin %}<a href="/admin/">Админка</a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </nav>
+  {% if user.is_authenticated %}
+  <div class="account">
+  <div class="menu-group notices">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <button type="button" class="notice-btn" aria-haspopup="true" aria-label="Уведомления">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 22a2.2 2.2 0 0 0 2.1-1.5H9.9A2.2 2.2 0 0 0 12 22zm7-6V11a7 7 0 0 0-5-6.7V3.5a2 2 0 1 0-4 0v.8A7 7 0 0 0 5 11v5l-1.7 1.7A1 1 0 0 0 4 19.4h16a1 1 0 0 0 .7-1.7z"/></svg>
+      {% if notice_unread %}<span class="notice-badge">{{ notice_unread }}</span>{% endif %}
+    </button>
+    <div class="notice-menu">
+      {% for item in notices %}
+      <p{% if item.unread %} class="unread"{% endif %}>{{ item.text }}</p>
+      {% empty %}
+      <p class="muted">Нет уведомлений</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="menu-group profile">
+    <button type="button" class="profile-btn" aria-haspopup="true" aria-label="Профиль">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>
+      <span class="profile-label">{{ user.name }}</span>
+    </button>
+    <div class="profile-menu">
+      <p class="who">{{ user.name }}</p>
+      <p class="profile-role">{% if user.position %}{{ user.position.name }}{% else %}{{ ROLE_LABELS|label:user.role }}{% endif %}</p>
+      <form method="post" action="/logout">{% csrf_token %}<button class="link" type="submit">Выход</button></form>
+    </div>
+  </div>
+  </div>
+  {% endif %}
+</header>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\crossdock.html
+### SIZE: 2158 bytes / 44 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Кросс-док{% endblock %}
+{% block content %}
+<h1>Кросс-док</h1>
+<p class="hint">На заказ назначаются однородные места и целые входные паллеты. Смешивать можно только при сборке паллеты выхода.</p>
+{% if orders %}
+<form method="get" action="/crossdock" class="row">{% csrf_token %}
+  <label>Заказ
+    <select name="order_id" onchange="this.form.submit()">

@@ -1,4 +1,5 @@
 ROLE_LABELS = {
+    "none": "Без доступа",
     "receiver": "Приёмщик",
     "warehouse": "Кладовщик",
     "office": "Офис",
@@ -25,6 +26,7 @@ UNIT_STATUS = {
 
 DOC_STATUS = {
     "open": "Открыт",
+    "partial": "Отгружен частично",
     "closed": "Закрыт",
 }
 
@@ -59,23 +61,47 @@ TASK_KIND = {
 TASK_STATUS = {
     "open": "Открыт",
     "to_receive": "К приемке",
+    "assigned": "Назначено",
+    "in_work": "В работе",
+    "accepted": "Принят",
     "to_pick": "К отбору",
+    "created": "Создана",
+    "partial": "Частично спланирована",
+    "planned": "Спланирована",
+    "picked": "Отобрано",
+    "short": "Не хватает",
     "to_ship": "К отгрузке",
     "closed": "Закрыт",
 }
 
 TASK_WORK_STATUS = {
     "receive": "to_receive",
-    "pick": "to_pick",
+    "pick": "created",
     "ship": "to_ship",
 }
 
 
 def task_status_choices(kind: str, current: str = "") -> list[tuple[str, str]]:
+    if kind == "pick":
+        rows = [
+            ("created", TASK_STATUS["created"]),
+            ("partial", TASK_STATUS["partial"]),
+            ("planned", TASK_STATUS["planned"]),
+            ("in_work", TASK_STATUS["in_work"]),
+            ("picked", TASK_STATUS["picked"]),
+            ("closed", TASK_STATUS["closed"]),
+        ]
+        if current and current not in {key for key, _label in rows}:
+            rows.append((current, TASK_STATUS.get(current, current)))
+        return rows
     work = TASK_WORK_STATUS.get(kind)
     rows = [("open", TASK_STATUS["open"])]
     if work:
         rows.append((work, TASK_STATUS[work]))
+    if kind == "receive":
+        rows.append(("assigned", TASK_STATUS["assigned"]))
+        rows.append(("in_work", TASK_STATUS["in_work"]))
+        rows.append(("accepted", TASK_STATUS["accepted"]))
     rows.append(("closed", TASK_STATUS["closed"]))
     if current and current not in {key for key, _label in rows}:
         rows.append((current, TASK_STATUS.get(current, current)))

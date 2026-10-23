@@ -22,7 +22,7 @@
 </div>
 <p class="hint">{{ document.get_status_display }}. Вход {{ input_kg|kg }} кг, выход {{ output_kg|kg }} кг, отход {{ waste_kg|kg }} кг, расхождение {{ gap_kg|kg }} кг, допуск {{ tolerance_kg|kg }} кг.{% if inputs %} {% if fits %}Масса сходится.{% else %}Масса не сходится, проводка остановится.{% endif %}{% endif %}</p>
 {% if document.ledger_waste_kg != None %}
-<p class="hint">В движениях списан отход {{ document.ledger_waste_kg|kg }} кг. Отдельная партия отхода не создаётся. Резерв с исходных паллет снят, выход встал свободным остатком.</p>
+<p class="hint">В движениях списан отход {{ document.ledger_waste_kg|kg }} кг. Отдельная партия отхода не создаётся. Резерв с исходных паллет снят. Выход получил категории из шапки. Жёсткий резерв входа на выход не переносится.</p>
 {% endif %}
 {% if document.notes and not open %}<p class="hint">{{ document.notes }}</p>{% endif %}
 
@@ -32,6 +32,31 @@
   <label>Дата <input type="date" name="doc_date" value="{{ document.doc_date|date:'Y-m-d' }}" required></label>
   <label>Допуск, кг <input name="tolerance_kg" value="{{ document.tolerance_kg|kg }}" inputmode="decimal"></label>
   <label>Примечание <textarea name="notes">{{ document.notes }}</textarea></label>
+  <fieldset>
+    <legend>Категории выхода</legend>
+    {% for item in consignee_categories %}
+    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}" {% if item.on %}checked{% endif %}> {{ item.name }}</label>
+    {% empty %}
+    <p class="hint">Категорий грузополучателей нет. Выход можно отгрузить любой.</p>
+    {% endfor %}
+    {% if category_conflict %}<p class="hint">У входных паллет нет общей категории. Отметьте, кому можно отгрузить выход, и сохраните шапку.</p>{% elif not document.categories_set %}<p class="hint">Пока шапка не сохранена, отмечены общие категории входа. Пустой список — выход можно отдать любой категории.</p>{% else %}<p class="hint">Список сохранён. Пустой список — выход можно отдать любой категории.</p>{% endif %}
+  </fieldset>
+  <label>Резерв под грузополучателя
+    <select name="output_consignee_id">
+      <option value="">Нет</option>
+      {% for item in consignees %}
+      <option value="{{ item.id }}" {% if document.output_consignee_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Резерв под строку заказа
+    <select name="output_line_id">
+      <option value="">Нет</option>
+      {% for item in order_lines %}
+      <option value="{{ item.id }}" {% if document.output_line_id == item.id %}selected{% endif %}>{{ item.order.number }} · {{ item.order.consignee.name }} · {{ item.product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <div class="actions"><button class="slim" type="submit">Сохранить шапку</button></div>
 </form>
 <p class="hint">Паллета списывается целиком. Часть веса уходит в дочерние партии, остаток — в отход. Исходную паллету в другую партию не переносят. Дата и допуск берутся из сохранённой шапки.</p>
@@ -79,7 +104,7 @@
 {% endif %}
 
 <h2>Выход</h2>
-<p class="hint">Каждая строка становится дочерней партией и новой паллетой. Сорт берётся из справочника.</p>
+<p class="hint">Каждая строка становится дочерней партией и новой паллетой. Сорт берётся из справочника. Жёсткий резерв входа на выход не переносится.</p>
 {% if outputs %}
 <table class="sheet">
   <tr><th>Товар</th><th>Срок</th><th class="num">Кг</th><th>Партия</th><th>Паллета</th>{% if open %}<th></th>{% endif %}</tr>

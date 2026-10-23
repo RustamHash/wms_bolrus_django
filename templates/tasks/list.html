@@ -4,38 +4,76 @@
 {% block content %}
 <div class="journal">
   <div class="journal-tools band">
-    <form class="journal-bar journal-filter" method="get" action="/tasks">
+    <form class="journal-bar journal-filter{% if kind == 'pick' %} with-period{% endif %}" method="get" action="/tasks" id="tasks-filter">
       <div class="journal-title">{% if kind %}{{ TASK_KIND|label:kind }}{% else %}Задания{% endif %} <span class="journal-count">{{ tasks|length }}</span></div>
-      <label>Вид
+      {% if kind == "pick" %}
+      {% include "orders/_period.html" with prefix="ship" label="Дата отгрузки" bound=ship_range tomorrow=1 %}
+      {% endif %}
+      <div class="field-grid">
+        <span>Вид</span>
         <select name="kind">
           <option value="all" {% if not kind %}selected{% endif %}>Все</option>
           {% for key, label in TASK_KIND.items %}
           <option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
-      </label>
-      {% if kind != "receive" %}
-      <label class="check">
-        <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()">
-        По группам
-      </label>
-      {% endif %}
+        <span>Статус</span>
+        <select name="status">
+          <option value="" {% if not status %}selected{% endif %}>Не закрытые</option>
+          <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
+          {% for key, label in status_choices %}
+          <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <span class="filter-actions">
+        {% if kind != "receive" %}
+        <label class="check">
+          <input type="checkbox" name="grouped" value="1" {% if grouped %}checked{% endif %} onchange="this.form.submit()">
+          По группам
+        </label>
+        {% endif %}
         <button class="icon-btn" type="submit" data-tip="Найти" aria-label="Найти">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         </button>
+        <a class="icon-btn" href="/tasks?kind={{ kind|default:'all' }}" data-tip="Сброс" aria-label="Сброс">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </a>
       </span>
     </form>
-    <form id="tasks-bulk" class="journal-bar" method="post" action="/tasks" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить отмеченные задания?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
+    <form id="tasks-bulk" class="journal-bar" method="post" action="/tasks">{% csrf_token %}
       <input type="hidden" name="kind" value="{{ kind|default:'all' }}">
+      {% if kind == "pick" %}
+      <input type="hidden" name="ship_from_type" value="{{ ship_range.from_type }}">
+      <input type="hidden" name="ship_from" value="{{ ship_range.from_value }}">
+      <input type="hidden" name="ship_to_type" value="{{ ship_range.to_type }}">
+      <input type="hidden" name="ship_to" value="{{ ship_range.to_value }}">
+      {% if grouped %}<input type="hidden" name="grouped" value="1">{% endif %}
+      {% endif %}
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
       <div class="journal-fields">
         <span class="bulk-count" data-bulk-count="tasks-bulk">Выбрано: 0</span>
         <label>Действие
           <select name="action">
+            {% if kind == "pick" %}
+            <option value="reserve">Спланировать</option>
+            <option value="pick">Отобрать</option>
+            {% endif %}
+            {% if user.is_office %}<option value="assign">Назначить</option>{% endif %}
             <option value="print">Печать</option>
             <option value="delete">Удалить</option>
           </select>
         </label>
+        {% if user.is_office %}
+        <label data-assign hidden>Сотрудник
+          <select name="user_id">
+            <option value="">—</option>
+            {% for person in assign_staff %}
+            <option value="{{ person.id }}">{{ person.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
         <label class="check">
           <input type="checkbox" name="print_groups" value="1">
           Печать по группам
@@ -50,14 +88,18 @@
 <table class="sheet" data-bulk="tasks-bulk" {% if grouped %}id="tasks-grouped"{% endif %}>
   <tr>
     <th>Номер</th><th>Вид</th><th>Заказ</th>
-    {% if kind == "receive" %}<th>Поставщик</th>{% endif %}
-    {% if kind != "receive" %}<th>Грузополучатель</th><th>Зона доставки</th>{% endif %}
+    {% if kind == "receive" %}<th>Поставщик</th><th>Сотрудник</th>{% endif %}
+    {% if kind != "receive" %}
+    <th>Грузополучатель</th><th>Зона доставки</th>
+    {% if kind == "pick" %}<th>Дата доставки</th><th class="num">Вес, кг</th><th class="num">Строк</th>{% endif %}
+    <th>Сотрудник</th>
+    {% endif %}
     <th>Статус</th>
   </tr>
   {% if grouped %}
   {% for group in groups %}
   <tr class="group" data-open="1">
-    <td colspan="6"><span class="fold">−</span> {{ group.title }} · {{ group.tasks|length }}</td>
+    <td colspan="{% if kind == 'pick' %}10{% else %}7{% endif %}"><span class="fold">−</span> {{ group.title }} · {{ group.tasks|length }}</td>
   </tr>
   {% for task in group.tasks %}
   <tr data-href="/tasks/{{ task.id }}" data-id="{{ task.id }}">
@@ -67,13 +109,19 @@
       {% if task.purchase_order %}<a href="/orders/suppliers/{{ task.purchase_order.id }}">{{ task.purchase_order.number }}</a>
       {% elif task.order %}<a href="/orders/{{ task.order.id }}">{{ task.order.number }}</a>{% endif %}
     </td>
-    <td>{% if task.order %}{% if task.order.consignee_id %}{{ task.order.consignee.name }}{% else %}{{ task.order.client.name }}{% endif %}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id %}{{ task.order.consignee.name }}{% endif %}</td>
     <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    {% if kind == "pick" %}
+    <td>{% if task.order %}{{ task.order.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td class="num">{{ task.weight_kg|kg }}</td>
+    <td class="num">{{ task.line_count }}</td>
+    {% endif %}
+    <td>{% include "tasks/_assignee.html" %}</td>
     <td>{{ TASK_STATUS|label:task.status }}</td>
   </tr>
   {% endfor %}
   {% empty %}
-  <tr><td colspan="6">Заданий нет</td></tr>
+  <tr><td colspan="{% if kind == 'pick' %}10{% else %}7{% endif %}">Заданий нет</td></tr>
   {% endfor %}
   {% else %}
   {% for task in tasks %}
@@ -86,15 +134,33 @@
     </td>
     {% if kind == "receive" %}
     <td>{% if task.supplier %}{{ task.supplier.name }}{% elif task.purchase_order %}{{ task.purchase_order.supplier.name }}{% endif %}</td>
+    <td>{% include "tasks/_assignee.html" %}</td>
     {% endif %}
     {% if kind != "receive" %}
-    <td>{% if task.order %}{% if task.order.consignee_id %}{{ task.order.consignee.name }}{% else %}{{ task.order.client.name }}{% endif %}{% endif %}</td>
+    <td>{% if task.order and task.order.consignee_id %}{{ task.order.consignee.name }}{% endif %}</td>
     <td>{% if task.order and task.order.consignee_id and task.order.consignee.zone_id %}{{ task.order.consignee.zone.name }}{% endif %}</td>
+    {% if kind == "pick" %}
+    <td>{% if task.order %}{{ task.order.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td class="num">{{ task.weight_kg|kg }}</td>
+    <td class="num">{{ task.line_count }}</td>
     {% endif %}
-    <td>{{ TASK_STATUS|label:task.status }}</td>
+    <td>{% include "tasks/_assignee.html" %}</td>
+    {% endif %}
+    <td>
+      {% if kind == "receive" and user.is_office %}
+      <form method="post" action="/tasks/{{ task.id }}/status">{% csrf_token %}
+        <input type="hidden" name="next" value="/tasks?kind=receive">
+        <select name="status" onchange="this.form.submit()">
+          {% for key, label in status_choices %}
+          <option value="{{ key }}" {% if task.status == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% else %}{{ TASK_STATUS|label:task.status }}{% endif %}
+    </td>
   </tr>
   {% empty %}
-  <tr><td colspan="{% if kind == 'receive' %}5{% else %}6{% endif %}">Заданий нет</td></tr>
+  <tr><td colspan="{% if kind == 'receive' %}6{% elif kind == 'pick' %}10{% else %}7{% endif %}">Заданий нет</td></tr>
   {% endfor %}
   {% endif %}
 </table>
@@ -102,6 +168,59 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script>
+  const bulk = document.getElementById("tasks-bulk");
+  if (bulk) {
+    const action = bulk.querySelector("[name=action]");
+    const assign = bulk.querySelector("[data-assign]");
+    const person = bulk.querySelector("[name=user_id]");
+    const showAssign = () => {
+      const on = action && action.value === "assign";
+      if (assign) assign.hidden = !on;
+      if (person) person.required = on;
+    };
+    if (action) action.addEventListener("change", showAssign);
+    showAssign();
+    bulk.addEventListener("submit", (event) => {
+      const value = action ? action.value : "";
+      if (value === "print") {
+        bulk.target = "_blank";
+        return;
+      }
+      bulk.target = "";
+      if (value === "delete" && !confirm("Удалить отмеченные задания?")) event.preventDefault();
+      if (value === "reserve" && !confirm("Спланировать выбранные задания?")) event.preventDefault();
+      if (value === "pick" && !confirm("Отобрать запланированный вес в выбранных заданиях?")) event.preventDefault();
+      if (value === "assign") {
+        const chosen = person && person.selectedOptions[0];
+        if (!person || !person.value) {
+          event.preventDefault();
+          alert("Выберите сотрудника");
+          return;
+        }
+        const name = chosen ? chosen.textContent.trim() : "";
+        if (!confirm("Назначить выбранные задания сотруднику " + name + "?")) event.preventDefault();
+      }
+    });
+  }
+</script>
+{% if kind == "pick" %}
+<script>
+  document.querySelectorAll("#tasks-filter select.period-type").forEach((select) => {
+    const input = document.getElementById(select.dataset.periodInput);
+    select.addEventListener("change", () => {
+      const custom = select.value === "custom";
+      input.hidden = !custom;
+      input.disabled = !custom;
+      if (!custom) select.form.requestSubmit();
+      else input.focus();
+    });
+    input.addEventListener("change", () => {
+      if (input.value) select.form.requestSubmit();
+    });
+  });
+</script>
+{% endif %}
 {% if grouped %}
 <script>
   const table = document.getElementById("tasks-grouped");

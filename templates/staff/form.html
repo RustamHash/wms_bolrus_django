@@ -14,6 +14,15 @@
   <label>Имя <input name="first_name" value="{% if item %}{{ item.first_name }}{% endif %}" required></label>
   <label>Отчество <input name="middle_name" value="{% if item %}{{ item.middle_name }}{% endif %}"></label>
   <label>Короткий код <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
+  <label>Пользователь
+    <select name="account_id">
+      <option value=""></option>
+      {% for account in accounts %}
+      <option value="{{ account.id }}" {% if item and item.account.id == account.id %}selected{% endif %}>{{ account.name }} · {{ account.login }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint wide">Пользователь входит в веб и на ТСД своим логином. После связи ему видны задания, назначенные этому сотруднику.</p>
   <label>Должность
     <select name="position_id" required>
       <option value=""></option>

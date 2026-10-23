@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: apps\logistics\schedule.py
+### SIZE: 5795 bytes / 166 lines
+==============================================================================
+
+from datetime import date
+from decimal import Decimal
+
+from django.db.models import Count, Prefetch, Sum
+
+from apps.logistics.models import Route, RouteOrder
+from apps.logistics.queries import order_weights
+from apps.logistics.routes import load_local
+
+
+def _routes_for_delivery_day(day: date):
+    """Все маршруты с датой доставки (рейса) = day."""
+    return (
+        Route.objects.filter(route_date=day)
+        .exclude(status=Route.Status.CANCELLED)
+        .select_related("driver")
+    )
+
+
+def schedule_context(day: date) -> dict:
+    """График по дате доставки: список, кто во сколько грузится."""
+    routes = list(
+        _routes_for_delivery_day(day).annotate(
+            order_count=Count("route_orders", distinct=True),
+            weight=Sum("route_orders__order__lines__qty_kg"),
+        )
+    )
+    items = []
+    for route in routes:
+        items.append(
+            {
+                "id": route.id,
+                "name": route.name or f"Маршрут {route.id}",
+                "driver": route.driver.full_name if route.driver_id else "Без водителя",
+                "when": _load_stamp(route.planned_load_at),
+                "timed": bool(route.planned_load_at),
+                "order_count": route.order_count or 0,
+                "weight": route.weight or Decimal("0"),
+                "sort": (_sort_key_plan(route.planned_load_at), route.id),
+            }
+        )
+    items.sort(key=lambda item: item["sort"])
+    for item in items:
+        del item["sort"]
+    return {"day": day, "items": items}
+
+
+def _tt_key(order) -> str:
+    if not order.consignee_id:
+        return f"order:{order.id}"
+    address = (order.consignee.address or "").strip()
+    if address:
+        return address.casefold()
+    return f"consignee:{order.consignee_id}"
+
+
+def _clock(value) -> str:
+    if not value:
+        return ""
+    local = load_local(value)
+    return f"{local.hour:02d}:{local.minute:02d}"
+
+
+def _load_stamp(value) -> str:
+    """Дата и время плана погрузки, всегда вместе."""
+    if not value:
+        return ""
+    local = load_local(value)
+    return f"{local:%d.%m.%Y} {local.hour:02d}:{local.minute:02d}"
+
+
+def _fact_label(value, delivery_day: date) -> str:
+    if not value:
+        return ""
+    local = load_local(value)
+    clock = f"{local.hour:02d}:{local.minute:02d}"
+    if local.date() != delivery_day:
+        return f"{local:%d.%m} {clock}"
+    return clock
+
+
+def _sort_key_plan(value) -> tuple:
+    """Полная дата+время плана, чтобы вечерняя погрузка шла раньше утренней."""
+    if not value:
+        return (1, date.max, 0, 0)
+    local = load_local(value)
+    return (0, local.date(), local.hour, local.minute)
+
+
+def schedule_print_tree(day: date) -> dict:
+    """
+    Все маршруты с датой доставки = day, по строке на маршрут.
+    Сортировка по плану погрузки. План — дата и время, как в графике на экране.
+    Строки: план | факт | водитель | маршрут | комментарий | вес | ТТ.
+    """
+    routes = list(
+        _routes_for_delivery_day(day)
+        .prefetch_related(
+            Prefetch(
+                "route_orders",
+                queryset=RouteOrder.objects.select_related(
+                    "order__consignee",
+                    "order__consignee",
+                ).order_by("position", "id"),
+            )
+        )
+        .order_by("planned_load_at", "id")
+    )
+    all_orders = [stop.order for route in routes for stop in route.route_orders.all()]
+    weights = order_weights(all_orders)
+
+    prepared = []
+    for route in routes:
+        driver_name = route.driver.full_name if route.driver_id else "Без водителя"
+        route_name = route.name or f"Маршрут {route.id}"
+        route_weight = Decimal("0")
+        tt: set[str] = set()
+        for stop in route.route_orders.all():
+            order = stop.order
+            route_weight += weights.get(order.id) or Decimal("0")
+            tt.add(_tt_key(order))
+        prepared.append(
+            {
+                "sort": (
+                    _sort_key_plan(route.planned_load_at),
+                    driver_name.casefold(),
+                    route_name.casefold(),
+                    route.id,
+                ),
+                "plan": _load_stamp(route.planned_load_at),
+                "fact": _fact_label(route.actual_load_at, day),
+                "label": driver_name,
+                "route": route_name,
+                "notes": (route.notes or "").strip(),
+                "weight": route_weight,
+                "tt": tt,
+            }
+        )
+    prepared.sort(key=lambda item: item["sort"])
+
+    table_rows = []
+    grand_weight = Decimal("0")
+    grand_tt: set[str] = set()
+    for item in prepared:
+        table_rows.append(
+            {
+                "kind": "driver",
+                "plan": item["plan"],
+                "fact": item["fact"],
+                "label": item["label"],
+                "route": item["route"],
+                "notes": item["notes"],
+                "weight": item["weight"],
+                "tt_count": len(item["tt"]),
+            }
+        )
+        grand_weight += item["weight"]
+        grand_tt |= item["tt"]
+
+    return {
+        "day": day,
+        "rows": table_rows,
+        "total_weight": grand_weight,
+        "total_tt": len(grand_tt),
+        "route_count": len(routes),
+    }
+
+
+==============================================================================
+### FILE: apps\logistics\shift.py
+### SIZE: 7865 bytes / 215 lines
+==============================================================================
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+from django.db.models import Count, Prefetch, Sum
+from django.utils import timezone
+
+from apps.common.constants import TASK_STATUS
+from apps.common.exceptions import WarehouseError
+from apps.logistics.models import Route, RouteOrder
+from apps.logistics.queries import order_weights
+from apps.logistics.schedule import _sort_key_plan
+from apps.planning.models import Order, PurchaseOrder, Task
+
+
+def _stamp(obj, field: str, label: str) -> None:
+    if getattr(obj, field) is not None:
+        raise WarehouseError(f"{label} уже зафиксировано")
+    setattr(obj, field, timezone.now())
+    obj.save(update_fields=[field])
+
+
+def parse_shift_date(raw: str) -> date:
+    value = (raw or "").strip()
+    if not value:
+        return timezone.localdate()
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise WarehouseError("Некорректная дата") from exc
+
+
+def parse_shift_period(raw_from: str, raw_to: str, raw_date: str = "") -> tuple[date, date, str]:
+    today = timezone.localdate()
+    start_raw = (raw_from or "").strip()
+    end_raw = (raw_to or "").strip()
+    single = (raw_date or "").strip()
+    if not start_raw and not end_raw and single:
+        start_raw = end_raw = single
+    if not start_raw and not end_raw:
+        return today, today, "today"
+    start = parse_shift_date(start_raw or end_raw)
+    end = parse_shift_date(end_raw or start_raw)
+    if end < start:
+        raise WarehouseError("Дата окончания раньше начала")
+    preset = ""
+    if start == end:
+        if start == today:
+            preset = "today"
+        elif start == today - timedelta(days=1):
+            preset = "yesterday"
+        elif start == today + timedelta(days=1):
+            preset = "tomorrow"
+    return start, end, preset
+
+
+def task_status_label(tasks, work: str) -> str:
+    if not tasks:
+        return "Нет задания"
+    statuses = {task.status for task in tasks}
+    if work in statuses:
+        return TASK_STATUS[work]
+    if "open" in statuses:
+        return TASK_STATUS["open"]
+    if statuses <= {"closed", "picked"}:
+        if statuses == {"picked"}:
+            return TASK_STATUS["picked"]
+        return TASK_STATUS["closed"]
+    status = next(iter(statuses))
+    return TASK_STATUS.get(status, status)
+
+
+def shift_orders(start: date, end: date) -> list[dict]:
+    orders = list(
+        Order.objects.filter(ship_date__gte=start, ship_date__lte=end)
+        .select_related("consignee", "consignee__zone")
+        .prefetch_related(
+            Prefetch(
+                "route_orders",
+                queryset=RouteOrder.objects.filter(route__status__in=Route.ASSIGNED_STATUSES).select_related("route"),
+            ),
+            Prefetch("tasks", queryset=Task.objects.filter(kind="pick")),
+        )
+        .order_by("ship_date", "id")
+    )
+    weights = order_weights(orders)
+    rows = []
+    for order in orders:
+        names = [link.route.name or f"Маршрут {link.route_id}" for link in order.route_orders.all()]
+        rows.append(
+            {
+                "id": order.id,
+                "date": order.ship_date,
+                "number": order.number or order.external_number or f"#{order.pk}",
+                "consignee": order.consignee.name if order.consignee_id else "",
+                "zone": order.consignee.zone.name if order.consignee_id and order.consignee.zone_id else "",
+                "weight": weights.get(order.id, Decimal("0")),
+                "plans": [link.route.planned_load_at for link in order.route_orders.all() if link.route.planned_load_at],
+                "route": ", ".join(names),
+                "pick": task_status_label(list(order.tasks.all()), "created"),
+            }
+        )
+    return rows
+
+
+def shift_incoming(start: date, end: date) -> list[dict]:
+    orders = list(
+        PurchaseOrder.objects.filter(receipt_date__gte=start, receipt_date__lte=end)
+        .select_related("supplier")
+        .prefetch_related(Prefetch("tasks", queryset=Task.objects.filter(kind="receive")))
+        .annotate(weight=Sum("lines__qty_kg"))
+        .order_by("receipt_date", "id")
+    )
+    rows = []
+    for order in orders:
+        rows.append(
+            {
+                "id": order.id,
+                "date": order.receipt_date,
+                "number": order.number or order.external_number or f"#{order.pk}",
+                "supplier": order.supplier.name,
+                "weight": order.weight or Decimal("0"),
+                "status": order.status,
+                "receive": task_status_label(list(order.tasks.all()), "to_receive"),
+                "comment": order.comment,
+                "arrived_at": order.arrived_at,
+                "gate_at": order.gate_at,
+                "receive_finished_at": order.receive_finished_at,
+                "departed_at": order.departed_at,
+            }
+        )
+    return rows
+
+
+def shift_routes(start: date, end: date) -> list[Route]:
+    routes = list(
+        Route.objects.filter(route_date__gte=start, route_date__lte=end)
+        .exclude(status=Route.Status.CANCELLED)
+        .select_related("driver")
+        .annotate(
+            order_count=Count("route_orders", distinct=True),
+            weight=Sum("route_orders__order__lines__qty_kg"),
+        )
+    )
+    routes.sort(key=lambda route: (_sort_key_plan(route.planned_load_at), route.id))
+    return routes
+
+
+def dock_route(route: Route) -> Route:
+    if route.status not in Route.LIVE_STATUSES:
+        raise WarehouseError("Поставить к отгрузке можно черновик или запланированный маршрут")
+    route.status = Route.Status.DOCKED
+    if route.docked_at is None:
+        route.docked_at = timezone.now()
+    route.save()
+    return route
+
+
+def ship_route(route: Route) -> Route:
+    if route.status != Route.Status.DOCKED:
+        raise WarehouseError("Отгрузить можно только маршрут, поставленный к отгрузке")
+    route.status = Route.Status.COMPLETED
+    if route.actual_load_at is None:
+        route.actual_load_at = timezone.now()
+    route.save()
+    return route
+
+
+def arrive_route(route: Route) -> Route:
+    _stamp(route, "arrived_at", "Прибытие")
+    return route
+
+
+def depart_route(route: Route) -> Route:
+    _stamp(route, "departed_at", "Убытие")
+    return route
+
+
+def set_incoming_comment(order: PurchaseOrder, comment: str) -> PurchaseOrder:
+    order.comment = comment
+    order.save(update_fields=["comment"])
+    return order
+
+
+def arrive_incoming(order: PurchaseOrder) -> PurchaseOrder:
+    _stamp(order, "arrived_at", "Прибытие")
+    return order
+
+
+def gate_incoming(order: PurchaseOrder) -> PurchaseOrder:
+    _stamp(order, "gate_at", "Постановка на ворота")
+    return order
+
+
+def finish_incoming(order: PurchaseOrder) -> PurchaseOrder:
+    _stamp(order, "receive_finished_at", "Окончание приёмки")
+    return order
+
+
+def depart_incoming(order: PurchaseOrder) -> PurchaseOrder:
+    _stamp(order, "departed_at", "Убытие")
+    return order
+
+
+def revert_route(route: Route) -> Route:
+    if route.status == Route.Status.DOCKED:
+        route.status = Route.Status.PLANNED
+        route.docked_at = None
+        route.save()
+        return route
+    if route.status == Route.Status.COMPLETED:
+        route.status = Route.Status.DOCKED
+        route.actual_load_at = None
+        route.save()
+        return route
+    raise WarehouseError("Этот маршрут нельзя вернуть")
+
+
+==============================================================================
+### FILE: apps\logistics\views.py
+### SIZE: 30640 bytes / 853 lines
+==============================================================================
+
+import json
+from datetime import date, timedelta
+
+from django.contrib import messages
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, text
+from apps.common.http import back_url, done, guarded, roles_required
+from apps.logistics.dirs import apply_driver, apply_vehicle
+from apps.logistics.models import Driver, Route, RouteOrder, Vehicle
+from apps.planning.models import PurchaseOrder
+from apps.logistics.queries import unassigned_orders_queryset
+from apps.logistics.routes import (
+    add_orders_to_route,
+    available_orders_for_route,
+    delete_routes,
+    load_local,
+    parse_load_date,
+    parse_load_datetime,
+    remove_order_from_route,
+    reorder_route_orders,
+    route_weight,
+    set_planned_load_at,
+    ship_tasks_for_orders,
+    update_route_header,
+)
+from apps.logistics.routing import (
+    add_assigned_orders_to_route,
+    clear_session_assignments,
+    clear_session_order_assignments,
+    consumed_for_create,
+    consumed_for_route,
+    create_routes_from_zone_assignments,
+    driver_load_summary,
+    routing_rows,
+    set_session_assignment,
+    set_session_order_assignment,
+)
+from apps.logistics.schedule import schedule_context
+from apps.logistics.shift import (
+    arrive_incoming,
+    arrive_route,
+    depart_incoming,
+    depart_route,
+    dock_route,
+    finish_incoming,
+    gate_incoming,
+    parse_shift_period,
+    revert_route,
+    set_incoming_comment,
+    shift_incoming,
+    shift_orders,
+    shift_routes,
+    ship_route,
+)
+
+
+def _today() -> date:
+    return timezone.localdate()
+
+
+def _ship_date(request) -> date:
+    raw = (request.GET.get("date") or request.POST.get("date") or "").strip()
+    if not raw:
+        return _today() + timedelta(days=1)
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise WarehouseError("Некорректная дата") from exc
+
+
+def _posted_driver_id(request) -> int | None:
+    raw_driver = text(request.POST, "driver_id")
+    if raw_driver == "":
+        return None
+    try:
+        driver_id = int(raw_driver)
+    except ValueError as exc:
+        raise WarehouseError("Некорректный водитель") from exc
+    if driver_id < 0:
+        raise WarehouseError("Некорректный водитель")
+    return driver_id
+
+
+@roles_required("office")
+def index(request):
+    day = _today() + timedelta(days=1)
+    return render(
+        request,
+        "logistics/index.html",
+        {
+            "title": "Логистика",
+            "day": day,
+            "route_count": Route.objects.filter(route_date=day).exclude(status=Route.Status.CANCELLED).count(),
+            "unassigned": unassigned_orders_queryset(day).count(),
+            "drivers": Driver.objects.filter(is_active=True).count(),
+        },
+    )
+
+
+# --- directories ---
+
+
+@roles_required("office")
+def vehicle_list(request):
+    return render(
+        request,
+        "logistics/vehicle_list.html",
+        {"title": "Автомобили", "items": Vehicle.objects.order_by("-is_active", "plate_number")},
+    )
+
+
+@roles_required("office")
+def vehicle_new(request):
+    return render(request, "logistics/vehicle_form.html", {"title": "Автомобиль", "item": None})
+
+
+@roles_required("office")
+def vehicle_create(request):
+    def action():
+        return apply_vehicle(Vehicle(), request.POST)
+
+    _, response = guarded(request, "/logistics/vehicles/new", action)
+    if response:
+        return response
+    return done(request, "/logistics/vehicles", "Сохранено")
+
+
+@roles_required("office")
+def vehicle_edit(request, item_id):
+    item = get_object_or_404(Vehicle, pk=item_id)
+    return render(request, "logistics/vehicle_form.html", {"title": "Автомобиль", "item": item})
+
+
+@roles_required("office")
+def vehicle_update(request, item_id):
+    def action():
+        item = Vehicle.objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Автомобиль не найден")
+        return apply_vehicle(item, request.POST)
+
+    _, response = guarded(request, f"/logistics/vehicles/{item_id}", action)
+    if response:
+        return response
+    return done(request, "/logistics/vehicles", "Сохранено")
+
+
+@roles_required("office")
+def driver_list(request):
+    return render(
+        request,
+        "logistics/driver_list.html",
+        {
+            "title": "Водители",
+            "items": Driver.objects.select_related("vehicle").order_by("-is_active", "full_name"),
+        },
+    )
+
+
+@roles_required("office")
+def driver_new(request):
+    return render(
+        request,
+        "logistics/driver_form.html",
+        {
+            "title": "Водитель",
+            "item": None,
+            "vehicles": Vehicle.objects.filter(is_active=True).order_by("plate_number"),
+        },
+    )
+
+
+@roles_required("office")
+def driver_create(request):
+    def action():
+        return apply_driver(Driver(), request.POST)
+
+    _, response = guarded(request, "/logistics/drivers/new", action)
+    if response:
+        return response
+    return done(request, "/logistics/drivers", "Сохранено")
+
+
+@roles_required("office")
+def driver_edit(request, item_id):
+    item = get_object_or_404(Driver.objects.select_related("vehicle"), pk=item_id)
+    return render(
+        request,
+        "logistics/driver_form.html",
+        {
+            "title": "Водитель",
+            "item": item,
+            "vehicles": Vehicle.objects.filter(is_active=True).order_by("plate_number"),
+        },
+    )
+
+
+@roles_required("office")
+def driver_update(request, item_id):
+    def action():
+        item = Driver.objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Водитель не найден")
+        return apply_driver(item, request.POST)
+
+    _, response = guarded(request, f"/logistics/drivers/{item_id}", action)
+    if response:
+        return response
+    return done(request, "/logistics/drivers", "Сохранено")
+
+
+# --- Routing ---
+
+
+@roles_required("office")
+def routing(request):
+    try:
+        ship_date = _ship_date(request)
+    except WarehouseError as exc:
+        messages.error(request, str(exc))
+        ship_date = _today() + timedelta(days=1)
+    rows, assignments, total_weight = routing_rows(ship_date, request.session)
+    drivers = list(Driver.objects.filter(is_active=True).select_related("vehicle").order_by("full_name"))
+    existing = list(
+        Route.objects.filter(route_date=ship_date, status__in=Route.LIVE_STATUSES)
+        .select_related("driver")
+        .order_by("name", "id")
+    )
+    return render(
+        request,
+        "logistics/routing.html",
+        {
+            "title": "Маршрутизация",
+            "ship_date": ship_date,
+            "rows": rows,
+            "assignments": assignments,
+            "drivers": drivers,
+            "driver_loads": driver_load_summary(rows, drivers),
+            "existing_routes": existing,
+            "total_weight": total_weight,
+            "total_orders": sum(row["order_count"] for row in rows),
+        },
+    )
+
+
+@roles_required("office")
+def routing_assign(request):
+    def action():
+        ship_date = _ship_date(request)
+        zone_id = optional_int(request.POST, "zone_id")
+        if zone_id is None:
+            raise WarehouseError("Выберите зону")
+        set_session_assignment(request.session, ship_date, zone_id, _posted_driver_id(request))
+        return ship_date
+
+    result, response = guarded(request, "/logistics/routing", action)
+    if response:
+        return response
+    return redirect(f"/logistics/routing?date={result.isoformat()}")
+
+
+@roles_required("office")
+def routing_assign_order(request):
+    def action():
+        ship_date = _ship_date(request)
+        order_id = optional_int(request.POST, "order_id")
+        if order_id is None:
+            raise WarehouseError("Выберите заказ")
+        if not unassigned_orders_queryset(ship_date).filter(pk=order_id).exists():
+            raise WarehouseError("Заказ не найден среди свободных")
+        set_session_order_assignment(request.session, ship_date, order_id, _posted_driver_id(request))
+        return ship_date
+
+    result, response = guarded(request, "/logistics/routing", action)
+    if response:
+        return response
+    return redirect(f"/logistics/routing?date={result.isoformat()}")
+
+
+def _posted_load_times(request, ship_date):
+    """Время загрузки по водителю. Пустое поле — маршрут без плана."""
+    load_day = parse_load_date(text(request.POST, "planned_load_date")) or ship_date
+    times = {}
+    for key, raw in request.POST.items():
+        if not key.startswith("load_time_"):
+            continue
+        value = (raw or "").strip()
+        if not value:
+            continue
+        try:
+            driver_id = int(key.removeprefix("load_time_"))
+        except ValueError as exc:
+            raise WarehouseError("Некорректное время загрузки") from exc
+        times[driver_id] = parse_load_datetime(load_day, value)
+    return times
+
+
+@roles_required("office")
+def routing_create(request):
+    def action():
+        ship_date = _ship_date(request)
+        load_times = _posted_load_times(request, ship_date)
+        rows, assignments, _total = routing_rows(ship_date, request.session)
+        created = create_routes_from_zone_assignments(ship_date=ship_date, zone_rows=rows)
+        warnings = []
+        for route in created:
+            load_at = load_times.get(route.driver_id or 0)
+            if load_at is None:
+                continue
+            warning = set_planned_load_at(route, load_at)
+            if warning:
+                warnings.append(warning)
+        order_ids, zone_ids = consumed_for_create(rows)
+        present = {row["zone_id"] for row in rows}
+        stale_zones = [zone_id for zone_id in assignments if zone_id not in present]
+        clear_session_assignments(request.session, ship_date, list(zone_ids) + stale_zones)
+        clear_session_order_assignments(request.session, ship_date, order_ids)
+        return ship_date, created, warnings
+
+    result, response = guarded(request, "/logistics/routing", action)
+    if response:
+        return response
+    ship_date, created, warnings = result
+    messages.success(request, f"Создано маршрутов: {len(created)}")
+    for warning in warnings:
+        messages.warning(request, warning)
+    return redirect(f"/logistics/routing?date={ship_date.isoformat()}")
+
+
+@roles_required("office")
+def routing_add_to_route(request):
+    def action():
+        ship_date = _ship_date(request)
+        route_id = optional_int(request.POST, "route_id")
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        rows, _assignments, _total = routing_rows(ship_date, request.session)
+        raw_time = text(request.POST, "planned_load_time")
+        load_at = None
+        if raw_time:
+            load_day = parse_load_date(text(request.POST, "planned_load_date")) or ship_date
+            load_at = parse_load_datetime(load_day, raw_time)
+        added = add_assigned_orders_to_route(route=route, zone_rows=rows)
+        warning = set_planned_load_at(route, load_at) if load_at is not None else None
+        if added:
+            order_ids, zone_ids = consumed_for_route(route, rows)
+            clear_session_assignments(request.session, ship_date, zone_ids)
+            clear_session_order_assignments(request.session, ship_date, order_ids)
+        return ship_date, added, warning
+
+    result, response = guarded(request, "/logistics/routing", action)
+    if response:
+        return response
+    ship_date, added, warning = result
+    messages.success(request, f"Добавлено заказов: {added}")
+    if warning:
+        messages.warning(request, warning)
+    return redirect(f"/logistics/routing?date={ship_date.isoformat()}")
+
+
+# --- Routes ---
+
+
+@roles_required("office")
+def route_list(request):
+    try:
+        day = _ship_date(request)
+    except WarehouseError as exc:
+        messages.error(request, str(exc))
+        day = _today() + timedelta(days=1)
+    routes = list(
+        Route.objects.filter(route_date=day)
+        .select_related("driver")
+        .prefetch_related("route_orders")
+        .order_by("status", "name", "id")
+    )
+    for route in routes:
+        route.weight_kg = route_weight(route)
+        route.stops = route.route_orders.count()
+    return render(
+        request,
+        "logistics/route_list.html",
+        {"title": "Маршруты", "day": day, "routes": routes, "statuses": Route.Status},
+    )
+
+
+@roles_required("office")
+def routes_bulk(request):
+    from apps.printing.views import load_print_routes, route_sheet_response
+
+    day = (request.POST.get("date") or "").strip()
+    back = f"/logistics/routes?date={day}" if day else back_url(request, "/logistics/routes")
+    action = text(request.POST, "action")
+    ids = []
+    for raw in request.POST.getlist("id"):
+        try:
+            ids.append(int(raw))
+        except ValueError:
+            continue
+    if not ids:
+        messages.error(request, "Отметьте маршруты")
+        return redirect(back)
+    if action == "print":
+        sheets = load_print_routes(ids)
+        if not sheets:
+            messages.error(request, "Маршруты не найдены")
+            return redirect(back)
+        return route_sheet_response(sheets)
+    if action != "delete":
+        messages.error(request, "Выберите действие")
+        return redirect(back)
+    deleted, failed = delete_routes(ids)
+    if deleted:
+        messages.success(request, f"Удалено: {', '.join(deleted)}")
+    if failed:
+        messages.error(request, "Не удалено: " + "; ".join(failed))
+    if not deleted and not failed:
+        messages.error(request, "Маршруты не удалены")
+    return redirect(back)
+
+
+@roles_required("office")
+def route_delete(request, route_id):
+    route = get_object_or_404(Route, pk=route_id)
+    day = route.route_date.isoformat()
+    back_list = f"/logistics/routes?date={day}"
+
+    def action():
+        deleted, failed = delete_routes([route.id])
+        if not deleted:
+            raise WarehouseError("; ".join(failed) or "Маршрут не удалён")
+        return deleted[0]
+
+    result, response = guarded(request, f"/logistics/routes/{route_id}", action)
+    if response:
+        return response
+    return done(request, back_list, f"Маршрут «{result}» удалён")
+
+
+@roles_required("office")
+def route_detail(request, route_id):
+    route = get_object_or_404(
+        Route.objects.select_related("driver", "driver__vehicle"),
+        pk=route_id,
+    )
+    stops = list(
+        RouteOrder.objects.filter(route=route)
+        .select_related("order__consignee", "order__consignee", "order__consignee__zone")
+        .order_by("position", "id")
+    )
+    order_ids = [stop.order_id for stop in stops]
+    tasks_map = ship_tasks_for_orders(order_ids)
+    weights = {}
+    from apps.logistics.queries import order_weights
+
+    weights = order_weights([stop.order for stop in stops])
+    for stop in stops:
+        stop.weight_kg = weights.get(stop.order_id)
+        stop.ship_tasks = tasks_map.get(stop.order_id, [])
+    available = list(available_orders_for_route(route)[:50])
+    load_date = route.route_date.isoformat()
+    load_time = ""
+    if route.planned_load_at:
+        local = load_local(route.planned_load_at)
+        load_date = local.date().isoformat()
+        load_time = local.strftime("%H:%M")
+    actual_date = load_date
+    actual_time = ""
+    if route.actual_load_at:
+        actual_local = load_local(route.actual_load_at)
+        actual_date = actual_local.date().isoformat()
+        actual_time = actual_local.strftime("%H:%M")
+    return render(
+        request,
+        "logistics/route_detail.html",
+        {
+            "title": str(route),
+            "route": route,
+            "stops": stops,
+            "drivers": Driver.objects.filter(is_active=True).order_by("full_name"),
+            "available": available,
+            "load_date": load_date,
+            "load_time": load_time,
+            "actual_date": actual_date,
+            "actual_time": actual_time,
+            "total_kg": route_weight(route),
+            "statuses": Route.Status,
+        },
+    )
+
+
+@roles_required("office")
+def route_save(request, route_id):
+    def action():
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        driver_id = optional_int(request.POST, "driver_id")
+        driver = None
+        if driver_id:
+            driver = Driver.objects.filter(pk=driver_id, is_active=True).first()
+            if driver is None:
+                raise WarehouseError("Водитель не найден")
+        status = text(request.POST, "status") or route.status
+        raw_time = text(request.POST, "planned_load_time")
+        load_day = parse_load_date(text(request.POST, "planned_load_date")) or route.route_date
+        load_at = parse_load_datetime(load_day, raw_time) if raw_time else None
+        raw_actual = text(request.POST, "actual_load_time")
+        actual_day = parse_load_date(text(request.POST, "actual_load_date")) or load_day
+        actual_at = parse_load_datetime(actual_day, raw_actual) if raw_actual else None
+        warning = update_route_header(
+            route,
+            name=text(request.POST, "name"),
+            driver=driver,
+            notes=text(request.POST, "notes"),
+            status=status,
+            planned_load_at=load_at,
+            actual_load_at=actual_at,
+        )
+        return route, warning
+
+    result, response = guarded(request, f"/logistics/routes/{route_id}", action)
+    if response:
+        return response
+    route, warning = result
+    if warning:
+        messages.warning(request, warning)
+    return done(request, f"/logistics/routes/{route.id}", "Сохранено")
+
+
+@roles_required("office")
+def route_add_orders(request, route_id):
+    def action():
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        order_ids = []
+        for raw in request.POST.getlist("order_id"):
+            try:
+                order_ids.append(int(raw))
+            except (TypeError, ValueError) as exc:
+                raise WarehouseError("Некорректный заказ") from exc
+        added = add_orders_to_route(route, order_ids)
+        return route, added
+
+    result, response = guarded(request, f"/logistics/routes/{route_id}", action)
+    if response:
+        return response
+    route, added = result
+    messages.success(request, f"Добавлено заказов: {added}")
+    return redirect(f"/logistics/routes/{route.id}")
+
+
+@roles_required("office")
+def route_remove_order(request, route_id, order_id):
+    def action():
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        remove_order_from_route(route, order_id)
+        return route
+
+    result, response = guarded(request, f"/logistics/routes/{route_id}", action)
+    if response:
+        return response
+    return done(request, f"/logistics/routes/{result.id}", "Заказ убран")
+
+
+@roles_required("office")
+def route_move_order(request, route_id, order_id):
+    def action():
+        from apps.logistics.routes import move_route_order
+
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        direction = text(request.POST, "direction")
+        if direction not in ("up", "down"):
+            raise WarehouseError("Некорректное направление")
+        move_route_order(route, order_id, direction)
+        return route
+
+    result, response = guarded(request, f"/logistics/routes/{route_id}", action)
+    if response:
+        return response
+    return redirect(f"/logistics/routes/{result.id}")
+
+
+@roles_required("office")
+def route_reorder(request, route_id):
+    route = Route.objects.filter(pk=route_id).first()
+    if route is None:
+        return JsonResponse({"ok": False, "error": "Маршрут не найден"}, status=404)
+    try:
+        payload = json.loads(request.body.decode() or "{}")
+        order_ids = [int(item) for item in payload.get("order_ids") or []]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"ok": False, "error": "Некорректный порядок"}, status=400)
+    try:
+        reorder_route_orders(route, order_ids)
+    except WarehouseError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True})
+
+
+# --- Schedule ---
+
+
+@roles_required("office")
+def schedule(request):
+    try:
+        day = _ship_date(request)
+    except WarehouseError as exc:
+        messages.error(request, str(exc))
+        day = _today() + timedelta(days=1)
+    ctx = schedule_context(day)
+    ctx["title"] = "График отгрузки"
+    return render(request, "logistics/schedule.html", ctx)
+
+
+@roles_required("office")
+def schedule_set_time(request):
+    day_raw = (request.POST.get("date") or "").strip()
+
+    def action():
+        route_id = optional_int(request.POST, "route_id")
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        raw = text(request.POST, "planned_load_time")
+        load_day = parse_load_date(text(request.POST, "planned_load_date") or day_raw) or route.route_date
+        load_at = parse_load_datetime(load_day, raw) if raw else None
+        warning = set_planned_load_at(route, load_at)
+        return route, load_day, warning
+
+    back = f"/logistics/schedule?date={day_raw}" if day_raw else "/logistics/schedule"
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    route, load_day, warning = result
+    if warning:
+        messages.warning(request, warning + ". Время всё равно сохранено — в слоте могут быть несколько маршрутов.")
+    else:
+        messages.success(request, "Время погрузки сохранено")
+    schedule_day = day_raw or route.route_date.isoformat()
+    return redirect(f"/logistics/schedule?date={schedule_day}")
+
+
+# --- Shift ---
+
+
+def _shift_back(request) -> str:
+    start = (request.POST.get("date_from") or request.POST.get("date") or "").strip()
+    end = (request.POST.get("date_to") or start).strip()
+    if start and end:
+        return f"/shift?date_from={start}&date_to={end}"
+    return "/shift"
+
+
+_SHIFT_PARTS = {
+    "orders": "logistics/_shift_orders.html",
+    "incoming": "logistics/_shift_incoming.html",
+    "routes": "logistics/_shift_routes.html",
+}
+
+
+def _shift_context(start, end, preset, part=""):
+    today = _today()
+    context = {
+        "title": "Смена",
+        "date_from": start,
+        "date_to": end,
+        "preset": preset,
+        "ranged": start != end,
+        "yesterday": today - timedelta(days=1),
+        "today": today,
+        "tomorrow": today + timedelta(days=1),
+    }
+    if part in ("", "orders"):
+        context["orders"] = shift_orders(start, end)
+    if part in ("", "incoming"):
+        context["incoming"] = shift_incoming(start, end)
+    if part in ("", "routes"):
+        context["routes"] = shift_routes(start, end)
+    return context
+
+
+def _shift_bounds(request):
+    today = _today()
+    try:
+        return parse_shift_period(
+            request.GET.get("date_from") or "",
+            request.GET.get("date_to") or "",
+            request.GET.get("date") or "",
+        )
+    except WarehouseError as exc:
+        messages.error(request, str(exc))
+        return today, today, "today"
+
+
+@roles_required("shift")
+def shift_board(request):
+    start, end, preset = _shift_bounds(request)
+    part = request.GET.get("part") or ""
+    if part not in _SHIFT_PARTS:
+        part = ""
+    context = _shift_context(start, end, preset, part)
+    if part:
+        return render(request, _SHIFT_PARTS[part], context)
+    return render(request, "logistics/shift.html", context)
+
+
+def _print_task_ids(order_ids, *, field: str, kind: str) -> list[int]:
+    from apps.planning.models import Task
+
+    if not order_ids:
+        return []
+    attr = f"{field}_id"
+    grouped: dict[int, list[int]] = {}
+    query = Task.objects.filter(**{f"{field}_id__in": order_ids, "kind": kind}).order_by("id")
+    for task in query:
+        grouped.setdefault(getattr(task, attr), []).append(task.id)
+    return [task_id for order_id in order_ids for task_id in grouped.get(order_id, [])]
+
+
+def _shift_tasks_pdf(request, *, source: str, kind: str, empty: str):
+    from apps.printing.views import load_print_tasks, task_sheet_response
+
+    start, end, _preset = _shift_bounds(request)
+    if source == "orders":
+        order_ids = [row["id"] for row in shift_orders(start, end)]
+        field = "order"
+    else:
+        order_ids = [row["id"] for row in shift_incoming(start, end)]
+        field = "purchase_order"
+    tasks = load_print_tasks(_print_task_ids(order_ids, field=field, kind=kind))
+    if not tasks:
+        return HttpResponse(empty)
+    return task_sheet_response(tasks)
+
+
+@roles_required("shift")
+def shift_orders_print(request):
+    return _shift_tasks_pdf(request, source="orders", kind="pick", empty="Нет заданий на отбор за выбранный период")
+
+
+@roles_required("shift")
+def shift_incoming_print(request):
+    return _shift_tasks_pdf(request, source="incoming", kind="receive", empty="Нет заданий на приёмку за выбранный период")
+
+
+@roles_required("shift")
+def shift_routes_print(request):
+    from apps.printing.views import load_print_routes, route_sheet_response
+
+    start, end, _preset = _shift_bounds(request)
+    routes = shift_routes(start, end)
+    sheets = load_print_routes([route.id for route in routes])
+    if not sheets:
+        return HttpResponse("Нет маршрутов за выбранный период")
+    return route_sheet_response(sheets)
+
+
+def _shift_action(request, route_id, fn, message):
+    def action():
+        route = Route.objects.filter(pk=route_id).first()
+        if route is None:
+            raise WarehouseError("Маршрут не найден")
+        fn(route)
+        return route
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), message)
+
+
+@roles_required("shift")
+def shift_dock(request, route_id):
+    return _shift_action(request, route_id, dock_route, "Маршрут поставлен к отгрузке")
+
+
+@roles_required("shift")
+def shift_ship(request, route_id):
+    return _shift_action(request, route_id, ship_route, "Маршрут отгружен")
+
+
+@roles_required("shift")
+def shift_revert(request, route_id):
+    return _shift_action(request, route_id, revert_route, "Статус маршрута возвращён")
+
+
+@roles_required("shift")
+def shift_arrive(request, route_id):
+    return _shift_action(request, route_id, arrive_route, "Прибытие зафиксировано")
+
+
+@roles_required("shift")
+def shift_depart(request, route_id):
+    return _shift_action(request, route_id, depart_route, "Убытие зафиксировано")
+
+
+def _incoming_action(request, order_id, fn, message):
+    def action():
+        order = PurchaseOrder.objects.filter(pk=order_id).first()
+        if order is None:
+            raise WarehouseError("Входящий заказ не найден")
+        fn(order)
+        return order
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), message)
+
+
+@roles_required("shift")
+def shift_incoming_comment(request, order_id):
+    def action():
+        order = PurchaseOrder.objects.filter(pk=order_id).first()
+        if order is None:
+            raise WarehouseError("Входящий заказ не найден")
+        return set_incoming_comment(order, text(request.POST, "comment"))
+
+    result, response = guarded(request, _shift_back(request), action)
+    if response:
+        return response
+    return done(request, _shift_back(request), "Комментарий сохранён")
+
+
+@roles_required("shift")
+def shift_incoming_arrive(request, order_id):
+    return _incoming_action(request, order_id, arrive_incoming, "Прибытие зафиксировано")
+
+
+@roles_required("shift")
+def shift_incoming_gate(request, order_id):
+    return _incoming_action(request, order_id, gate_incoming, "Постановка на ворота зафиксирована")
+
+
+@roles_required("shift")
+def shift_incoming_finish(request, order_id):
+    return _incoming_action(request, order_id, finish_incoming, "Окончание приёмки зафиксировано")
+
+
+@roles_required("shift")
+def shift_incoming_depart(request, order_id):
+    return _incoming_action(request, order_id, depart_incoming, "Убытие зафиксировано")
+
+
+==============================================================================
+### FILE: apps\onec\__init__.py
+### SIZE: 88 bytes / 1 lines
+==============================================================================
+
+"""Интеграция с 1С УНФ через OData (только чтение)."""
+
+
+==============================================================================
+### FILE: apps\onec\apps.py
+### SIZE: 204 bytes / 8 lines
+==============================================================================
+
+from django.apps import AppConfig
+
+
+class OnecConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.onec"
+    label = "onec"
+    verbose_name = "1С УНФ"
+
+
+==============================================================================
+### FILE: apps\onec\catalogs.py
+### SIZE: 5399 bytes / 141 lines
+==============================================================================
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from apps.onec.client import EMPTY_GUID, ODataClient
+from apps.onec.dto import PartyRef, ProductRef
+
+PARTY_SELECT = "Ref_Key,Code,Description,НаименованиеПолное"
+PRODUCT_SELECT = "Ref_Key,Code,Description,Артикул"
+UNIT_SELECT = "Ref_Key,Code,Description"
+STATE_PURCHASE = "Catalog_СостоянияЗаказовПоставщикам"
+STATE_CUSTOMER = "Catalog_СостоянияЗаказовПокупателей"
+_GUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def is_guid(value: str) -> bool:
+    return bool(value) and value != EMPTY_GUID and bool(_GUID_RE.match(value))
+
+
+def ref_guid(row: dict[str, Any], *names: str) -> str:
+    for name in names:
+        value = row.get(name)
+        if isinstance(value, str) and value and value != EMPTY_GUID:
+            return value
+        if isinstance(value, dict):
+            nested = value.get("Ref_Key") or value.get("Key")
+            if isinstance(nested, str) and nested and nested != EMPTY_GUID:
+                return nested
+    return ""
+
+
+def party(client: ODataClient, guid: str) -> PartyRef:
+    row = client.get_cached("Catalog_Контрагенты", guid, select=PARTY_SELECT)
+    if not row:
+        return PartyRef(ref_key=guid)
+    return PartyRef(
+        ref_key=str(row.get("Ref_Key") or guid),
+        code=str(row.get("Code") or ""),
+        name=str(row.get("Description") or row.get("НаименованиеПолное") or ""),
+    )
+
+
+def organization(client: ODataClient, guid: str) -> PartyRef:
+    row = client.get_cached("Catalog_Организации", guid, select="Ref_Key,Code,Description")
+    if not row:
+        return PartyRef(ref_key=guid)
+    return PartyRef(
+        ref_key=str(row.get("Ref_Key") or guid),
+        code=str(row.get("Code") or ""),
+        name=str(row.get("Description") or ""),
+    )
+
+
+def product(client: ODataClient, guid: str) -> ProductRef:
+    row = client.get_cached("Catalog_Номенклатура", guid, select=PRODUCT_SELECT)
+    if not row:
+        return ProductRef(ref_key=guid)
+    return ProductRef(
+        ref_key=str(row.get("Ref_Key") or guid),
+        code=str(row.get("Code") or ""),
+        name=str(row.get("Description") or ""),
+        article=str(row.get("Артикул") or ""),
+    )
+
+
+def unit_name(client: ODataClient, guid: str) -> str:
+    if not guid or guid == EMPTY_GUID:
+        return ""
+    row = client.get_cached("Catalog_КлассификаторЕдиницИзмерения", guid, select=UNIT_SELECT)
+    if row:
+        return str(row.get("Description") or row.get("Code") or "")
+    # иногда единица хранится как Catalog_ЕдиницыИзмерения
+    row = client.get_cached("Catalog_ЕдиницыИзмерения", guid, select=UNIT_SELECT)
+    if row:
+        return str(row.get("Description") or row.get("Code") or "")
+    return ""
+
+
+def states_map(client: ODataClient, *, kind: str) -> dict[str, str]:
+    """Все состояния заказов одним запросом: Ref_Key → наименование."""
+    entity = STATE_PURCHASE if kind == "purchase" else STATE_CUSTOMER
+    cache_key = f"states_map:{entity}"
+    cached = client._cache.get(cache_key)
+    if isinstance(cached, dict) and cached.get("__map__"):
+        return cached["__map__"]
+    rows = client.get(entity, select="Ref_Key,Description")
+    mapping = {
+        str(row.get("Ref_Key") or ""): str(row.get("Description") or "")
+        for row in rows
+        if row.get("Ref_Key")
+    }
+    client._cache[cache_key] = {"__map__": mapping}
+    return mapping
+
+
+def state_name(
+    client: ODataClient,
+    guid: str,
+    *,
+    kind: str,
+    states: dict[str, str] | None = None,
+) -> str:
+    if not guid or guid == EMPTY_GUID:
+        return ""
+    if states is not None:
+        return states.get(guid, "")
+    entity = STATE_PURCHASE if kind == "purchase" else STATE_CUSTOMER
+    row = client.get_cached(entity, guid, select="Ref_Key,Description")
+    if not row:
+        return ""
+    return str(row.get("Description") or "")
+
+
+def order_state_label(
+    row: dict[str, Any],
+    *,
+    kind: str,
+    client: ODataClient | None = None,
+    states: dict[str, str] | None = None,
+) -> str:
+    """Имя состояния из строки документа: строка, GUID или справочник."""
+    if kind == "purchase":
+        key = ref_guid(row, "СостояниеЗаказа_Key", "СостояниеЗаказа")
+        if states is not None:
+            return states.get(key, "")
+        if client is not None and key:
+            return state_name(client, key, kind=kind)
+        return ""
+    value = row.get("СостояниеЗаказа")
+    key = ref_guid(row, "СостояниеЗаказа", "СостояниеЗаказа_Key")
+    if isinstance(value, str) and value and not is_guid(value):
+        return value
+    lookup = key or (value if isinstance(value, str) else "")
+    if states is not None:
+        return states.get(lookup, "")
+    if client is not None and lookup:
+        return state_name(client, lookup, kind=kind)
+    return str(value or "")
+
+
+==============================================================================
+### FILE: apps\onec\client.py
+### SIZE: 5713 bytes / 147 lines
+==============================================================================
+
+from __future__ import annotations
+
+import base64
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+from django.conf import settings
+
+from apps.onec.exceptions import OnecAuthError, OnecConfigError, OnecNotFound, OnecRequestError
+
+EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+
+
+class ODataClient:
+    """Низкоуровневый клиент стандартного интерфейса OData 1С."""
+
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        *,
+        timeout: float = 60.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+        token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        self._auth = f"Basic {token}"
+        self._cache: dict[str, dict[str, Any]] = {}
+
+    @classmethod
+    def from_settings(cls) -> ODataClient:
+        base = getattr(settings, "ONEC_ODATA_URL", "") or ""
+        user = getattr(settings, "ONEC_ODATA_USER", "") or ""
+        password = getattr(settings, "ONEC_ODATA_PASSWORD", "") or ""
+        timeout = float(getattr(settings, "ONEC_ODATA_TIMEOUT", 60) or 60)
+        if not base or not user or not password:
+            raise OnecConfigError(
+                "Задайте ONEC_ODATA_URL, ONEC_ODATA_USER и ONEC_ODATA_PASSWORD в окружении"
+            )
+        return cls(base, user, password, timeout=timeout)
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
+    def get(
+        self,
+        entity: str,
+        *,
+        filter: str | None = None,
+        select: str | None = None,
+        orderby: str | None = None,
+        top: int | None = None,
+        skip: int | None = None,
+        format: str = "json",
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str] = {"$format": format}
+        if filter:
+            params["$filter"] = filter
+        if select:
+            params["$select"] = select
+        if orderby:
+            params["$orderby"] = orderby
+        if top is not None:
+            params["$top"] = str(top)
+        if skip is not None:
+            params["$skip"] = str(skip)
+        payload = self._request("GET", entity, params=params)
+        if isinstance(payload, dict) and "value" in payload:
+            return list(payload["value"])
+        raise OnecRequestError(f"Ожидался список в {entity}", body=str(payload)[:500])
+
+    def get_one(self, entity: str, guid: str, *, select: str | None = None) -> dict[str, Any]:
+        if not guid or guid == EMPTY_GUID:
+            raise OnecNotFound(f"Пустой ключ для {entity}")
+        path = f"{entity}(guid'{guid}')"
+        params: dict[str, str] = {"$format": "json"}
+        if select:
+            params["$select"] = select
+        payload = self._request("GET", path, params=params)
+        if not isinstance(payload, dict):
+            raise OnecRequestError(f"Ожидался объект {entity}", body=str(payload)[:500])
+        return payload
+
+    def get_cached(self, entity: str, guid: str, *, select: str | None = None) -> dict[str, Any] | None:
+        if not guid or guid == EMPTY_GUID:
+            return None
+        key = f"{entity}:{guid}:{select or ''}"
+        if key not in self._cache:
+            try:
+                self._cache[key] = self.get_one(entity, guid, select=select)
+            except (OnecNotFound, OnecRequestError):
+                self._cache[key] = {}
+        row = self._cache[key]
+        return row or None
+
+    def _request(self, method: str, path: str, *, params: dict[str, str] | None = None) -> Any:
+        query = urllib.parse.urlencode(params or {}, quote_via=urllib.parse.quote)
+        encoded_path = urllib.parse.quote(path.lstrip("/"), safe="/()'=,_-$:")
+        url = f"{self.base_url}/{encoded_path}"
+        if query:
+            url = f"{url}?{query}"
+        request = urllib.request.Request(
+            url,
+            method=method,
+            headers={
+                "Authorization": self._auth,
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 401:
+                raise OnecAuthError(
+                    "OData: неверный логин или пароль (сквозная авторизация Scloud)"
+                ) from exc
+            if exc.code == 404:
+                raise OnecNotFound(f"OData: не найдено {path}") from exc
+            message = _odata_message(body) or f"OData HTTP {exc.code}"
+            raise OnecRequestError(message, status=exc.code, body=body[:1000]) from exc
+        except urllib.error.URLError as exc:
+            raise OnecRequestError(f"OData недоступен: {exc.reason}") from exc
+        if not raw:
+            return {}
+        return json.loads(raw)
+
+
+def _odata_message(body: str) -> str:
+    try:
+        data = json.loads(body)
+        err = data.get("odata.error") or data.get("error") or {}
+        msg = err.get("message")
+        if isinstance(msg, dict):
+            return str(msg.get("value") or "")
+        if isinstance(msg, str):
+            return msg
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return ""
+    return ""
+
+
+==============================================================================
+### FILE: apps\onec\dto.py
+### SIZE: 1356 bytes / 54 lines
+==============================================================================
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
+
+@dataclass(slots=True)
+class PartyRef:
+    ref_key: str = ""
+    code: str = ""
+    name: str = ""
+
+
+@dataclass(slots=True)
+class ProductRef:
+    ref_key: str = ""
+    code: str = ""
+    name: str = ""
+    article: str = ""
+
+
+@dataclass(slots=True)
+class OrderLineDTO:
+    line_number: int
+    product: ProductRef
+    qty: Decimal
+    unit: str = ""
+    content: str = ""
+    price: Decimal | None = None
+    amount: Decimal | None = None
+    weight: Decimal | None = None
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(slots=True)
+class OrderDTO:
+    kind: str  # purchase | customer
+    ref_key: str
+    number: str
+    date: datetime | None
+    posted: bool
+    party: PartyRef
+    organization: PartyRef = field(default_factory=PartyRef)
+    consignee: PartyRef = field(default_factory=PartyRef)
+    delivery_address: str = ""
+    state: str = ""
+    comment: str = ""
+    ship_date: date | None = None
+    receive_date: date | None = None
+    amount: Decimal | None = None
+    lines: list[OrderLineDTO] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+==============================================================================
+### FILE: apps\onec\exceptions.py
+### SIZE: 397 bytes / 21 lines
+==============================================================================
+
+class OnecError(Exception):
+    pass
+
+
+class OnecConfigError(OnecError):
+    pass
+
+
+class OnecAuthError(OnecError):
+    pass
+
+
+class OnecNotFound(OnecError):
+    pass
+
+
+class OnecRequestError(OnecError):
+    def __init__(self, message: str, *, status: int | None = None, body: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.body = body
+
+
+==============================================================================
+### FILE: apps\onec\management\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\onec\management\commands\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\onec\management\commands\onec_orders.py
+### SIZE: 3046 bytes / 69 lines
+==============================================================================
+
+import sys
+
+from django.core.management.base import BaseCommand, CommandError
+
+from apps.onec.exceptions import OnecError
+from apps.onec.orders import OnecOrders
+
+
+class Command(BaseCommand):
+    help = "Проверка OData 1С: заказы поставщикам / покупателям"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--kind",
+            choices=("purchase", "customer", "both"),
+            default="both",
+            help="Тип заказов",
+        )
+        parser.add_argument("--top", type=int, default=5, help="Сколько документов взять")
+        parser.add_argument("--number", default="", help="Номер документа в 1С")
+        parser.add_argument("--no-lines", action="store_true", help="Без строк запасов")
+
+    def handle(self, *args, **options):
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        try:
+            api = OnecOrders()
+        except OnecError as exc:
+            raise CommandError(str(exc)) from exc
+
+        kind = options["kind"]
+        top = options["top"]
+        number = (options["number"] or "").strip() or None
+        with_lines = not options["no_lines"]
+
+        try:
+            if kind in ("purchase", "both"):
+                if number:
+                    rows = [api.find_purchase_by_number(number, with_lines=with_lines)]
+                else:
+                    rows = api.list_purchase_orders(top=top, with_lines=with_lines)
+                self._print_block("Заказы поставщикам", rows)
+            if kind in ("customer", "both"):
+                if number:
+                    rows = [api.find_customer_by_number(number, with_lines=with_lines)]
+                else:
+                    rows = api.list_customer_orders(top=top, with_lines=with_lines)
+                self._print_block("Заказы покупателей", rows)
+        except OnecError as exc:
+            raise CommandError(str(exc)) from exc
+
+    def _print_block(self, title: str, orders):
+        self.stdout.write(self.style.MIGRATE_HEADING(title))
+        orders = [item for item in orders if item is not None]
+        if not orders:
+            self.stdout.write("  (пусто)")
+            return
+        for order in orders:
+            when = order.date.strftime("%d.%m.%Y %H:%M") if order.date else "—"
+            self.stdout.write(
+                f"  {order.number} | {when} | {order.party.name or '—'} | {order.state or '—'}"
+            )
+            if order.comment:
+                self.stdout.write(f"    комментарий: {order.comment}")
+            for line in order.lines:
+                unit = line.unit or "—"
+                code = line.product.code or "—"
+                name = line.product.name or line.content or "—"
+                self.stdout.write(f"    {line.line_number}. [{code}] {name} — {line.qty} {unit}")
+
+
+==============================================================================
+### FILE: apps\onec\management\commands\onec_sync_orders.py
+### SIZE: 4644 bytes / 93 lines
+==============================================================================
+
+import sys
+from datetime import date, datetime
+
+from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
+
+from apps.onec.exceptions import OnecError
+from apps.onec.sync import delivery_period, sync_customer_orders, sync_purchase_orders
+
+
+class Command(BaseCommand):
+    help = "Загрузка заказов из 1С в WMS по дате поставки/отгрузки (только чтение OData)"
+
+    def add_arguments(self, parser):
+        parser.add_argument("--kind", choices=("purchase", "customer", "both"), default="both")
+        parser.add_argument("--top", type=int, default=500)
+        parser.add_argument("--date-from", default="", help="YYYY-MM-DD; по умолчанию завтра")
+        parser.add_argument("--date-to", default="", help="YYYY-MM-DD; по умолчанию завтра")
+        parser.add_argument("--tomorrow", action="store_true", help="Явно взять завтра (игнор date-from/to)")
+        parser.add_argument("--no-update", action="store_true", help="Не обновлять уже загруженные")
+        parser.add_argument("--user", default="", help="Логин пользователя WMS для created_by")
+
+    def handle(self, *args, **options):
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        user = self._user(options["user"])
+        update = not options["no_update"]
+        if options["tomorrow"]:
+            date_from, date_to = delivery_period()
+        else:
+            date_from, date_to = delivery_period(
+                _parse_date(options["date_from"]),
+                _parse_date(options["date_to"]),
+            )
+        kind = options["kind"]
+        top = options["top"]
+        self.stdout.write(f"Период: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}")
+        try:
+            if kind in ("purchase", "both"):
+                report = sync_purchase_orders(
+                    user, update=update, top=top, date_from=date_from, date_to=date_to
+                )
+                self._print("Заказы поставщикам (дата поступления)", report)
+            if kind in ("customer", "both"):
+                report = sync_customer_orders(
+                    user, update=update, top=top, date_from=date_from, date_to=date_to
+                )
+                self._print("Заказы покупателей (дата отгрузки)", report)
+        except OnecError as exc:
+            raise CommandError(str(exc)) from exc
+
+    def _user(self, username: str):
+        User = get_user_model()
+        if username:
+            user = User.objects.filter(login=username).first()
+            if user is None:
+                raise CommandError(f"Пользователь WMS «{username}» не найден")
+            return user
+        user = User.objects.filter(role="admin").order_by("id").first()
+        if user is None:
+            user = User.objects.order_by("id").first()
+        if user is None:
+            raise CommandError("В WMS нет пользователей")
+        return user
+
+    def _print(self, title: str, report):
+        self.stdout.write(self.style.MIGRATE_HEADING(title))
+        self.stdout.write(
+            f"  создано={len(report.created)} обновлено={len(report.updated)} "
+            f"без изменений={len(report.unchanged)} пропущено статусов={report.other_status}"
+        )
+        if report.duplicates:
+            self.stdout.write(f"  уже были (без update): {len(report.duplicates)}")
+        if report.closed:
+            self.stdout.write(f"  не обновлены (закрыты/приняты): {len(report.closed)}")
+        if report.blocked:
+            self.stdout.write(f"  блокировки: {len(report.blocked)}")
+        if report.empty:
+            self.stdout.write(f"  пустые: {', '.join(report.empty[:10])}")
+        if report.missing_files:
+            for item in report.missing_files[:10]:
+                self.stdout.write(self.style.WARNING(f"  {item}"))
+        if report.missing_codes:
+            self.stdout.write(f"  нет кодов: {len(report.missing_codes)}")
+        if report.skipped_units:
+            self.stdout.write(f"  не кг: {len(report.skipped_units)}")
+
+
+def _parse_date(value: str) -> date | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    return datetime.strptime(text, "%Y-%m-%d").date()
+
+
+==============================================================================
+### FILE: apps\onec\nomenclature.py
+### SIZE: 5808 bytes / 159 lines
+==============================================================================
+
+"""Номенклатура 1С: отчёт и группы наших товаров."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+from django.db import transaction
+
+from apps.catalog.models import ExternalProduct, Product, ProductAlias, ProductGroup
+from apps.onec.client import EMPTY_GUID, ODataClient
+from apps.onec.exceptions import OnecRequestError
+
+GROUP_NAMES = {
+    "борщевой набор": "БОРЩ",
+    "очищенные овощи": "Очищенка",
+    "цитрусы и тропические": "ФРОВ",
+}
+
+PAGE = 1000
+NOMENCLATURE_SELECT = (
+    "Ref_Key,Code,Description,Артикул,IsFolder,Parent_Key,DeletionMark,ЕдиницаИзмерения_Key"
+)
+UNIT_SELECT = "Ref_Key,Description"
+
+
+def nomenclature_rows(client: ODataClient | None = None) -> list[dict]:
+    client = client or ODataClient.from_settings()
+    rows = _pages(client, "Catalog_Номенклатура", NOMENCLATURE_SELECT)
+    units = {
+        str(row.get("Ref_Key") or ""): str(row.get("Description") or "")
+        for row in _pages(client, "Catalog_КлассификаторЕдиницИзмерения", UNIT_SELECT)
+    }
+    by_key = {str(row.get("Ref_Key") or ""): row for row in rows if row.get("Ref_Key")}
+    report = []
+    for row in rows:
+        path = _group_path(row, by_key)
+        unit_key = str(row.get("ЕдиницаИзмерения_Key") or "")
+        report.append(
+            {
+                "code": str(row.get("Code") or ""),
+                "name": str(row.get("Description") or ""),
+                "article": str(row.get("Артикул") or ""),
+                "group": path[-1] if path else "",
+                "path": " / ".join(path),
+                "unit": units.get(unit_key, ""),
+                "folder": bool(row.get("IsFolder")),
+                "deleted": bool(row.get("DeletionMark")),
+            }
+        )
+    report.sort(key=lambda item: (item["path"], item["folder"] is False, item["code"], item["name"]))
+    return report
+
+
+def _pages(client: ODataClient, entity: str, select: str) -> list[dict]:
+    found: list[dict] = []
+    seen: set[str] = set()
+    skip = 0
+    while skip < 200_000:
+        try:
+            page = client.get(entity, select=select, orderby="Code", top=PAGE, skip=skip)
+        except OnecRequestError:
+            if skip:
+                break
+            page = client.get(entity, select=select, top=PAGE, skip=skip)
+        if not page:
+            break
+        first = str(page[0].get("Ref_Key") or "")
+        if first and first in seen:
+            break
+        found.extend(page)
+        for row in page:
+            key = str(row.get("Ref_Key") or "")
+            if key:
+                seen.add(key)
+        if len(page) < PAGE:
+            break
+        skip += PAGE
+    return found
+
+
+@transaction.atomic
+def assign_product_groups(client: ODataClient | None = None) -> dict:
+    """Ставит нашим товарам группу из папки номенклатуры 1С. Расхождение групп не затирает."""
+    by_code = {
+        row["code"]: _warehouse_group(row["group"])
+        for row in nomenclature_rows(client)
+        if row["code"] and row["group"] and not row["folder"] and not row["deleted"]
+    }
+    groups = {item.name: item for item in ProductGroup.objects.all()}
+
+    def group_for(name: str) -> ProductGroup:
+        found = groups.get(name)
+        if found is None:
+            found = ProductGroup.objects.create(name=name)
+            groups[name] = found
+        return found
+
+    named: dict[int, set[str]] = defaultdict(set)
+    aliases = ProductAlias.objects.select_related("external_product")
+    for alias in aliases:
+        name = by_code.get(alias.external_product.code)
+        if name:
+            named[alias.product_id].add(name)
+    updated = 0
+    skipped = 0
+    for product in Product.objects.filter(pk__in=named):
+        names = named[product.id]
+        if len(names) != 1:
+            skipped += 1
+            continue
+        group = group_for(next(iter(names)))
+        if product.group_id == group.id:
+            continue
+        product.group = group
+        product.save(update_fields=["group"])
+        updated += 1
+
+    external_updated = 0
+    for external in ExternalProduct.objects.filter(code__in=by_code):
+        group = group_for(by_code[external.code])
+        if external.group_id == group.id:
+            continue
+        external.group = group
+        external.save(update_fields=["group"])
+        external_updated += 1
+    for old_name in GROUP_NAMES:
+        leftover = ProductGroup.objects.filter(name__iexact=old_name).first()
+        if leftover is None:
+            continue
+        if leftover.products.exists() or leftover.external_products.exists():
+            continue
+        leftover.delete()
+    return {
+        "products": updated,
+        "skipped": skipped,

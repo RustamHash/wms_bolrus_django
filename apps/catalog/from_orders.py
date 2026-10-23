@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from apps.catalog.families import critical_family
-from apps.catalog.parties import ensure_alias, upsert_client, upsert_consignee, upsert_external, warehouse_product
+from apps.catalog.parties import ensure_alias, upsert_consignee, upsert_external, warehouse_product
 from apps.common.xlsx import read_rows
 from apps.planning.import_customer import _cell, _columns, _detail_files, _detail_rows, _order_key, is_feedback_name
 
@@ -14,15 +14,11 @@ def sync_customer_catalog(source: Path | bytes) -> None:
         cells = rows[number]
         buyer = _cell(cells, columns, "Покупатель")
         buyer_code = _cell(cells, columns, "КодПокупатель")
-        if not buyer:
+        consignee_name = _cell(cells, columns, "Грузополучатель") or buyer
+        consignee_code = _cell(cells, columns, "Код") or buyer_code
+        if not consignee_name:
             continue
-        client = upsert_client(buyer, buyer_code)
-        consignee_name = _cell(cells, columns, "Грузополучатель")
-        consignee_code = _cell(cells, columns, "Код")
-        if not consignee_name and not consignee_code:
-            upsert_consignee(client.name, client.code or "")
-        else:
-            upsert_consignee(consignee_name or client.name, consignee_code or client.code or "")
+        upsert_consignee(consignee_name, consignee_code)
         key = _order_key(_cell(cells, columns, "Номер"))
         files = _detail_files(key) if key is not None else []
         if len(files) != 1:

@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.accounts.services import person_ids
 from apps.catalog.models import Caliber, Grade, Product, Supplier
 from apps.catalog.services import load_refs
 from apps.common.constants import TASK_WORK_STATUS
@@ -13,11 +14,24 @@ from apps.inventory.models import InventoryDocument, InventoryLine, Movement
 from apps.planning.models import Task
 from apps.planning.views import task_context
 from apps.storage.models import Pallet
+from apps.storage.places import place_form_context, resolve_place
 from apps.storage.services import find_by_barcode
 
 
-def _tasks(kind: str):
-    return Task.objects.filter(kind=kind, status=TASK_WORK_STATUS[kind]).order_by("-id")
+def _tasks(kind: str, user=None):
+    statuses = [TASK_WORK_STATUS[kind]]
+    if kind == "receive":
+        statuses.extend(["assigned", "in_work"])
+    if kind == "pick":
+        statuses.extend(["partial", "planned", "in_work"])
+    rows = (
+        Task.objects.filter(kind=kind, status__in=statuses)
+        .select_related("assignee", "purchase_order__supplier", "order")
+        .order_by("-id")
+    )
+    if kind in ("receive", "pick", "ship"):
+        rows = rows.filter(assignee_id__in=person_ids(user))
+    return rows
 
 
 def _menu(user):
@@ -48,17 +62,25 @@ def tsd_menu(request):
 
 @roles_required("receiver", tsd=("receive",))
 def tsd_receive(request):
-    return render(request, "tsd/tasks.html", {"title": "Приёмка", "tasks": _tasks("receive")})
+    return render(
+        request,
+        "tsd/tasks.html",
+        {
+            "title": "Приёмка",
+            "tasks": _tasks("receive", request.user),
+            "empty": "Вам не назначены задания.",
+        },
+    )
 
 
 @roles_required("warehouse", tsd=("pick",))
 def tsd_pick(request):
-    return render(request, "tsd/tasks.html", {"title": "Отбор", "tasks": _tasks("pick")})
+    return render(request, "tsd/tasks.html", {"title": "Отбор", "tasks": _tasks("pick", request.user)})
 
 
 @roles_required("warehouse", tsd=("ship",))
 def tsd_ship(request):
-    return render(request, "tsd/tasks.html", {"title": "На отгрузку", "tasks": _tasks("ship")})
+    return render(request, "tsd/tasks.html", {"title": "На отгрузку", "tasks": _tasks("ship", request.user)})
 
 
 @roles_required("office", tsd=("move",))
@@ -68,7 +90,13 @@ def tsd_move(request):
     return render(
         request,
         "tsd/move.html",
-        {"title": "Перемещение", "barcode": code, "pallet": pallet, "missing": bool(code) and pallet is None},
+        {
+            "title": "Перемещение",
+            "barcode": code,
+            "pallet": pallet,
+            "missing": bool(code) and pallet is None,
+            **place_form_context(pallet.cell if pallet is not None else None),
+        },
     )
 
 
@@ -80,16 +108,13 @@ def tsd_move_save(request):
         pallet = Pallet.objects.filter(pk=text(request.POST, "pallet_id")).first()
         if pallet is None:
             raise WarehouseError("Паллета не найдена")
-        location = text(request.POST, "location")
-        if not location:
-            raise WarehouseError("Укажите ячейку")
-        if len(location) > 120:
-            raise WarehouseError("Ячейка длиннее 120 символов")
+        cell = resolve_place(request.POST, required=True)
         units = pallet.units.all()
         if units.exists() and not units.exclude(status="shipped").exists():
             raise WarehouseError("Паллета уже отгружена")
-        pallet.location = location
-        pallet.save(update_fields=["location"])
+        pallet.cell = cell
+        pallet.location = cell.label()
+        pallet.save(update_fields=["cell", "location"])
         return pallet.number or pallet.barcode or f"#{pallet.id}"
 
     result, response = guarded(request, back, action)
@@ -100,17 +125,20 @@ def tsd_move_save(request):
 
 @roles_required("receiver", "warehouse", tsd=("receive", "pick", "ship"))
 def tsd_task(request, task_id):
-    task = Task.objects.select_related("supplier", "purchase_order", "order").filter(pk=task_id).first()
+    task = Task.objects.select_related("supplier", "purchase_order", "order", "assignee").filter(pk=task_id).first()
     if task is None:
         raise Http404
+    if task.kind in ("receive", "pick", "ship") and task.assignee_id not in person_ids(request.user):
+        messages.error(request, "Задание вам не назначено")
+        return redirect(f"/tsd/{task.kind}")
     if task.kind not in request.user.granted_access():
         messages.error(request, "Недостаточно прав")
         return redirect("/tsd")
     movements = list(
         Movement.objects.filter(task=task, kind="in")
         .select_related(
-            "pallet__order__client",
-            "pallet__reserved_client",
+            "pallet__order__consignee",
+            "pallet__reserved_consignee",
             "pallet__reserved_line__order",
             "lot__product",
             "lot__caliber",
@@ -160,7 +188,16 @@ def _inventory_lines(document):
     rows = list(
         InventoryLine.objects.filter(document=document)
         .select_related(
-            "pallet", "lot__product", "lot__caliber", "lot__grade", "lot__supplier", "supplier", "product", "caliber", "grade"
+            "pallet",
+            "lot__product",
+            "lot__caliber",
+            "lot__grade",
+            "lot__supplier",
+            "supplier",
+            "product",
+            "caliber",
+            "grade",
+            "cell__zone",
         )
         .order_by("id")
     )
@@ -204,6 +241,7 @@ def tsd_inventory(request, doc_id):
             "products": Product.objects.order_by("name"),
             "calibers": Caliber.objects.order_by("sort_order", "name"),
             "grades": Grade.objects.order_by("sort_order", "name"),
+            **place_form_context(),
         },
     )
 
@@ -256,7 +294,7 @@ def tsd_inventory_add(request, doc_id):
             caliber_id=choice("caliber_id", "калибр"),
             grade_id=choice("grade_id", "сорт"),
             supplier_id=choice("supplier_id", "поставщика"),
-            location=text(request.POST, "location"),
+            cell=resolve_place(request.POST, required=True),
             qty_kg=parse_fact_kg(text(request.POST, "fact_kg")),
             user=request.user,
         )

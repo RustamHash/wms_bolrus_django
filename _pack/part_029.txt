@@ -1,0 +1,2000 @@
+﻿|   |       |   |   |           control.cpython-314.pyc
+|   |       |   |   |           default_styles.cpython-314.pyc
+|   |       |   |   |           diagnose.cpython-314.pyc
+|   |       |   |   |           emoji.cpython-314.pyc
+|   |       |   |   |           errors.cpython-314.pyc
+|   |       |   |   |           filesize.cpython-314.pyc
+|   |       |   |   |           file_proxy.cpython-314.pyc
+|   |       |   |   |           highlighter.cpython-314.pyc
+|   |       |   |   |           json.cpython-314.pyc
+|   |       |   |   |           jupyter.cpython-314.pyc
+|   |       |   |   |           layout.cpython-314.pyc
+|   |       |   |   |           live.cpython-314.pyc
+|   |       |   |   |           live_render.cpython-314.pyc
+|   |       |   |   |           logging.cpython-314.pyc
+|   |       |   |   |           markup.cpython-314.pyc
+|   |       |   |   |           measure.cpython-314.pyc
+|   |       |   |   |           padding.cpython-314.pyc
+|   |       |   |   |           pager.cpython-314.pyc
+|   |       |   |   |           palette.cpython-314.pyc
+|   |       |   |   |           panel.cpython-314.pyc
+|   |       |   |   |           pretty.cpython-314.pyc
+|   |       |   |   |           progress.cpython-314.pyc
+|   |       |   |   |           progress_bar.cpython-314.pyc
+|   |       |   |   |           prompt.cpython-314.pyc
+|   |       |   |   |           protocol.cpython-314.pyc
+|   |       |   |   |           region.cpython-314.pyc
+|   |       |   |   |           repr.cpython-314.pyc
+|   |       |   |   |           rule.cpython-314.pyc
+|   |       |   |   |           scope.cpython-314.pyc
+|   |       |   |   |           screen.cpython-314.pyc
+|   |       |   |   |           segment.cpython-314.pyc
+|   |       |   |   |           spinner.cpython-314.pyc
+|   |       |   |   |           status.cpython-314.pyc
+|   |       |   |   |           style.cpython-314.pyc
+|   |       |   |   |           styled.cpython-314.pyc
+|   |       |   |   |           syntax.cpython-314.pyc
+|   |       |   |   |           table.cpython-314.pyc
+|   |       |   |   |           terminal_theme.cpython-314.pyc
+|   |       |   |   |           text.cpython-314.pyc
+|   |       |   |   |           theme.cpython-314.pyc
+|   |       |   |   |           themes.cpython-314.pyc
+|   |       |   |   |           traceback.cpython-314.pyc
+|   |       |   |   |           tree.cpython-314.pyc
+|   |       |   |   |           _cell_widths.cpython-314.pyc
+|   |       |   |   |           _emoji_codes.cpython-314.pyc
+|   |       |   |   |           _emoji_replace.cpython-314.pyc
+|   |       |   |   |           _export_format.cpython-314.pyc
+|   |       |   |   |           _extension.cpython-314.pyc
+|   |       |   |   |           _fileno.cpython-314.pyc
+|   |       |   |   |           _inspect.cpython-314.pyc
+|   |       |   |   |           _log_render.cpython-314.pyc
+|   |       |   |   |           _loop.cpython-314.pyc
+|   |       |   |   |           _null_file.cpython-314.pyc
+|   |       |   |   |           _palettes.cpython-314.pyc
+|   |       |   |   |           _pick.cpython-314.pyc
+|   |       |   |   |           _ratio.cpython-314.pyc
+|   |       |   |   |           _spinners.cpython-314.pyc
+|   |       |   |   |           _stack.cpython-314.pyc
+|   |       |   |   |           _timer.cpython-314.pyc
+|   |       |   |   |           _win32_console.cpython-314.pyc
+|   |       |   |   |           _windows.cpython-314.pyc
+|   |       |   |   |           _windows_renderer.cpython-314.pyc
+|   |       |   |   |           _wrap.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           __main__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---tomli
+|   |       |   |   |   |   LICENSE
+|   |       |   |   |   |   py.typed
+|   |       |   |   |   |   _parser.py
+|   |       |   |   |   |   _re.py
+|   |       |   |   |   |   _types.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           _parser.cpython-314.pyc
+|   |       |   |   |           _re.cpython-314.pyc
+|   |       |   |   |           _types.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---tomli_w
+|   |       |   |   |   |   LICENSE
+|   |       |   |   |   |   py.typed
+|   |       |   |   |   |   _writer.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           _writer.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---truststore
+|   |       |   |   |   |   LICENSE
+|   |       |   |   |   |   py.typed
+|   |       |   |   |   |   _api.py
+|   |       |   |   |   |   _macos.py
+|   |       |   |   |   |   _openssl.py
+|   |       |   |   |   |   _ssl_constants.py
+|   |       |   |   |   |   _windows.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           _api.cpython-314.pyc
+|   |       |   |   |           _macos.cpython-314.pyc
+|   |       |   |   |           _openssl.cpython-314.pyc
+|   |       |   |   |           _ssl_constants.cpython-314.pyc
+|   |       |   |   |           _windows.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---urllib3
+|   |       |   |   |   |   connection.py
+|   |       |   |   |   |   connectionpool.py
+|   |       |   |   |   |   exceptions.py
+|   |       |   |   |   |   fields.py
+|   |       |   |   |   |   filepost.py
+|   |       |   |   |   |   LICENSE.txt
+|   |       |   |   |   |   poolmanager.py
+|   |       |   |   |   |   py.typed
+|   |       |   |   |   |   response.py
+|   |       |   |   |   |   _base_connection.py
+|   |       |   |   |   |   _collections.py
+|   |       |   |   |   |   _request_methods.py
+|   |       |   |   |   |   _version.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   +---contrib
+|   |       |   |   |   |   |   pyopenssl.py
+|   |       |   |   |   |   |   socks.py
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   +---emscripten
+|   |       |   |   |   |   |   |   connection.py
+|   |       |   |   |   |   |   |   emscripten_fetch_worker.js
+|   |       |   |   |   |   |   |   fetch.py
+|   |       |   |   |   |   |   |   request.py
+|   |       |   |   |   |   |   |   response.py
+|   |       |   |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   |   
+|   |       |   |   |   |   |   \---__pycache__
+|   |       |   |   |   |   |           connection.cpython-314.pyc
+|   |       |   |   |   |   |           fetch.cpython-314.pyc
+|   |       |   |   |   |   |           request.cpython-314.pyc
+|   |       |   |   |   |   |           response.cpython-314.pyc
+|   |       |   |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |   |           
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           pyopenssl.cpython-314.pyc
+|   |       |   |   |   |           socks.cpython-314.pyc
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   +---http2
+|   |       |   |   |   |   |   connection.py
+|   |       |   |   |   |   |   probe.py
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           connection.cpython-314.pyc
+|   |       |   |   |   |           probe.cpython-314.pyc
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   +---util
+|   |       |   |   |   |   |   connection.py
+|   |       |   |   |   |   |   proxy.py
+|   |       |   |   |   |   |   request.py
+|   |       |   |   |   |   |   response.py
+|   |       |   |   |   |   |   retry.py
+|   |       |   |   |   |   |   ssltransport.py
+|   |       |   |   |   |   |   ssl_.py
+|   |       |   |   |   |   |   ssl_match_hostname.py
+|   |       |   |   |   |   |   timeout.py
+|   |       |   |   |   |   |   url.py
+|   |       |   |   |   |   |   util.py
+|   |       |   |   |   |   |   wait.py
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           connection.cpython-314.pyc
+|   |       |   |   |   |           proxy.cpython-314.pyc
+|   |       |   |   |   |           request.cpython-314.pyc
+|   |       |   |   |   |           response.cpython-314.pyc
+|   |       |   |   |   |           retry.cpython-314.pyc
+|   |       |   |   |   |           ssltransport.cpython-314.pyc
+|   |       |   |   |   |           ssl_.cpython-314.pyc
+|   |       |   |   |   |           ssl_match_hostname.cpython-314.pyc
+|   |       |   |   |   |           timeout.cpython-314.pyc
+|   |       |   |   |   |           url.cpython-314.pyc
+|   |       |   |   |   |           util.cpython-314.pyc
+|   |       |   |   |   |           wait.cpython-314.pyc
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           connection.cpython-314.pyc
+|   |       |   |   |           connectionpool.cpython-314.pyc
+|   |       |   |   |           exceptions.cpython-314.pyc
+|   |       |   |   |           fields.cpython-314.pyc
+|   |       |   |   |           filepost.cpython-314.pyc
+|   |       |   |   |           poolmanager.cpython-314.pyc
+|   |       |   |   |           response.cpython-314.pyc
+|   |       |   |   |           _base_connection.cpython-314.pyc
+|   |       |   |   |           _collections.cpython-314.pyc
+|   |       |   |   |           _request_methods.cpython-314.pyc
+|   |       |   |   |           _version.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   \---__pycache__
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           __init__.cpython-314.pyc
+|   |       |           __main__.cpython-314.pyc
+|   |       |           __pip-runner__.cpython-314.pyc
+|   |       |           
+|   |       +---pip-26.2.1.dist-info
+|   |       |   |   entry_points.txt
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   REQUESTED
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |       |   AUTHORS.txt
+|   |       |       |   LICENSE.txt
+|   |       |       |   
+|   |       |       \---src
+|   |       |           \---pip
+|   |       |               \---_vendor
+|   |       |                   +---cachecontrol
+|   |       |                   |       LICENSE.txt
+|   |       |                   |       
+|   |       |                   +---certifi
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---distlib
+|   |       |                   |       LICENSE.txt
+|   |       |                   |       
+|   |       |                   +---distro
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---idna
+|   |       |                   |       LICENSE.md
+|   |       |                   |       
+|   |       |                   +---msgpack
+|   |       |                   |       COPYING
+|   |       |                   |       
+|   |       |                   +---packaging
+|   |       |                   |       LICENSE
+|   |       |                   |       LICENSE.APACHE
+|   |       |                   |       LICENSE.BSD
+|   |       |                   |       
+|   |       |                   +---pkg_resources
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---platformdirs
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---pygments
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---pyproject_hooks
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---requests
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---resolvelib
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---rich
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---tomli
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---tomli_w
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   +---truststore
+|   |       |                   |       LICENSE
+|   |       |                   |       
+|   |       |                   \---urllib3
+|   |       |                           LICENSE.txt
+|   |       |                           
+|   |       +---psycopg
+|   |       |   |   abc.py
+|   |       |   |   adapt.py
+|   |       |   |   client_cursor.py
+|   |       |   |   connection.py
+|   |       |   |   connection_async.py
+|   |       |   |   conninfo.py
+|   |       |   |   copy.py
+|   |       |   |   cursor.py
+|   |       |   |   cursor_async.py
+|   |       |   |   dbapi20.py
+|   |       |   |   errors.py
+|   |       |   |   generators.py
+|   |       |   |   postgres.py
+|   |       |   |   py.typed
+|   |       |   |   raw_cursor.py
+|   |       |   |   rows.py
+|   |       |   |   sql.py
+|   |       |   |   transaction.py
+|   |       |   |   version.py
+|   |       |   |   waiting.py
+|   |       |   |   _acompat.py
+|   |       |   |   _adapters_map.py
+|   |       |   |   _capabilities.py
+|   |       |   |   _cmodule.py
+|   |       |   |   _column.py
+|   |       |   |   _compat.py
+|   |       |   |   _connection_base.py
+|   |       |   |   _connection_info.py
+|   |       |   |   _conninfo_attempts.py
+|   |       |   |   _conninfo_attempts_async.py
+|   |       |   |   _conninfo_utils.py
+|   |       |   |   _copy.py
+|   |       |   |   _copy_async.py
+|   |       |   |   _copy_base.py
+|   |       |   |   _cursor_base.py
+|   |       |   |   _dns.py
+|   |       |   |   _encodings.py
+|   |       |   |   _enums.py
+|   |       |   |   _oids.py
+|   |       |   |   _pipeline.py
+|   |       |   |   _pipeline_async.py
+|   |       |   |   _pipeline_base.py
+|   |       |   |   _preparing.py
+|   |       |   |   _py_transformer.py
+|   |       |   |   _queries.py
+|   |       |   |   _server_cursor.py
+|   |       |   |   _server_cursor_async.py
+|   |       |   |   _server_cursor_base.py
+|   |       |   |   _struct.py
+|   |       |   |   _tpc.py
+|   |       |   |   _transformer.py
+|   |       |   |   _tstrings.py
+|   |       |   |   _typeinfo.py
+|   |       |   |   _typemod.py
+|   |       |   |   _tz.py
+|   |       |   |   _wrappers.py
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---crdb
+|   |       |   |   |   connection.py
+|   |       |   |   |   _types.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           connection.cpython-314.pyc
+|   |       |   |           _types.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---pq
+|   |       |   |   |   abc.py
+|   |       |   |   |   misc.py
+|   |       |   |   |   pq_ctypes.py
+|   |       |   |   |   _debug.py
+|   |       |   |   |   _enums.py
+|   |       |   |   |   _pq_ctypes.py
+|   |       |   |   |   _pq_ctypes.pyi
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           abc.cpython-314.pyc
+|   |       |   |           misc.cpython-314.pyc
+|   |       |   |           pq_ctypes.cpython-314.pyc
+|   |       |   |           _debug.cpython-314.pyc
+|   |       |   |           _enums.cpython-314.pyc
+|   |       |   |           _pq_ctypes.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---types
+|   |       |   |   |   array.py
+|   |       |   |   |   bool.py
+|   |       |   |   |   composite.py
+|   |       |   |   |   datetime.py
+|   |       |   |   |   enum.py
+|   |       |   |   |   hstore.py
+|   |       |   |   |   json.py
+|   |       |   |   |   multirange.py
+|   |       |   |   |   net.py
+|   |       |   |   |   none.py
+|   |       |   |   |   numeric.py
+|   |       |   |   |   numpy.py
+|   |       |   |   |   range.py
+|   |       |   |   |   shapely.py
+|   |       |   |   |   string.py
+|   |       |   |   |   uuid.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           array.cpython-314.pyc
+|   |       |   |           bool.cpython-314.pyc
+|   |       |   |           composite.cpython-314.pyc
+|   |       |   |           datetime.cpython-314.pyc
+|   |       |   |           enum.cpython-314.pyc
+|   |       |   |           hstore.cpython-314.pyc
+|   |       |   |           json.cpython-314.pyc
+|   |       |   |           multirange.cpython-314.pyc
+|   |       |   |           net.cpython-314.pyc
+|   |       |   |           none.cpython-314.pyc
+|   |       |   |           numeric.cpython-314.pyc
+|   |       |   |           numpy.cpython-314.pyc
+|   |       |   |           range.cpython-314.pyc
+|   |       |   |           shapely.cpython-314.pyc
+|   |       |   |           string.cpython-314.pyc
+|   |       |   |           uuid.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           abc.cpython-314.pyc
+|   |       |           adapt.cpython-314.pyc
+|   |       |           client_cursor.cpython-314.pyc
+|   |       |           connection.cpython-314.pyc
+|   |       |           connection_async.cpython-314.pyc
+|   |       |           conninfo.cpython-314.pyc
+|   |       |           copy.cpython-314.pyc
+|   |       |           cursor.cpython-314.pyc
+|   |       |           cursor_async.cpython-314.pyc
+|   |       |           dbapi20.cpython-314.pyc
+|   |       |           errors.cpython-314.pyc
+|   |       |           generators.cpython-314.pyc
+|   |       |           postgres.cpython-314.pyc
+|   |       |           raw_cursor.cpython-314.pyc
+|   |       |           rows.cpython-314.pyc
+|   |       |           sql.cpython-314.pyc
+|   |       |           transaction.cpython-314.pyc
+|   |       |           version.cpython-314.pyc
+|   |       |           waiting.cpython-314.pyc
+|   |       |           _acompat.cpython-314.pyc
+|   |       |           _adapters_map.cpython-314.pyc
+|   |       |           _capabilities.cpython-314.pyc
+|   |       |           _cmodule.cpython-314.pyc
+|   |       |           _column.cpython-314.pyc
+|   |       |           _compat.cpython-314.pyc
+|   |       |           _connection_base.cpython-314.pyc
+|   |       |           _connection_info.cpython-314.pyc
+|   |       |           _conninfo_attempts.cpython-314.pyc
+|   |       |           _conninfo_attempts_async.cpython-314.pyc
+|   |       |           _conninfo_utils.cpython-314.pyc
+|   |       |           _copy.cpython-314.pyc
+|   |       |           _copy_async.cpython-314.pyc
+|   |       |           _copy_base.cpython-314.pyc
+|   |       |           _cursor_base.cpython-314.pyc
+|   |       |           _dns.cpython-314.pyc
+|   |       |           _encodings.cpython-314.pyc
+|   |       |           _enums.cpython-314.pyc
+|   |       |           _oids.cpython-314.pyc
+|   |       |           _pipeline.cpython-314.pyc
+|   |       |           _pipeline_async.cpython-314.pyc
+|   |       |           _pipeline_base.cpython-314.pyc
+|   |       |           _preparing.cpython-314.pyc
+|   |       |           _py_transformer.cpython-314.pyc
+|   |       |           _queries.cpython-314.pyc
+|   |       |           _server_cursor.cpython-314.pyc
+|   |       |           _server_cursor_async.cpython-314.pyc
+|   |       |           _server_cursor_base.cpython-314.pyc
+|   |       |           _struct.cpython-314.pyc
+|   |       |           _tpc.cpython-314.pyc
+|   |       |           _transformer.cpython-314.pyc
+|   |       |           _tstrings.cpython-314.pyc
+|   |       |           _typeinfo.cpython-314.pyc
+|   |       |           _typemod.cpython-314.pyc
+|   |       |           _tz.cpython-314.pyc
+|   |       |           _wrappers.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           
+|   |       +---psycopg-3.3.6.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   REQUESTED
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE.txt
+|   |       |           
+|   |       +---psycopg_binary
+|   |       |   |   pq.c
+|   |       |   |   pq.cp314-win_amd64.pyd
+|   |       |   |   py.typed
+|   |       |   |   version.py
+|   |       |   |   _psycopg.c
+|   |       |   |   _psycopg.cp314-win_amd64.pyd
+|   |       |   |   _psycopg.pyi
+|   |       |   |   _uuid.py
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---types
+|   |       |   |       numutils.c
+|   |       |   |       
+|   |       |   \---__pycache__
+|   |       |           version.cpython-314.pyc
+|   |       |           _uuid.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           
+|   |       +---psycopg_binary-3.3.6.dist-info
+|   |       |   |   DELVEWHEEL
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE.txt
+|   |       |           
+|   |       +---psycopg_binary.libs
+|   |       |       libcrypto-3-x64-ea7976933920057f9f21699ac9d19a81.dll
+|   |       |       libpq-6ec4534e177d3ba07a418d64cb93a2ca.dll
+|   |       |       libssl-3-x64-4bb9625beaf8f46929909974166d6f5a.dll
+|   |       |       
+|   |       +---python_docx-1.2.0.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE
+|   |       |           
+|   |       +---python_dotenv-1.2.4.dist-info
+|   |       |   |   entry_points.txt
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   REQUESTED
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE
+|   |       |           
+|   |       +---qrcode
+|   |       |   |   base.py
+|   |       |   |   console_scripts.py
+|   |       |   |   constants.py
+|   |       |   |   exceptions.py
+|   |       |   |   LUT.py
+|   |       |   |   main.py
+|   |       |   |   release.py
+|   |       |   |   util.py
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---compat
+|   |       |   |   |   etree.py
+|   |       |   |   |   png.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           etree.cpython-314.pyc
+|   |       |   |           png.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---image
+|   |       |   |   |   base.py
+|   |       |   |   |   pil.py
+|   |       |   |   |   pure.py
+|   |       |   |   |   styledpil.py
+|   |       |   |   |   svg.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   +---styles
+|   |       |   |   |   |   colormasks.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   +---moduledrawers
+|   |       |   |   |   |   |   base.py
+|   |       |   |   |   |   |   pil.py
+|   |       |   |   |   |   |   svg.py
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           base.cpython-314.pyc
+|   |       |   |   |   |           pil.cpython-314.pyc
+|   |       |   |   |   |           svg.cpython-314.pyc
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           colormasks.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   \---__pycache__
+|   |       |   |           base.cpython-314.pyc
+|   |       |   |           pil.cpython-314.pyc
+|   |       |   |           pure.cpython-314.pyc
+|   |       |   |           styledpil.cpython-314.pyc
+|   |       |   |           svg.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---tests
+|   |       |   |   |   consts.py
+|   |       |   |   |   test_example.py
+|   |       |   |   |   test_qrcode.py
+|   |       |   |   |   test_qrcode_pil.py
+|   |       |   |   |   test_qrcode_pypng.py
+|   |       |   |   |   test_qrcode_svg.py
+|   |       |   |   |   test_release.py
+|   |       |   |   |   test_script.py
+|   |       |   |   |   test_util.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           consts.cpython-314.pyc
+|   |       |   |           test_example.cpython-314.pyc
+|   |       |   |           test_qrcode.cpython-314.pyc
+|   |       |   |           test_qrcode_pil.cpython-314.pyc
+|   |       |   |           test_qrcode_pypng.cpython-314.pyc
+|   |       |   |           test_qrcode_svg.cpython-314.pyc
+|   |       |   |           test_release.cpython-314.pyc
+|   |       |   |           test_script.cpython-314.pyc
+|   |       |   |           test_util.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           base.cpython-314.pyc
+|   |       |           console_scripts.cpython-314.pyc
+|   |       |           constants.cpython-314.pyc
+|   |       |           exceptions.cpython-314.pyc
+|   |       |           LUT.cpython-314.pyc
+|   |       |           main.cpython-314.pyc
+|   |       |           release.cpython-314.pyc
+|   |       |           util.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           
+|   |       +---qrcode-8.2.dist-info
+|   |       |       entry_points.txt
+|   |       |       INSTALLER
+|   |       |       LICENSE
+|   |       |       METADATA
+|   |       |       RECORD
+|   |       |       REQUESTED
+|   |       |       WHEEL
+|   |       |       
+|   |       +---reportlab
+|   |       |   |   rl_config.py
+|   |       |   |   rl_settings.py
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---fonts
+|   |       |   |       00readme.txt
+|   |       |   |       bitstream-vera-license.txt
+|   |       |   |       callig15.afm
+|   |       |   |       callig15.pfb
+|   |       |   |       cobo____.pfb
+|   |       |   |       cob_____.pfb
+|   |       |   |       com_____.pfb
+|   |       |   |       coo_____.pfb
+|   |       |   |       DarkGarden-changelog.txt
+|   |       |   |       DarkGarden-copying-gpl.txt
+|   |       |   |       DarkGarden-copying.txt
+|   |       |   |       DarkGarden-readme.txt
+|   |       |   |       DarkGarden.sfd
+|   |       |   |       DarkGardenMK.afm
+|   |       |   |       DarkGardenMK.pfb
+|   |       |   |       hb-test.ttf
+|   |       |   |       sy______.pfb
+|   |       |   |       Vera.ttf
+|   |       |   |       VeraBd.ttf
+|   |       |   |       VeraBI.ttf
+|   |       |   |       VeraIt.ttf
+|   |       |   |       zd______.pfb
+|   |       |   |       zx______.pfb
+|   |       |   |       zy______.pfb
+|   |       |   |       _abi____.pfb
+|   |       |   |       _ab_____.pfb
+|   |       |   |       _ai_____.pfb
+|   |       |   |       _a______.pfb
+|   |       |   |       _ebi____.pfb
+|   |       |   |       _eb_____.pfb
+|   |       |   |       _ei_____.pfb
+|   |       |   |       _er_____.pfb
+|   |       |   |       
+|   |       |   +---graphics
+|   |       |   |   |   renderbase.py
+|   |       |   |   |   renderPDF.py
+|   |       |   |   |   renderPM.py
+|   |       |   |   |   renderPS.py
+|   |       |   |   |   renderSVG.py
+|   |       |   |   |   shapes.py
+|   |       |   |   |   svgpath.py
+|   |       |   |   |   testdrawings.py
+|   |       |   |   |   testshapes.py
+|   |       |   |   |   transform.py
+|   |       |   |   |   utils.py
+|   |       |   |   |   widgetbase.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   +---barcode
+|   |       |   |   |   |   code128.py
+|   |       |   |   |   |   code39.py
+|   |       |   |   |   |   code93.py
+|   |       |   |   |   |   common.py
+|   |       |   |   |   |   dmtx.py
+|   |       |   |   |   |   eanbc.py
+|   |       |   |   |   |   ecc200datamatrix.py
+|   |       |   |   |   |   fourstate.py
+|   |       |   |   |   |   lto.py
+|   |       |   |   |   |   qr.py
+|   |       |   |   |   |   qrencoder.py
+|   |       |   |   |   |   test.py
+|   |       |   |   |   |   usps.py
+|   |       |   |   |   |   usps4s.py
+|   |       |   |   |   |   widgets.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           code128.cpython-314.pyc
+|   |       |   |   |           code39.cpython-314.pyc
+|   |       |   |   |           code93.cpython-314.pyc
+|   |       |   |   |           common.cpython-314.pyc
+|   |       |   |   |           dmtx.cpython-314.pyc
+|   |       |   |   |           eanbc.cpython-314.pyc
+|   |       |   |   |           ecc200datamatrix.cpython-314.pyc
+|   |       |   |   |           fourstate.cpython-314.pyc
+|   |       |   |   |           lto.cpython-314.pyc
+|   |       |   |   |           qr.cpython-314.pyc
+|   |       |   |   |           qrencoder.cpython-314.pyc
+|   |       |   |   |           test.cpython-314.pyc
+|   |       |   |   |           usps.cpython-314.pyc
+|   |       |   |   |           usps4s.cpython-314.pyc
+|   |       |   |   |           widgets.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---charts
+|   |       |   |   |   |   areas.py
+|   |       |   |   |   |   axes.py
+|   |       |   |   |   |   barcharts.py
+|   |       |   |   |   |   dotbox.py
+|   |       |   |   |   |   doughnut.py
+|   |       |   |   |   |   legends.py
+|   |       |   |   |   |   linecharts.py
+|   |       |   |   |   |   lineplots.py
+|   |       |   |   |   |   markers.py
+|   |       |   |   |   |   piecharts.py
+|   |       |   |   |   |   slidebox.py
+|   |       |   |   |   |   spider.py
+|   |       |   |   |   |   textlabels.py
+|   |       |   |   |   |   utils.py
+|   |       |   |   |   |   utils3d.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           areas.cpython-314.pyc
+|   |       |   |   |           axes.cpython-314.pyc
+|   |       |   |   |           barcharts.cpython-314.pyc
+|   |       |   |   |           dotbox.cpython-314.pyc
+|   |       |   |   |           doughnut.cpython-314.pyc
+|   |       |   |   |           legends.cpython-314.pyc
+|   |       |   |   |           linecharts.cpython-314.pyc
+|   |       |   |   |           lineplots.cpython-314.pyc
+|   |       |   |   |           markers.cpython-314.pyc
+|   |       |   |   |           piecharts.cpython-314.pyc
+|   |       |   |   |           slidebox.cpython-314.pyc
+|   |       |   |   |           spider.cpython-314.pyc
+|   |       |   |   |           textlabels.cpython-314.pyc
+|   |       |   |   |           utils.cpython-314.pyc
+|   |       |   |   |           utils3d.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---samples
+|   |       |   |   |   |   bubble.py
+|   |       |   |   |   |   clustered_bar.py
+|   |       |   |   |   |   clustered_column.py
+|   |       |   |   |   |   excelcolors.py
+|   |       |   |   |   |   exploded_pie.py
+|   |       |   |   |   |   filled_radar.py
+|   |       |   |   |   |   linechart_with_markers.py
+|   |       |   |   |   |   line_chart.py
+|   |       |   |   |   |   radar.py
+|   |       |   |   |   |   runall.py
+|   |       |   |   |   |   scatter.py
+|   |       |   |   |   |   scatter_lines.py
+|   |       |   |   |   |   scatter_lines_markers.py
+|   |       |   |   |   |   simple_pie.py
+|   |       |   |   |   |   stacked_bar.py
+|   |       |   |   |   |   stacked_column.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           bubble.cpython-314.pyc
+|   |       |   |   |           clustered_bar.cpython-314.pyc
+|   |       |   |   |           clustered_column.cpython-314.pyc
+|   |       |   |   |           excelcolors.cpython-314.pyc
+|   |       |   |   |           exploded_pie.cpython-314.pyc
+|   |       |   |   |           filled_radar.cpython-314.pyc
+|   |       |   |   |           linechart_with_markers.cpython-314.pyc
+|   |       |   |   |           line_chart.cpython-314.pyc
+|   |       |   |   |           radar.cpython-314.pyc
+|   |       |   |   |           runall.cpython-314.pyc
+|   |       |   |   |           scatter.cpython-314.pyc
+|   |       |   |   |           scatter_lines.cpython-314.pyc
+|   |       |   |   |           scatter_lines_markers.cpython-314.pyc
+|   |       |   |   |           simple_pie.cpython-314.pyc
+|   |       |   |   |           stacked_bar.cpython-314.pyc
+|   |       |   |   |           stacked_column.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---widgets
+|   |       |   |   |   |   adjustableArrow.py
+|   |       |   |   |   |   eventcal.py
+|   |       |   |   |   |   flags.py
+|   |       |   |   |   |   grids.py
+|   |       |   |   |   |   markers.py
+|   |       |   |   |   |   signsandsymbols.py
+|   |       |   |   |   |   table.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           adjustableArrow.cpython-314.pyc
+|   |       |   |   |           eventcal.cpython-314.pyc
+|   |       |   |   |           flags.cpython-314.pyc
+|   |       |   |   |           grids.cpython-314.pyc
+|   |       |   |   |           markers.cpython-314.pyc
+|   |       |   |   |           signsandsymbols.cpython-314.pyc
+|   |       |   |   |           table.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   \---__pycache__
+|   |       |   |           renderbase.cpython-314.pyc
+|   |       |   |           renderPDF.cpython-314.pyc
+|   |       |   |           renderPM.cpython-314.pyc
+|   |       |   |           renderPS.cpython-314.pyc
+|   |       |   |           renderSVG.cpython-314.pyc
+|   |       |   |           shapes.cpython-314.pyc
+|   |       |   |           svgpath.cpython-314.pyc
+|   |       |   |           testdrawings.cpython-314.pyc
+|   |       |   |           testshapes.cpython-314.pyc
+|   |       |   |           transform.cpython-314.pyc
+|   |       |   |           utils.cpython-314.pyc
+|   |       |   |           widgetbase.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---lib
+|   |       |   |   |   abag.py
+|   |       |   |   |   arciv.py
+|   |       |   |   |   attrmap.py
+|   |       |   |   |   boxstuff.py
+|   |       |   |   |   codecharts.py
+|   |       |   |   |   colors.py
+|   |       |   |   |   corp.py
+|   |       |   |   |   enums.py
+|   |       |   |   |   extformat.py
+|   |       |   |   |   fontfinder.py
+|   |       |   |   |   fonts.py
+|   |       |   |   |   formatters.py
+|   |       |   |   |   geomutils.py
+|   |       |   |   |   logger.py
+|   |       |   |   |   normalDate.py
+|   |       |   |   |   pagesizes.py
+|   |       |   |   |   pdfencrypt.py
+|   |       |   |   |   PyFontify.py
+|   |       |   |   |   pygments2xpre.py
+|   |       |   |   |   randomtext.py
+|   |       |   |   |   rltempfile.py
+|   |       |   |   |   rl_accel.py
+|   |       |   |   |   rl_safe_eval.py
+|   |       |   |   |   rparsexml.py
+|   |       |   |   |   sequencer.py
+|   |       |   |   |   styles.py
+|   |       |   |   |   testutils.py
+|   |       |   |   |   textsplit.py
+|   |       |   |   |   units.py
+|   |       |   |   |   utils.py
+|   |       |   |   |   validators.py
+|   |       |   |   |   yaml.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           abag.cpython-314.pyc
+|   |       |   |           arciv.cpython-314.pyc
+|   |       |   |           attrmap.cpython-314.pyc
+|   |       |   |           boxstuff.cpython-314.pyc
+|   |       |   |           codecharts.cpython-314.pyc
+|   |       |   |           colors.cpython-314.pyc
+|   |       |   |           corp.cpython-314.pyc
+|   |       |   |           enums.cpython-314.pyc
+|   |       |   |           extformat.cpython-314.pyc
+|   |       |   |           fontfinder.cpython-314.pyc
+|   |       |   |           fonts.cpython-314.pyc
+|   |       |   |           formatters.cpython-314.pyc
+|   |       |   |           geomutils.cpython-314.pyc
+|   |       |   |           logger.cpython-314.pyc
+|   |       |   |           normalDate.cpython-314.pyc
+|   |       |   |           pagesizes.cpython-314.pyc
+|   |       |   |           pdfencrypt.cpython-314.pyc
+|   |       |   |           PyFontify.cpython-314.pyc
+|   |       |   |           pygments2xpre.cpython-314.pyc
+|   |       |   |           randomtext.cpython-314.pyc
+|   |       |   |           rltempfile.cpython-314.pyc
+|   |       |   |           rl_accel.cpython-314.pyc
+|   |       |   |           rl_safe_eval.cpython-314.pyc
+|   |       |   |           rparsexml.cpython-314.pyc
+|   |       |   |           sequencer.cpython-314.pyc
+|   |       |   |           styles.cpython-314.pyc
+|   |       |   |           testutils.cpython-314.pyc
+|   |       |   |           textsplit.cpython-314.pyc
+|   |       |   |           units.cpython-314.pyc
+|   |       |   |           utils.cpython-314.pyc
+|   |       |   |           validators.cpython-314.pyc
+|   |       |   |           yaml.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---pdfbase
+|   |       |   |   |   acroform.py
+|   |       |   |   |   cidfonts.py
+|   |       |   |   |   pdfdoc.py
+|   |       |   |   |   pdfform.py
+|   |       |   |   |   pdfmetrics.py
+|   |       |   |   |   pdfpattern.py
+|   |       |   |   |   pdfutils.py
+|   |       |   |   |   rl_codecs.py
+|   |       |   |   |   ttfonts.py
+|   |       |   |   |   _can_cmap_data.py
+|   |       |   |   |   _cidfontdata.py
+|   |       |   |   |   _fontdata.py
+|   |       |   |   |   _fontdata_enc_macexpert.py
+|   |       |   |   |   _fontdata_enc_macroman.py
+|   |       |   |   |   _fontdata_enc_pdfdoc.py
+|   |       |   |   |   _fontdata_enc_standard.py
+|   |       |   |   |   _fontdata_enc_symbol.py
+|   |       |   |   |   _fontdata_enc_winansi.py
+|   |       |   |   |   _fontdata_enc_zapfdingbats.py
+|   |       |   |   |   _fontdata_widths_courier.py
+|   |       |   |   |   _fontdata_widths_courierbold.py
+|   |       |   |   |   _fontdata_widths_courierboldoblique.py
+|   |       |   |   |   _fontdata_widths_courieroblique.py
+|   |       |   |   |   _fontdata_widths_helvetica.py
+|   |       |   |   |   _fontdata_widths_helveticabold.py
+|   |       |   |   |   _fontdata_widths_helveticaboldoblique.py
+|   |       |   |   |   _fontdata_widths_helveticaoblique.py
+|   |       |   |   |   _fontdata_widths_symbol.py
+|   |       |   |   |   _fontdata_widths_timesbold.py
+|   |       |   |   |   _fontdata_widths_timesbolditalic.py
+|   |       |   |   |   _fontdata_widths_timesitalic.py
+|   |       |   |   |   _fontdata_widths_timesroman.py
+|   |       |   |   |   _fontdata_widths_zapfdingbats.py
+|   |       |   |   |   _glyphlist.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           acroform.cpython-314.pyc
+|   |       |   |           cidfonts.cpython-314.pyc
+|   |       |   |           pdfdoc.cpython-314.pyc
+|   |       |   |           pdfform.cpython-314.pyc
+|   |       |   |           pdfmetrics.cpython-314.pyc
+|   |       |   |           pdfpattern.cpython-314.pyc
+|   |       |   |           pdfutils.cpython-314.pyc
+|   |       |   |           rl_codecs.cpython-314.pyc
+|   |       |   |           ttfonts.cpython-314.pyc
+|   |       |   |           _can_cmap_data.cpython-314.pyc
+|   |       |   |           _cidfontdata.cpython-314.pyc
+|   |       |   |           _fontdata.cpython-314.pyc
+|   |       |   |           _fontdata_enc_macexpert.cpython-314.pyc
+|   |       |   |           _fontdata_enc_macroman.cpython-314.pyc
+|   |       |   |           _fontdata_enc_pdfdoc.cpython-314.pyc
+|   |       |   |           _fontdata_enc_standard.cpython-314.pyc
+|   |       |   |           _fontdata_enc_symbol.cpython-314.pyc
+|   |       |   |           _fontdata_enc_winansi.cpython-314.pyc
+|   |       |   |           _fontdata_enc_zapfdingbats.cpython-314.pyc
+|   |       |   |           _fontdata_widths_courier.cpython-314.pyc
+|   |       |   |           _fontdata_widths_courierbold.cpython-314.pyc
+|   |       |   |           _fontdata_widths_courierboldoblique.cpython-314.pyc
+|   |       |   |           _fontdata_widths_courieroblique.cpython-314.pyc
+|   |       |   |           _fontdata_widths_helvetica.cpython-314.pyc
+|   |       |   |           _fontdata_widths_helveticabold.cpython-314.pyc
+|   |       |   |           _fontdata_widths_helveticaboldoblique.cpython-314.pyc
+|   |       |   |           _fontdata_widths_helveticaoblique.cpython-314.pyc
+|   |       |   |           _fontdata_widths_symbol.cpython-314.pyc
+|   |       |   |           _fontdata_widths_timesbold.cpython-314.pyc
+|   |       |   |           _fontdata_widths_timesbolditalic.cpython-314.pyc
+|   |       |   |           _fontdata_widths_timesitalic.cpython-314.pyc
+|   |       |   |           _fontdata_widths_timesroman.cpython-314.pyc
+|   |       |   |           _fontdata_widths_zapfdingbats.cpython-314.pyc
+|   |       |   |           _glyphlist.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---pdfgen
+|   |       |   |   |   canvas.py
+|   |       |   |   |   pathobject.py
+|   |       |   |   |   pdfgeom.py
+|   |       |   |   |   pdfimages.py
+|   |       |   |   |   textobject.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           canvas.cpython-314.pyc
+|   |       |   |           pathobject.cpython-314.pyc
+|   |       |   |           pdfgeom.cpython-314.pyc
+|   |       |   |           pdfimages.cpython-314.pyc
+|   |       |   |           textobject.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---platypus
+|   |       |   |   |   doctemplate.py
+|   |       |   |   |   figures.py
+|   |       |   |   |   flowables.py
+|   |       |   |   |   frames.py
+|   |       |   |   |   multicol.py
+|   |       |   |   |   para.py
+|   |       |   |   |   paragraph.py
+|   |       |   |   |   paraparser.py
+|   |       |   |   |   tableofcontents.py
+|   |       |   |   |   tables.py
+|   |       |   |   |   xpreformatted.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           doctemplate.cpython-314.pyc
+|   |       |   |           figures.cpython-314.pyc
+|   |       |   |           flowables.cpython-314.pyc
+|   |       |   |           frames.cpython-314.pyc
+|   |       |   |           multicol.cpython-314.pyc
+|   |       |   |           para.cpython-314.pyc
+|   |       |   |           paragraph.cpython-314.pyc
+|   |       |   |           paraparser.cpython-314.pyc
+|   |       |   |           tableofcontents.cpython-314.pyc
+|   |       |   |           tables.cpython-314.pyc
+|   |       |   |           xpreformatted.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           rl_config.cpython-314.pyc
+|   |       |           rl_settings.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           
+|   |       +---reportlab-5.0.1.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   REQUESTED
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE
+|   |       |           
+|   |       +---requests
+|   |       |   |   adapters.py
+|   |       |   |   api.py
+|   |       |   |   auth.py
+|   |       |   |   certs.py
+|   |       |   |   compat.py
+|   |       |   |   cookies.py
+|   |       |   |   exceptions.py
+|   |       |   |   help.py
+|   |       |   |   hooks.py
+|   |       |   |   models.py
+|   |       |   |   packages.py
+|   |       |   |   py.typed
+|   |       |   |   sessions.py
+|   |       |   |   status_codes.py
+|   |       |   |   structures.py
+|   |       |   |   utils.py
+|   |       |   |   _internal_utils.py
+|   |       |   |   _types.py
+|   |       |   |   __init__.py
+|   |       |   |   __version__.py
+|   |       |   |   
+|   |       |   \---__pycache__
+|   |       |           adapters.cpython-314.pyc
+|   |       |           api.cpython-314.pyc
+|   |       |           auth.cpython-314.pyc
+|   |       |           certs.cpython-314.pyc
+|   |       |           compat.cpython-314.pyc
+|   |       |           cookies.cpython-314.pyc
+|   |       |           exceptions.cpython-314.pyc
+|   |       |           help.cpython-314.pyc
+|   |       |           hooks.cpython-314.pyc
+|   |       |           models.cpython-314.pyc
+|   |       |           packages.cpython-314.pyc
+|   |       |           sessions.cpython-314.pyc
+|   |       |           status_codes.cpython-314.pyc
+|   |       |           structures.cpython-314.pyc
+|   |       |           utils.cpython-314.pyc
+|   |       |           _internal_utils.cpython-314.pyc
+|   |       |           _types.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           __version__.cpython-314.pyc
+|   |       |           
+|   |       +---requests-2.34.2.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   REQUESTED
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE
+|   |       |           NOTICE
+|   |       |           
+|   |       +---sqlparse
+|   |       |   |   cli.py
+|   |       |   |   exceptions.py
+|   |       |   |   formatter.py
+|   |       |   |   keywords.py
+|   |       |   |   lexer.py
+|   |       |   |   py.typed
+|   |       |   |   sql.py
+|   |       |   |   tokens.py
+|   |       |   |   utils.py
+|   |       |   |   __init__.py
+|   |       |   |   __main__.py
+|   |       |   |   
+|   |       |   +---engine
+|   |       |   |   |   filter_stack.py
+|   |       |   |   |   grouping.py
+|   |       |   |   |   statement_splitter.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           filter_stack.cpython-314.pyc
+|   |       |   |           grouping.cpython-314.pyc
+|   |       |   |           statement_splitter.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---filters
+|   |       |   |   |   aligned_indent.py
+|   |       |   |   |   others.py
+|   |       |   |   |   output.py
+|   |       |   |   |   reindent.py
+|   |       |   |   |   right_margin.py
+|   |       |   |   |   tokens.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           aligned_indent.cpython-314.pyc
+|   |       |   |           others.cpython-314.pyc
+|   |       |   |           output.cpython-314.pyc
+|   |       |   |           reindent.cpython-314.pyc
+|   |       |   |           right_margin.cpython-314.pyc
+|   |       |   |           tokens.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           cli.cpython-314.pyc
+|   |       |           exceptions.cpython-314.pyc
+|   |       |           formatter.cpython-314.pyc
+|   |       |           keywords.cpython-314.pyc
+|   |       |           lexer.cpython-314.pyc
+|   |       |           sql.cpython-314.pyc
+|   |       |           tokens.cpython-314.pyc
+|   |       |           utils.cpython-314.pyc
+|   |       |           __init__.cpython-314.pyc
+|   |       |           __main__.cpython-314.pyc
+|   |       |           
+|   |       +---sqlparse-0.6.0.dist-info
+|   |       |   |   entry_points.txt
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           AUTHORS
+|   |       |           LICENSE
+|   |       |           
+|   |       +---typing_extensions-4.16.0.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |           LICENSE
+|   |       |           
+|   |       +---tzdata
+|   |       |   |   zones
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---zoneinfo
+|   |       |   |   |   CET
+|   |       |   |   |   CST6CDT
+|   |       |   |   |   Cuba
+|   |       |   |   |   EET
+|   |       |   |   |   Egypt
+|   |       |   |   |   Eire
+|   |       |   |   |   EST
+|   |       |   |   |   EST5EDT
+|   |       |   |   |   Factory
+|   |       |   |   |   GB
+|   |       |   |   |   GB-Eire
+|   |       |   |   |   GMT
+|   |       |   |   |   GMT+0
+|   |       |   |   |   GMT-0
+|   |       |   |   |   GMT0
+|   |       |   |   |   Greenwich
+|   |       |   |   |   Hongkong
+|   |       |   |   |   HST
+|   |       |   |   |   Iceland
+|   |       |   |   |   Iran
+|   |       |   |   |   iso3166.tab
+|   |       |   |   |   Israel
+|   |       |   |   |   Jamaica
+|   |       |   |   |   Japan
+|   |       |   |   |   Kwajalein
+|   |       |   |   |   leapseconds
+|   |       |   |   |   Libya
+|   |       |   |   |   MET
+|   |       |   |   |   MST
+|   |       |   |   |   MST7MDT
+|   |       |   |   |   Navajo
+|   |       |   |   |   NZ
+|   |       |   |   |   NZ-CHAT
+|   |       |   |   |   Poland
+|   |       |   |   |   Portugal
+|   |       |   |   |   PRC
+|   |       |   |   |   PST8PDT
+|   |       |   |   |   ROC
+|   |       |   |   |   ROK
+|   |       |   |   |   Singapore
+|   |       |   |   |   Turkey
+|   |       |   |   |   tzdata.zi
+|   |       |   |   |   UCT
+|   |       |   |   |   Universal
+|   |       |   |   |   UTC
+|   |       |   |   |   W-SU
+|   |       |   |   |   WET
+|   |       |   |   |   zone.tab
+|   |       |   |   |   zone1970.tab
+|   |       |   |   |   zonenow.tab
+|   |       |   |   |   Zulu
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   +---Africa
+|   |       |   |   |   |   Abidjan
+|   |       |   |   |   |   Accra
+|   |       |   |   |   |   Addis_Ababa
+|   |       |   |   |   |   Algiers
+|   |       |   |   |   |   Asmara
+|   |       |   |   |   |   Asmera
+|   |       |   |   |   |   Bamako
+|   |       |   |   |   |   Bangui
+|   |       |   |   |   |   Banjul
+|   |       |   |   |   |   Bissau
+|   |       |   |   |   |   Blantyre
+|   |       |   |   |   |   Brazzaville
+|   |       |   |   |   |   Bujumbura
+|   |       |   |   |   |   Cairo
+|   |       |   |   |   |   Casablanca
+|   |       |   |   |   |   Ceuta
+|   |       |   |   |   |   Conakry
+|   |       |   |   |   |   Dakar
+|   |       |   |   |   |   Dar_es_Salaam
+|   |       |   |   |   |   Djibouti
+|   |       |   |   |   |   Douala
+|   |       |   |   |   |   El_Aaiun
+|   |       |   |   |   |   Freetown
+|   |       |   |   |   |   Gaborone
+|   |       |   |   |   |   Harare
+|   |       |   |   |   |   Johannesburg
+|   |       |   |   |   |   Juba
+|   |       |   |   |   |   Kampala
+|   |       |   |   |   |   Khartoum
+|   |       |   |   |   |   Kigali
+|   |       |   |   |   |   Kinshasa
+|   |       |   |   |   |   Lagos
+|   |       |   |   |   |   Libreville
+|   |       |   |   |   |   Lome
+|   |       |   |   |   |   Luanda
+|   |       |   |   |   |   Lubumbashi
+|   |       |   |   |   |   Lusaka
+|   |       |   |   |   |   Malabo
+|   |       |   |   |   |   Maputo
+|   |       |   |   |   |   Maseru
+|   |       |   |   |   |   Mbabane
+|   |       |   |   |   |   Mogadishu
+|   |       |   |   |   |   Monrovia
+|   |       |   |   |   |   Nairobi
+|   |       |   |   |   |   Ndjamena
+|   |       |   |   |   |   Niamey
+|   |       |   |   |   |   Nouakchott
+|   |       |   |   |   |   Ouagadougou
+|   |       |   |   |   |   Porto-Novo
+|   |       |   |   |   |   Sao_Tome
+|   |       |   |   |   |   Timbuktu
+|   |       |   |   |   |   Tripoli
+|   |       |   |   |   |   Tunis
+|   |       |   |   |   |   Windhoek
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---America
+|   |       |   |   |   |   Adak
+|   |       |   |   |   |   Anchorage
+|   |       |   |   |   |   Anguilla
+|   |       |   |   |   |   Antigua
+|   |       |   |   |   |   Araguaina
+|   |       |   |   |   |   Aruba
+|   |       |   |   |   |   Asuncion
+|   |       |   |   |   |   Atikokan
+|   |       |   |   |   |   Atka
+|   |       |   |   |   |   Bahia
+|   |       |   |   |   |   Bahia_Banderas
+|   |       |   |   |   |   Barbados
+|   |       |   |   |   |   Belem
+|   |       |   |   |   |   Belize
+|   |       |   |   |   |   Blanc-Sablon
+|   |       |   |   |   |   Boa_Vista
+|   |       |   |   |   |   Bogota
+|   |       |   |   |   |   Boise
+|   |       |   |   |   |   Buenos_Aires
+|   |       |   |   |   |   Cambridge_Bay
+|   |       |   |   |   |   Campo_Grande
+|   |       |   |   |   |   Cancun
+|   |       |   |   |   |   Caracas
+|   |       |   |   |   |   Catamarca
+|   |       |   |   |   |   Cayenne
+|   |       |   |   |   |   Cayman
+|   |       |   |   |   |   Chicago
+|   |       |   |   |   |   Chihuahua
+|   |       |   |   |   |   Ciudad_Juarez
+|   |       |   |   |   |   Coral_Harbour
+|   |       |   |   |   |   Cordoba
+|   |       |   |   |   |   Costa_Rica
+|   |       |   |   |   |   Coyhaique
+|   |       |   |   |   |   Creston
+|   |       |   |   |   |   Cuiaba
+|   |       |   |   |   |   Curacao
+|   |       |   |   |   |   Danmarkshavn
+|   |       |   |   |   |   Dawson
+|   |       |   |   |   |   Dawson_Creek
+|   |       |   |   |   |   Denver
+|   |       |   |   |   |   Detroit
+|   |       |   |   |   |   Dominica
+|   |       |   |   |   |   Edmonton
+|   |       |   |   |   |   Eirunepe
+|   |       |   |   |   |   El_Salvador
+|   |       |   |   |   |   Ensenada
+|   |       |   |   |   |   Fortaleza
+|   |       |   |   |   |   Fort_Nelson
+|   |       |   |   |   |   Fort_Wayne
+|   |       |   |   |   |   Glace_Bay
+|   |       |   |   |   |   Godthab
+|   |       |   |   |   |   Goose_Bay
+|   |       |   |   |   |   Grand_Turk
+|   |       |   |   |   |   Grenada
+|   |       |   |   |   |   Guadeloupe
+|   |       |   |   |   |   Guatemala
+|   |       |   |   |   |   Guayaquil
+|   |       |   |   |   |   Guyana
+|   |       |   |   |   |   Halifax
+|   |       |   |   |   |   Havana
+|   |       |   |   |   |   Hermosillo
+|   |       |   |   |   |   Indianapolis
+|   |       |   |   |   |   Inuvik
+|   |       |   |   |   |   Iqaluit
+|   |       |   |   |   |   Jamaica
+|   |       |   |   |   |   Jujuy
+|   |       |   |   |   |   Juneau
+|   |       |   |   |   |   Knox_IN
+|   |       |   |   |   |   Kralendijk
+|   |       |   |   |   |   La_Paz
+|   |       |   |   |   |   Lima
+|   |       |   |   |   |   Los_Angeles
+|   |       |   |   |   |   Louisville
+|   |       |   |   |   |   Lower_Princes
+|   |       |   |   |   |   Maceio
+|   |       |   |   |   |   Managua
+|   |       |   |   |   |   Manaus
+|   |       |   |   |   |   Marigot
+|   |       |   |   |   |   Martinique
+|   |       |   |   |   |   Matamoros
+|   |       |   |   |   |   Mazatlan
+|   |       |   |   |   |   Mendoza
+|   |       |   |   |   |   Menominee
+|   |       |   |   |   |   Merida
+|   |       |   |   |   |   Metlakatla
+|   |       |   |   |   |   Mexico_City
+|   |       |   |   |   |   Miquelon
+|   |       |   |   |   |   Moncton
+|   |       |   |   |   |   Monterrey
+|   |       |   |   |   |   Montevideo
+|   |       |   |   |   |   Montreal
+|   |       |   |   |   |   Montserrat
+|   |       |   |   |   |   Nassau
+|   |       |   |   |   |   New_York
+|   |       |   |   |   |   Nipigon
+|   |       |   |   |   |   Nome
+|   |       |   |   |   |   Noronha
+|   |       |   |   |   |   Nuuk
+|   |       |   |   |   |   Ojinaga
+|   |       |   |   |   |   Panama
+|   |       |   |   |   |   Pangnirtung
+|   |       |   |   |   |   Paramaribo
+|   |       |   |   |   |   Phoenix
+|   |       |   |   |   |   Port-au-Prince
+|   |       |   |   |   |   Porto_Acre
+|   |       |   |   |   |   Porto_Velho
+|   |       |   |   |   |   Port_of_Spain
+|   |       |   |   |   |   Puerto_Rico
+|   |       |   |   |   |   Punta_Arenas
+|   |       |   |   |   |   Rainy_River
+|   |       |   |   |   |   Rankin_Inlet
+|   |       |   |   |   |   Recife
+|   |       |   |   |   |   Regina
+|   |       |   |   |   |   Resolute
+|   |       |   |   |   |   Rio_Branco
+|   |       |   |   |   |   Rosario
+|   |       |   |   |   |   Santarem
+|   |       |   |   |   |   Santa_Isabel
+|   |       |   |   |   |   Santiago
+|   |       |   |   |   |   Santo_Domingo
+|   |       |   |   |   |   Sao_Paulo
+|   |       |   |   |   |   Scoresbysund
+|   |       |   |   |   |   Shiprock
+|   |       |   |   |   |   Sitka
+|   |       |   |   |   |   St_Barthelemy
+|   |       |   |   |   |   St_Johns
+|   |       |   |   |   |   St_Kitts
+|   |       |   |   |   |   St_Lucia
+|   |       |   |   |   |   St_Thomas
+|   |       |   |   |   |   St_Vincent
+|   |       |   |   |   |   Swift_Current
+|   |       |   |   |   |   Tegucigalpa
+|   |       |   |   |   |   Thule
+|   |       |   |   |   |   Thunder_Bay
+|   |       |   |   |   |   Tijuana
+|   |       |   |   |   |   Toronto
+|   |       |   |   |   |   Tortola
+|   |       |   |   |   |   Vancouver
+|   |       |   |   |   |   Virgin
+|   |       |   |   |   |   Whitehorse
+|   |       |   |   |   |   Winnipeg
+|   |       |   |   |   |   Yakutat
+|   |       |   |   |   |   Yellowknife
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   +---Argentina
+|   |       |   |   |   |   |   Buenos_Aires
+|   |       |   |   |   |   |   Catamarca
+|   |       |   |   |   |   |   ComodRivadavia
+|   |       |   |   |   |   |   Cordoba
+|   |       |   |   |   |   |   Jujuy
+|   |       |   |   |   |   |   La_Rioja
+|   |       |   |   |   |   |   Mendoza
+|   |       |   |   |   |   |   Rio_Gallegos
+|   |       |   |   |   |   |   Salta
+|   |       |   |   |   |   |   San_Juan
+|   |       |   |   |   |   |   San_Luis
+|   |       |   |   |   |   |   Tucuman
+|   |       |   |   |   |   |   Ushuaia
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   +---Indiana
+|   |       |   |   |   |   |   Indianapolis
+|   |       |   |   |   |   |   Knox
+|   |       |   |   |   |   |   Marengo
+|   |       |   |   |   |   |   Petersburg
+|   |       |   |   |   |   |   Tell_City
+|   |       |   |   |   |   |   Vevay
+|   |       |   |   |   |   |   Vincennes
+|   |       |   |   |   |   |   Winamac
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   +---Kentucky
+|   |       |   |   |   |   |   Louisville
+|   |       |   |   |   |   |   Monticello
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   +---North_Dakota
+|   |       |   |   |   |   |   Beulah
+|   |       |   |   |   |   |   Center
+|   |       |   |   |   |   |   New_Salem
+|   |       |   |   |   |   |   __init__.py
+|   |       |   |   |   |   |   
+|   |       |   |   |   |   \---__pycache__
+|   |       |   |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |   |           
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Antarctica
+|   |       |   |   |   |   Casey
+|   |       |   |   |   |   Davis
+|   |       |   |   |   |   DumontDUrville
+|   |       |   |   |   |   Macquarie
+|   |       |   |   |   |   Mawson
+|   |       |   |   |   |   McMurdo
+|   |       |   |   |   |   Palmer
+|   |       |   |   |   |   Rothera
+|   |       |   |   |   |   South_Pole
+|   |       |   |   |   |   Syowa
+|   |       |   |   |   |   Troll
+|   |       |   |   |   |   Vostok
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Arctic
+|   |       |   |   |   |   Longyearbyen
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Asia
+|   |       |   |   |   |   Aden
+|   |       |   |   |   |   Almaty
+|   |       |   |   |   |   Amman
+|   |       |   |   |   |   Anadyr
+|   |       |   |   |   |   Aqtau
+|   |       |   |   |   |   Aqtobe
+|   |       |   |   |   |   Ashgabat
+|   |       |   |   |   |   Ashkhabad
+|   |       |   |   |   |   Atyrau
+|   |       |   |   |   |   Baghdad
+|   |       |   |   |   |   Bahrain
+|   |       |   |   |   |   Baku
+|   |       |   |   |   |   Bangkok
+|   |       |   |   |   |   Barnaul
+|   |       |   |   |   |   Beirut
+|   |       |   |   |   |   Bishkek
+|   |       |   |   |   |   Brunei
+|   |       |   |   |   |   Calcutta
+|   |       |   |   |   |   Chita
+|   |       |   |   |   |   Choibalsan
+|   |       |   |   |   |   Chongqing
+|   |       |   |   |   |   Chungking
+|   |       |   |   |   |   Colombo
+|   |       |   |   |   |   Dacca
+|   |       |   |   |   |   Damascus
+|   |       |   |   |   |   Dhaka
+|   |       |   |   |   |   Dili
+|   |       |   |   |   |   Dubai
+|   |       |   |   |   |   Dushanbe
+|   |       |   |   |   |   Famagusta
+|   |       |   |   |   |   Gaza
+|   |       |   |   |   |   Harbin
+|   |       |   |   |   |   Hebron
+|   |       |   |   |   |   Hong_Kong
+|   |       |   |   |   |   Hovd
+|   |       |   |   |   |   Ho_Chi_Minh
+|   |       |   |   |   |   Irkutsk
+|   |       |   |   |   |   Istanbul
+|   |       |   |   |   |   Jakarta
+|   |       |   |   |   |   Jayapura
+|   |       |   |   |   |   Jerusalem
+|   |       |   |   |   |   Kabul
+|   |       |   |   |   |   Kamchatka
+|   |       |   |   |   |   Karachi
+|   |       |   |   |   |   Kashgar
+|   |       |   |   |   |   Kathmandu
+|   |       |   |   |   |   Katmandu
+|   |       |   |   |   |   Khandyga
+|   |       |   |   |   |   Kolkata
+|   |       |   |   |   |   Krasnoyarsk
+|   |       |   |   |   |   Kuala_Lumpur
+|   |       |   |   |   |   Kuching
+|   |       |   |   |   |   Kuwait
+|   |       |   |   |   |   Macao
+|   |       |   |   |   |   Macau
+|   |       |   |   |   |   Magadan
+|   |       |   |   |   |   Makassar
+|   |       |   |   |   |   Manila
+|   |       |   |   |   |   Muscat
+|   |       |   |   |   |   Nicosia
+|   |       |   |   |   |   Novokuznetsk
+|   |       |   |   |   |   Novosibirsk
+|   |       |   |   |   |   Omsk
+|   |       |   |   |   |   Oral
+|   |       |   |   |   |   Phnom_Penh
+|   |       |   |   |   |   Pontianak
+|   |       |   |   |   |   Pyongyang
+|   |       |   |   |   |   Qatar
+|   |       |   |   |   |   Qostanay
+|   |       |   |   |   |   Qyzylorda
+|   |       |   |   |   |   Rangoon
+|   |       |   |   |   |   Riyadh
+|   |       |   |   |   |   Saigon
+|   |       |   |   |   |   Sakhalin
+|   |       |   |   |   |   Samarkand
+|   |       |   |   |   |   Seoul
+|   |       |   |   |   |   Shanghai
+|   |       |   |   |   |   Singapore
+|   |       |   |   |   |   Srednekolymsk
+|   |       |   |   |   |   Taipei
+|   |       |   |   |   |   Tashkent
+|   |       |   |   |   |   Tbilisi
+|   |       |   |   |   |   Tehran
+|   |       |   |   |   |   Tel_Aviv
+|   |       |   |   |   |   Thimbu
+|   |       |   |   |   |   Thimphu
+|   |       |   |   |   |   Tokyo
+|   |       |   |   |   |   Tomsk
+|   |       |   |   |   |   Ujung_Pandang
+|   |       |   |   |   |   Ulaanbaatar
+|   |       |   |   |   |   Ulan_Bator
+|   |       |   |   |   |   Urumqi
+|   |       |   |   |   |   Ust-Nera
+|   |       |   |   |   |   Vientiane
+|   |       |   |   |   |   Vladivostok
+|   |       |   |   |   |   Yakutsk
+|   |       |   |   |   |   Yangon
+|   |       |   |   |   |   Yekaterinburg
+|   |       |   |   |   |   Yerevan
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Atlantic
+|   |       |   |   |   |   Azores
+|   |       |   |   |   |   Bermuda
+|   |       |   |   |   |   Canary
+|   |       |   |   |   |   Cape_Verde
+|   |       |   |   |   |   Faeroe
+|   |       |   |   |   |   Faroe
+|   |       |   |   |   |   Jan_Mayen
+|   |       |   |   |   |   Madeira
+|   |       |   |   |   |   Reykjavik
+|   |       |   |   |   |   South_Georgia
+|   |       |   |   |   |   Stanley
+|   |       |   |   |   |   St_Helena
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Australia
+|   |       |   |   |   |   ACT
+|   |       |   |   |   |   Adelaide
+|   |       |   |   |   |   Brisbane
+|   |       |   |   |   |   Broken_Hill
+|   |       |   |   |   |   Canberra
+|   |       |   |   |   |   Currie
+|   |       |   |   |   |   Darwin
+|   |       |   |   |   |   Eucla
+|   |       |   |   |   |   Hobart
+|   |       |   |   |   |   LHI
+|   |       |   |   |   |   Lindeman
+|   |       |   |   |   |   Lord_Howe
+|   |       |   |   |   |   Melbourne
+|   |       |   |   |   |   North
+|   |       |   |   |   |   NSW
+|   |       |   |   |   |   Perth
+|   |       |   |   |   |   Queensland
+|   |       |   |   |   |   South
+|   |       |   |   |   |   Sydney
+|   |       |   |   |   |   Tasmania
+|   |       |   |   |   |   Victoria
+|   |       |   |   |   |   West
+|   |       |   |   |   |   Yancowinna
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Brazil
+|   |       |   |   |   |   Acre
+|   |       |   |   |   |   DeNoronha
+|   |       |   |   |   |   East
+|   |       |   |   |   |   West
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Canada
+|   |       |   |   |   |   Atlantic
+|   |       |   |   |   |   Central
+|   |       |   |   |   |   Eastern
+|   |       |   |   |   |   Mountain
+|   |       |   |   |   |   Newfoundland
+|   |       |   |   |   |   Pacific
+|   |       |   |   |   |   Saskatchewan
+|   |       |   |   |   |   Yukon
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Chile
+|   |       |   |   |   |   Continental
+|   |       |   |   |   |   EasterIsland
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Etc
+|   |       |   |   |   |   GMT
+|   |       |   |   |   |   GMT+0
+|   |       |   |   |   |   GMT+1
+|   |       |   |   |   |   GMT+10
+|   |       |   |   |   |   GMT+11
+|   |       |   |   |   |   GMT+12
+|   |       |   |   |   |   GMT+2
+|   |       |   |   |   |   GMT+3
+|   |       |   |   |   |   GMT+4
+|   |       |   |   |   |   GMT+5
+|   |       |   |   |   |   GMT+6
+|   |       |   |   |   |   GMT+7
+|   |       |   |   |   |   GMT+8
+|   |       |   |   |   |   GMT+9
+|   |       |   |   |   |   GMT-0
+|   |       |   |   |   |   GMT-1
+|   |       |   |   |   |   GMT-10
+|   |       |   |   |   |   GMT-11
+|   |       |   |   |   |   GMT-12
+|   |       |   |   |   |   GMT-13
+|   |       |   |   |   |   GMT-14
+|   |       |   |   |   |   GMT-2
+|   |       |   |   |   |   GMT-3
+|   |       |   |   |   |   GMT-4
+|   |       |   |   |   |   GMT-5
+|   |       |   |   |   |   GMT-6
+|   |       |   |   |   |   GMT-7
+|   |       |   |   |   |   GMT-8
+|   |       |   |   |   |   GMT-9
+|   |       |   |   |   |   GMT0
+|   |       |   |   |   |   Greenwich
+|   |       |   |   |   |   UCT
+|   |       |   |   |   |   Universal
+|   |       |   |   |   |   UTC
+|   |       |   |   |   |   Zulu
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Europe
+|   |       |   |   |   |   Amsterdam
+|   |       |   |   |   |   Andorra
+|   |       |   |   |   |   Astrakhan
+|   |       |   |   |   |   Athens
+|   |       |   |   |   |   Belfast
+|   |       |   |   |   |   Belgrade
+|   |       |   |   |   |   Berlin
+|   |       |   |   |   |   Bratislava
+|   |       |   |   |   |   Brussels
+|   |       |   |   |   |   Bucharest
+|   |       |   |   |   |   Budapest
+|   |       |   |   |   |   Busingen
+|   |       |   |   |   |   Chisinau
+|   |       |   |   |   |   Copenhagen
+|   |       |   |   |   |   Dublin
+|   |       |   |   |   |   Gibraltar
+|   |       |   |   |   |   Guernsey
+|   |       |   |   |   |   Helsinki
+|   |       |   |   |   |   Isle_of_Man
+|   |       |   |   |   |   Istanbul
+|   |       |   |   |   |   Jersey
+|   |       |   |   |   |   Kaliningrad
+|   |       |   |   |   |   Kiev
+|   |       |   |   |   |   Kirov
+|   |       |   |   |   |   Kyiv
+|   |       |   |   |   |   Lisbon
+|   |       |   |   |   |   Ljubljana
+|   |       |   |   |   |   London
+|   |       |   |   |   |   Luxembourg
+|   |       |   |   |   |   Madrid
+|   |       |   |   |   |   Malta
+|   |       |   |   |   |   Mariehamn
+|   |       |   |   |   |   Minsk
+|   |       |   |   |   |   Monaco
+|   |       |   |   |   |   Moscow
+|   |       |   |   |   |   Nicosia
+|   |       |   |   |   |   Oslo
+|   |       |   |   |   |   Paris
+|   |       |   |   |   |   Podgorica
+|   |       |   |   |   |   Prague
+|   |       |   |   |   |   Riga
+|   |       |   |   |   |   Rome
+|   |       |   |   |   |   Samara
+|   |       |   |   |   |   San_Marino
+|   |       |   |   |   |   Sarajevo
+|   |       |   |   |   |   Saratov
+|   |       |   |   |   |   Simferopol
+|   |       |   |   |   |   Skopje
+|   |       |   |   |   |   Sofia
+|   |       |   |   |   |   Stockholm
+|   |       |   |   |   |   Tallinn
+|   |       |   |   |   |   Tirane
+|   |       |   |   |   |   Tiraspol
+|   |       |   |   |   |   Ulyanovsk
+|   |       |   |   |   |   Uzhgorod
+|   |       |   |   |   |   Vaduz
+|   |       |   |   |   |   Vatican
+|   |       |   |   |   |   Vienna
+|   |       |   |   |   |   Vilnius
+|   |       |   |   |   |   Volgograd
+|   |       |   |   |   |   Warsaw
+|   |       |   |   |   |   Zagreb
+|   |       |   |   |   |   Zaporozhye
+|   |       |   |   |   |   Zurich
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Indian
+|   |       |   |   |   |   Antananarivo
+|   |       |   |   |   |   Chagos
+|   |       |   |   |   |   Christmas
+|   |       |   |   |   |   Cocos
+|   |       |   |   |   |   Comoro
+|   |       |   |   |   |   Kerguelen
+|   |       |   |   |   |   Mahe
+|   |       |   |   |   |   Maldives
+|   |       |   |   |   |   Mauritius
+|   |       |   |   |   |   Mayotte
+|   |       |   |   |   |   Reunion
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Mexico
+|   |       |   |   |   |   BajaNorte
+|   |       |   |   |   |   BajaSur
+|   |       |   |   |   |   General
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---Pacific
+|   |       |   |   |   |   Apia
+|   |       |   |   |   |   Auckland
+|   |       |   |   |   |   Bougainville
+|   |       |   |   |   |   Chatham
+|   |       |   |   |   |   Chuuk
+|   |       |   |   |   |   Easter
+|   |       |   |   |   |   Efate
+|   |       |   |   |   |   Enderbury
+|   |       |   |   |   |   Fakaofo
+|   |       |   |   |   |   Fiji
+|   |       |   |   |   |   Funafuti
+|   |       |   |   |   |   Galapagos
+|   |       |   |   |   |   Gambier
+|   |       |   |   |   |   Guadalcanal
+|   |       |   |   |   |   Guam
+|   |       |   |   |   |   Honolulu
+|   |       |   |   |   |   Johnston
+|   |       |   |   |   |   Kanton
+|   |       |   |   |   |   Kiritimati
+|   |       |   |   |   |   Kosrae
+|   |       |   |   |   |   Kwajalein
+|   |       |   |   |   |   Majuro
+|   |       |   |   |   |   Marquesas
+|   |       |   |   |   |   Midway
+|   |       |   |   |   |   Nauru
+|   |       |   |   |   |   Niue
+|   |       |   |   |   |   Norfolk
+|   |       |   |   |   |   Noumea
+|   |       |   |   |   |   Pago_Pago
+|   |       |   |   |   |   Palau
+|   |       |   |   |   |   Pitcairn
+|   |       |   |   |   |   Pohnpei
+|   |       |   |   |   |   Ponape
+|   |       |   |   |   |   Port_Moresby
+|   |       |   |   |   |   Rarotonga
+|   |       |   |   |   |   Saipan
+|   |       |   |   |   |   Samoa
+|   |       |   |   |   |   Tahiti
+|   |       |   |   |   |   Tarawa
+|   |       |   |   |   |   Tongatapu
+|   |       |   |   |   |   Truk
+|   |       |   |   |   |   Wake
+|   |       |   |   |   |   Wallis
+|   |       |   |   |   |   Yap
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   +---US
+|   |       |   |   |   |   Alaska
+|   |       |   |   |   |   Aleutian
+|   |       |   |   |   |   Arizona
+|   |       |   |   |   |   Central
+|   |       |   |   |   |   East-Indiana
+|   |       |   |   |   |   Eastern
+|   |       |   |   |   |   Hawaii
+|   |       |   |   |   |   Indiana-Starke
+|   |       |   |   |   |   Michigan
+|   |       |   |   |   |   Mountain
+|   |       |   |   |   |   Pacific
+|   |       |   |   |   |   Samoa
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   \---__pycache__
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           __init__.cpython-314.pyc
+|   |       |           
+|   |       +---tzdata-2026.5.dist-info
+|   |       |   |   INSTALLER
+|   |       |   |   METADATA
+|   |       |   |   RECORD
+|   |       |   |   top_level.txt
+|   |       |   |   WHEEL
+|   |       |   |   
+|   |       |   \---licenses
+|   |       |       |   LICENSE
+|   |       |       |   
+|   |       |       \---licenses
+|   |       |               LICENSE_APACHE
+|   |       |               
+|   |       +---urllib3
+|   |       |   |   connection.py
+|   |       |   |   connectionpool.py
+|   |       |   |   exceptions.py
+|   |       |   |   fields.py
+|   |       |   |   filepost.py
+|   |       |   |   poolmanager.py
+|   |       |   |   py.typed
+|   |       |   |   response.py
+|   |       |   |   _base_connection.py
+|   |       |   |   _collections.py
+|   |       |   |   _request_methods.py
+|   |       |   |   _version.py
+|   |       |   |   __init__.py
+|   |       |   |   
+|   |       |   +---contrib
+|   |       |   |   |   pyopenssl.py
+|   |       |   |   |   socks.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   +---emscripten
+|   |       |   |   |   |   connection.py
+|   |       |   |   |   |   emscripten_fetch_worker.js
+|   |       |   |   |   |   fetch.py
+|   |       |   |   |   |   request.py
+|   |       |   |   |   |   response.py
+|   |       |   |   |   |   __init__.py
+|   |       |   |   |   |   
+|   |       |   |   |   \---__pycache__
+|   |       |   |   |           connection.cpython-314.pyc
+|   |       |   |   |           fetch.cpython-314.pyc
+|   |       |   |   |           request.cpython-314.pyc
+|   |       |   |   |           response.cpython-314.pyc
+|   |       |   |   |           __init__.cpython-314.pyc
+|   |       |   |   |           
+|   |       |   |   \---__pycache__
+|   |       |   |           pyopenssl.cpython-314.pyc
+|   |       |   |           socks.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---http2
+|   |       |   |   |   connection.py
+|   |       |   |   |   probe.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           connection.cpython-314.pyc
+|   |       |   |           probe.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   +---util
+|   |       |   |   |   connection.py
+|   |       |   |   |   proxy.py
+|   |       |   |   |   request.py
+|   |       |   |   |   response.py
+|   |       |   |   |   retry.py
+|   |       |   |   |   ssltransport.py
+|   |       |   |   |   ssl_.py
+|   |       |   |   |   ssl_match_hostname.py
+|   |       |   |   |   timeout.py
+|   |       |   |   |   url.py
+|   |       |   |   |   util.py
+|   |       |   |   |   wait.py
+|   |       |   |   |   __init__.py
+|   |       |   |   |   
+|   |       |   |   \---__pycache__
+|   |       |   |           connection.cpython-314.pyc
+|   |       |   |           proxy.cpython-314.pyc
+|   |       |   |           request.cpython-314.pyc
+|   |       |   |           response.cpython-314.pyc
+|   |       |   |           retry.cpython-314.pyc
+|   |       |   |           ssltransport.cpython-314.pyc
+|   |       |   |           ssl_.cpython-314.pyc
+|   |       |   |           ssl_match_hostname.cpython-314.pyc
+|   |       |   |           timeout.cpython-314.pyc
+|   |       |   |           url.cpython-314.pyc
+|   |       |   |           util.cpython-314.pyc
+|   |       |   |           wait.cpython-314.pyc
+|   |       |   |           __init__.cpython-314.pyc
+|   |       |   |           
+|   |       |   \---__pycache__
+|   |       |           connection.cpython-314.pyc

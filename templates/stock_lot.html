@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ lot.number }} · резерв{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ lot.number }}</h1>
+    <a class="btn slim" href="{{ back }}">К остаткам</a>
+  </div>
+</div>
+<p>
+  {{ lot.product.name }}, {{ lot.caliber.name }}, {{ lot.grade.name }}.
+  Поставщик {{ lot.supplier.name }}.
+  {% if balance %}Резерв {{ balance.reserved_kg|kg }} кг.{% endif %}
+</p>
+
+<h2>Строки заказов</h2>
+<table class="sheet">
+  <tr>
+    <th>Заказ</th><th>Отгрузка</th><th>Грузополучатель</th><th>Строка</th>
+    <th class="num">План, кг</th><th class="num">Резерв, кг</th><th>Паллеты</th>
+  </tr>
+  {% for line in lines %}
+  <tr>
+    <td>{% if line.order_id %}<a href="/orders/{{ line.order_id }}">{{ line.order_number }}</a>{% else %}—{% endif %}</td>
+    <td>{% if line.ship_date %}{{ line.ship_date|date:"d.m.Y" }}{% endif %}</td>
+    <td>{{ line.consignee }}</td>
+    <td>{{ line.title }}</td>
+    <td class="num">{% if line.qty_kg is not None %}{{ line.qty_kg|kg }}{% endif %}</td>
+    <td class="num">{{ line.kg|kg }}</td>
+    <td>{% for pallet in line.pallets %}<a href="/pallets/{{ pallet.id }}">{{ pallet.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Резерва под строки заказов нет.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Журнал движений</h2>
+<table class="sheet">
+  <tr><th>Дата</th><th>Вид</th><th>Паллета</th><th class="num">Кг</th><th>Документ</th><th>Кто</th></tr>
+  {% for row in journal %}
+  <tr>
+    <td>{{ row.created_at|date:"d.m.Y H:i" }}</td>
+    <td>{{ row.kind }}</td>
+    <td><a href="/pallets/{{ row.pallet_id }}">{{ row.pallet_number }}</a></td>
+    <td class="num">{{ row.qty_kg|kg }}</td>
+    <td>{% if row.href %}<a href="{{ row.href }}">{{ row.document }}</a>{% else %}—{% endif %}</td>
+    <td>{{ row.user }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Движений нет.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -19,7 +19,7 @@ def _pdf(content: bytes, filename: str) -> HttpResponse:
 
 def load_print_tasks(ids: list[int]):
     rows = Task.objects.filter(pk__in=ids).select_related(
-        "order__client",
+        "order__consignee",
         "order__consignee",
         "order__seller",
         "purchase_order__supplier",
@@ -81,7 +81,7 @@ def unit_print(request, unit_id):
 
 @roles_required("receiver", "warehouse")
 def pallet_pdf(request, pallet_id):
-    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__client", "reserved_client", "closed_by", "created_by").prefetch_related(
+    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__consignee", "reserved_consignee", "closed_by", "created_by").prefetch_related(
         "units__lot__product", "units__lot__caliber", "units__lot__supplier", "units__grade", "units__packaging"
     ).first()
     if pallet is None:
@@ -95,7 +95,9 @@ def pallet_pdf(request, pallet_id):
 
 @roles_required("receiver", "warehouse")
 def pallet_print(request, pallet_id):
-    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__client", "reserved_client").prefetch_related("units__lot__product", "units__lot__caliber", "units__grade").first()
+    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__consignee", "reserved_consignee").prefetch_related(
+        "units__lot__product", "units__lot__caliber", "units__lot__supplier", "units__grade"
+    ).first()
     target = back_url(request, f"/pallets/{pallet_id}")
     if pallet is None:
         return _fail(request, target, "Паллета не найдена")
@@ -145,7 +147,7 @@ def load_print_routes(ids: list[int]):
         Route.objects.filter(pk__in=ids)
         .select_related("driver", "driver__vehicle")
         .prefetch_related(
-            "route_orders__order__client",
+            "route_orders__order__consignee",
             "route_orders__order__consignee__zone",
         )
     )

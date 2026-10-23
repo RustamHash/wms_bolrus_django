@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: apps\catalog\import_nomenclature.py
+### SIZE: 4978 bytes / 132 lines
+==============================================================================
+
+from pathlib import Path
+
+from django.db import transaction
+
+from apps.catalog.families import _base_name, critical_family, plain_title, with_pack
+from apps.catalog.models import ExternalProduct, Product, ProductAlias, ProductGroup
+from apps.catalog.parties import ensure_alias, upsert_external, warehouse_product
+from apps.common.xlsx import read_rows
+
+
+def stock_title(name: str) -> str:
+    lowered = name.lower()
+    if "морож" not in lowered:
+        return critical_family(name)
+    family = _base_name(name)
+    if "морож" not in family.lower():
+        family = f"{family} замороженная"
+    return with_pack(name, plain_title(family))
+
+
+def _catalog(source: Path | bytes) -> dict[str, dict[str, str]]:
+    rows = read_rows(source, 1)
+    header = rows.get(1) or {}
+    columns = {name.strip(): column for column, name in header.items()}
+    found = {}
+    for number, cells in rows.items():
+        if number == 1:
+            continue
+        code = (cells.get(columns.get("Код", ""), "") or "").strip()
+        if not code:
+            continue
+        found[code] = {
+            "name": (cells.get(columns.get("Наименование", ""), "") or "").strip(),
+            "group": (cells.get(columns.get("В группе", ""), "") or "").strip(),
+        }
+    return found
+
+
+def _used(source: Path | bytes) -> list[tuple[str, str]]:
+    rows = []
+    for cells in read_rows(source, 2).values():
+        raw = (cells.get("A") or "").strip()
+        code, _, name = raw.partition(",")
+        code = code.strip()
+        name = name.strip()
+        if not code.startswith("НФ-") or not name:
+            continue
+        rows.append((code, name))
+    return rows
+
+
+def _group(name: str, groups: dict[str, ProductGroup]) -> ProductGroup | None:
+    if not name:
+        return None
+    found = groups.get(name)
+    if found is None:
+        found = ProductGroup.objects.create(name=name)
+        groups[name] = found
+    return found
+
+
+def _product(title: str, group: ProductGroup | None) -> Product:
+    found = Product.objects.filter(name=title).first()
+    if found is not None and group is not None and found.group_id not in (None, group.id):
+        titled = f"{title} ({group.name})"[:120]
+        found = Product.objects.filter(name=titled).first()
+        title = titled
+    if found is None:
+        found = warehouse_product(title)
+    if group is not None and found.group_id is None:
+        found.group = group
+        found.save(update_fields=["group"])
+    return found
+
+
+def _fill_known_groups(catalog: dict[str, dict[str, str]], used_codes: set[str], groups: dict[str, ProductGroup]) -> None:
+    named: dict[int, set[str]] = {}
+    aliases = ProductAlias.objects.filter(external_product__code__in=used_codes).select_related("external_product")
+    for alias in aliases:
+        group_name = (catalog.get(alias.external_product.code) or {}).get("group") or ""
+        if group_name:
+            named.setdefault(alias.product_id, set()).add(group_name)
+    for product in Product.objects.filter(pk__in=named, group__isnull=True):
+        names = named[product.id]
+        if len(names) != 1:
+            continue
+        product.group = _group(next(iter(names)), groups)
+        product.save(update_fields=["group"])
+
+
+@transaction.atomic
+def load_used_nomenclature(source: Path | bytes) -> dict[str, int]:
+    catalog = _catalog(source)
+    used = _used(source)
+    groups = {item.name: item for item in ProductGroup.objects.all()}
+    _fill_known_groups(catalog, {code for code, _name in used}, groups)
+    created_external = 0
+    created_product = 0
+    created_alias = 0
+    grouped = 0
+    missing = 0
+    products_before = set(Product.objects.values_list("id", flat=True))
+    for code, name in used:
+        card = catalog.get(code)
+        if card is None:
+            missing += 1
+            continue
+        existed = ExternalProduct.objects.filter(code=code).exists()
+        external = upsert_external(code, card["name"] or name)
+        if not existed:
+            created_external += 1
+        group = _group(card["group"], groups)
+        if group is not None and external.group_id != group.id:
+            external.group = group
+            external.save(update_fields=["group"])
+            grouped += 1
+        if ProductAlias.objects.filter(external_product=external).exists():
+            continue
+        product = _product(stock_title(card["name"] or name), group)
+        ensure_alias(external, product)
+        created_alias += 1
+        if product.id not in products_before:
+            created_product += 1
+            products_before.add(product.id)
+    return {
+        "used": len(used),
+        "external": created_external,
+        "products": created_product,
+        "aliases": created_alias,
+        "groups": grouped,
+        "missing": missing,
+    }
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0001_initial.py
+### SIZE: 5985 bytes / 128 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-12 16:55
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Caliber',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=80, unique=True, verbose_name='Калибр')),
+                ('sort_order', models.IntegerField(default=0, verbose_name='Порядок')),
+            ],
+            options={
+                'verbose_name': 'Калибр',
+                'verbose_name_plural': 'Калибры',
+                'db_table': 'calibers',
+                'ordering': ['sort_order', 'name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Client',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=200, unique=True, verbose_name='Покупатель')),
+                ('shipping_terms', models.TextField(blank=True, default='', verbose_name='Условия отгрузки')),
+            ],
+            options={
+                'verbose_name': 'Покупатель',
+                'verbose_name_plural': 'Покупатели',
+                'db_table': 'clients',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Grade',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=80, unique=True, verbose_name='Сортность')),
+                ('sort_order', models.IntegerField(default=0, verbose_name='Порядок')),
+            ],
+            options={
+                'verbose_name': 'Сортность',
+                'verbose_name_plural': 'Сортность',
+                'db_table': 'grades',
+                'ordering': ['sort_order', 'name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Packaging',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=80, unique=True, verbose_name='Название')),
+                ('tare_kg', models.DecimalField(decimal_places=3, default=0, max_digits=12, verbose_name='Вес тары, кг')),
+            ],
+            options={
+                'verbose_name': 'Упаковка',
+                'verbose_name_plural': 'Упаковка',
+                'db_table': 'packagings',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='ProductGroup',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=120, unique=True, verbose_name='Название')),
+            ],
+            options={
+                'verbose_name': 'Группа товаров',
+                'verbose_name_plural': 'Группы товаров',
+                'db_table': 'product_groups',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Seller',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('code', models.CharField(max_length=32, unique=True, verbose_name='Код')),
+                ('name', models.CharField(max_length=200, unique=True, verbose_name='Название')),
+                ('requisites', models.TextField(blank=True, default='', verbose_name='Реквизиты')),
+            ],
+            options={
+                'verbose_name': 'Продавец',
+                'verbose_name_plural': 'Продавцы',
+                'db_table': 'sellers',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Supplier',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=200, unique=True, verbose_name='Поставщик')),
+            ],
+            options={
+                'verbose_name': 'Поставщик',
+                'verbose_name_plural': 'Поставщики',
+                'db_table': 'suppliers',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Product',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=120, unique=True, verbose_name='Название')),
+                ('code', models.CharField(max_length=32, unique=True, verbose_name='Код')),
+                ('barcode', models.CharField(blank=True, max_length=64, null=True, unique=True, verbose_name='Штрихкод')),
+                ('group', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='products', to='catalog.productgroup', verbose_name='Группа')),
+            ],
+            options={
+                'verbose_name': 'Номенклатура',
+                'verbose_name_plural': 'Номенклатура',
+                'db_table': 'products',
+                'ordering': ['code'],
+            },
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0002_customer_order_import.py
+### SIZE: 2056 bytes / 42 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-13 09:10
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('catalog', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='ExternalProduct',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=120, verbose_name='Название')),
+                ('code', models.CharField(max_length=32, unique=True, verbose_name='Код')),
+                ('group', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='external_products', to='catalog.productgroup', verbose_name='Группа')),
+            ],
+            options={
+                'verbose_name': 'Номенклатура 1С',
+                'verbose_name_plural': 'Номенклатура 1С',
+                'db_table': 'external_products',
+                'ordering': ['code'],
+            },
+        ),
+        migrations.CreateModel(
+            name='ProductAlias',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('external_product', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='alias', to='catalog.externalproduct', verbose_name='Номенклатура 1С')),
+                ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='aliases', to='catalog.product', verbose_name='Номенклатура')),
+            ],
+            options={
+                'verbose_name': 'Соответствие номенклатуры',
+                'verbose_name_plural': 'Соответствия номенклатуры',
+                'db_table': 'product_aliases',
+            },
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0003_parties.py
+### SIZE: 1185 bytes / 32 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-13 09:30
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('catalog', '0002_customer_order_import'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Consignee',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=200, verbose_name='Грузополучатель')),
+                ('code', models.CharField(blank=True, max_length=32, null=True, unique=True, verbose_name='Код')),
+            ],
+            options={
+                'verbose_name': 'Грузополучатель',
+                'verbose_name_plural': 'Грузополучатели',
+                'db_table': 'consignees',
+                'ordering': ['name'],
+            },
+        ),
+        migrations.AddField(
+            model_name='client',
+            name='code',
+            field=models.CharField(blank=True, max_length=32, null=True, unique=True, verbose_name='Код'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0004_consignee_address_zone.py
+### SIZE: 1448 bytes / 42 lines
+==============================================================================
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0003_parties"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="DeliveryZone",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=120, unique=True, verbose_name="Зона доставки")),
+            ],
+            options={
+                "verbose_name": "Зона доставки",
+                "verbose_name_plural": "Зоны доставки",
+                "db_table": "delivery_zones",
+                "ordering": ["name"],
+            },
+        ),
+        migrations.AddField(
+            model_name="consignee",
+            name="address",
+            field=models.TextField(blank=True, default="", verbose_name="Адрес"),
+        ),
+        migrations.AddField(
+            model_name="consignee",
+            name="zone",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="consignees",
+                to="catalog.deliveryzone",
+                verbose_name="Зона доставки",
+            ),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0005_consignee_shipping_terms.py
+### SIZE: 1219 bytes / 34 lines
+==============================================================================
+
+from django.db import migrations, models
+
+
+def copy_terms(apps, schema_editor):
+    Client = apps.get_model("catalog", "Client")
+    Consignee = apps.get_model("catalog", "Consignee")
+    for client in Client.objects.exclude(shipping_terms=""):
+        consignee = Consignee.objects.filter(code=client.code).first() if client.code else None
+        if consignee is None:
+            consignee = Consignee.objects.filter(name=client.name).first()
+        if consignee is None or consignee.shipping_terms:
+            continue
+        consignee.shipping_terms = client.shipping_terms
+        consignee.save(update_fields=["shipping_terms"])
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0004_consignee_address_zone"),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name="consignee",
+            name="shipping_terms",
+            field=models.TextField(blank=True, default="", verbose_name="Условия отгрузки"),
+        ),
+        migrations.RunPython(copy_terms, migrations.RunPython.noop),
+        migrations.RemoveField(
+            model_name="client",
+            name="shipping_terms",
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0006_supplier_code.py
+### SIZE: 416 bytes / 16 lines
+==============================================================================
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0005_consignee_shipping_terms"),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name="supplier",
+            name="code",
+            field=models.CharField(blank=True, max_length=32, null=True, unique=True, verbose_name="Код"),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0007_consignee_allowed_grades.py
+### SIZE: 515 bytes / 18 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-15 07:07
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('catalog', '0006_supplier_code'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='consignee',
+            name='allowed_grades',
+            field=models.ManyToManyField(blank=True, related_name='consignees', to='catalog.grade', verbose_name='Допустимая сортность'),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0008_consignee_category.py
+### SIZE: 2363 bytes / 58 lines
+==============================================================================
+
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+def seed_categories(apps, schema_editor):
+    Grade = apps.get_model("catalog", "Grade")
+    Category = apps.get_model("catalog", "ConsigneeCategory")
+    for order, name in ((10, "Экстра"), (20, "Сеть")):
+        grade = Grade.objects.filter(name=name).first()
+        if grade is None:
+            grade = Grade.objects.create(name=name, sort_order=order)
+        Category.objects.get_or_create(name=name, defaults={"sort_order": order, "grade_id": grade.id})
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0007_consignee_allowed_grades"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="ConsigneeCategory",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=80, unique=True, verbose_name="Категория")),
+                ("sort_order", models.IntegerField(default=0, verbose_name="Порядок")),
+                (
+                    "grade",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="consignee_categories",
+                        to="catalog.grade",
+                        verbose_name="Сортность",
+                    ),
+                ),
+            ],
+            options={
+                "verbose_name": "Категория грузополучателя",
+                "verbose_name_plural": "Категории грузополучателей",
+                "db_table": "consignee_categories",
+                "ordering": ["sort_order", "name"],
+            },
+        ),
+        migrations.AddField(
+            model_name="consignee",
+            name="category",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="consignees",
+                to="catalog.consigneecategory",
+                verbose_name="Категория",
+            ),
+        ),
+        migrations.RunPython(seed_categories, migrations.RunPython.noop),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0009_consignee_delivery_order.py
+### SIZE: 4938 bytes / 101 lines
+==============================================================================
+
+from django.db import migrations, models
+
+
+# Порядок остановок из маршрутных листов 19.10.2026.
+ROUTE_ZONES = {
+    "Сады Краснодар маршрут 1": [
+        "ДЕТСКИЙ САД № 135 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 135 МБДОУ г. Краснодар (филиал)",
+        "ДЕТСКИЙ САД № 197 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 82 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 33 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 111 КРАСНОДАР основной",
+        "ДЕТСКИЙ САД № 111 КРАСНОДАР филиал",
+        "ДЕТСКИЙ САД № 66 МАДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 3 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 236 МАДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 79 г. Краснодар",
+        "ДЕТСКИЙ САД № 161 МБДОУ МО Г. КРАСНОДАР",
+        'ДЕТСКИЙ САД № 231" филиал',
+    ],
+    "Сады Краснодар маршрут 2": [
+        "ДЕТСКИЙ САД № 75 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 208 МАДОУ МО Г.КРАСНОДАР",
+        "ДЕТСКИЙ САД № 102 МАДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 166 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 184 (основной)",
+        "ДЕТСКИЙ САД № 184 (филиал)",
+        "ДЕТСКИЙ САД № 190 МАДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 183 МБДОУ МО Г. КРАСНОДАР",
+        "ДЕТСКИЙ САД № 211 МАДОУ МО Г. КРАСНОДАР",
+        'ДЕТСКИЙ САД № 201" основной',
+        "ДЕТСКИЙ САД № 201 МАДОУ МО Г. КРАСНОДАР филиал",
+        "ДЕТСКИЙ САД № 185 МБДОУ МО Г. КРАСНОДАР",
+        'ДЕТСКИЙ САД № 231" основной',
+    ],
+    "Геленджик": [
+        "ДС №24 г. Геленджик",
+        "ДС №22 г. Геленджик",
+        "ООШ №24 г. Геленджик",
+        "ДС №19 Геленджик",
+        "ООШ №21 Геленджик",
+        "ООШ №19 г. Геленджик",
+        "ДС №16 г. Геленджик",
+        "Д/С №12 Геленджик",
+        "СОШ №6 Геленджик",
+        "ДС №30 Геленджик",
+        "ДС №35 г. Геленджик",
+        "ДС №32 г. Геленджик",
+        "Д/С №3 Геленджик",
+        "ДС №34 г. Геленджик",
+        "ДС № 1 Геленджик",
+        "СОШ №5 г. Геленджик",
+        "Д/С №31 Геленджик",
+        "СОШ №2 г. Геленджик",
+        "СОШ №5 г. Геленджик (Ф)",
+        "СОШ №3 г. Геленджик",
+        "СОШ №1 Геленджик",
+        "Д/С №2 Геленджик",
+        "ДС №28 г. Геленджик",
+        "Д/С №2 Геленджик (Верхняя)",
+        "СОШ №8 Геленджик",
+        "ДС №37 г. Геленджик",
+        "Д/С №13 Геленджик",
+        "Д/С №7 Геленджик",
+    ],
+}
+
+
+def assign_route_zones(apps, schema_editor):
+    DeliveryZone = apps.get_model("catalog", "DeliveryZone")
+    Consignee = apps.get_model("catalog", "Consignee")
+    for zone_name, names in ROUTE_ZONES.items():
+        zone, _created = DeliveryZone.objects.get_or_create(name=zone_name)
+        for index, name in enumerate(names, start=1):
+            Consignee.objects.filter(name=name).update(zone_id=zone.id, delivery_order=index)
+
+
+def clear_delivery_order(apps, schema_editor):
+    Consignee = apps.get_model("catalog", "Consignee")
+    names = [name for names in ROUTE_ZONES.values() for name in names]
+    Consignee.objects.filter(name__in=names).update(delivery_order=0)
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0008_consignee_category"),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name="consignee",
+            name="delivery_order",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Порядок остановки при сборке маршрута. 0 — без очереди, точка встаёт в конец.",
+                verbose_name="Очередность в зоне",
+            ),
+        ),
+        migrations.RunPython(assign_route_zones, clear_delivery_order),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0010_temryuk_route_zones.py
+### SIZE: 2777 bytes / 69 lines
+==============================================================================
+
+from django.db import migrations
+
+# Очередность из «Темрюк Маршруты по заявке 19.10.2026»: номер строки маршрута — приоритет остановки.
+ROUTE_ZONES = {
+    "Темрюк маршрут 1": [
+        "СОШ №20 Темрюк КШП",
+        "СОШ №4 Темрюк КШП",
+        "СОШ №3 Темрюк КШП",
+        "СОШ №2 Темрюк КШП",
+        "СОШ №14 Темрюк КШП",
+        "ДС № 1 старший Темрюк",
+        "СОШ №13 Темрюк КШП",
+        "ДС № 1 младший Темрюк",
+        "СОШ №1 Темрюк КШП",
+        "СОШ №21 Темрюк КШП",
+        "СОШ №10 Темрюк КШП",
+        "ДС №44 Темрюк КШП",
+    ],
+    "Темрюк маршрут 2": [
+        "СОШ №5 Темрюк КШП",
+        "СОШ №18 Темрюк КШП",
+        "ДС № 28 Темрюк КШП",
+        "СОШ №12 Темрюк КШП",
+        "ДС № 29 Темрюк",
+        "СОШ №26 Темрюк КШП",
+        "ДС № 30 Темрюк",
+        "СОШ №25 Темрюк КШП",
+        "ДС № 32 Темрюк",
+        "ДС № 31 Темрюк",
+        "СОШ №16 Темрюк КШП",
+        "СОШ №32 Темрюк КШП",
+        "ДС № 37 Темрюк",
+        "СОШ №28 Темрюк КШП",
+        "СОШ №8 Темрюк КШП",
+    ],
+}
+
+
+def assign_route_zones(apps, schema_editor):
+    DeliveryZone = apps.get_model("catalog", "DeliveryZone")
+    Consignee = apps.get_model("catalog", "Consignee")
+    missing = []
+    for zone_name, names in ROUTE_ZONES.items():
+        zone, _created = DeliveryZone.objects.get_or_create(name=zone_name)
+        for index, name in enumerate(names, start=1):
+            updated = Consignee.objects.filter(name=name).update(zone_id=zone.id, delivery_order=index)
+            if not updated:
+                missing.append(name)
+    if missing:
+        raise RuntimeError("Нет грузополучателей: " + ", ".join(missing))
+
+
+def clear_route_zones(apps, schema_editor):
+    DeliveryZone = apps.get_model("catalog", "DeliveryZone")
+    Consignee = apps.get_model("catalog", "Consignee")
+    names = [name for items in ROUTE_ZONES.values() for name in items]
+    Consignee.objects.filter(name__in=names).update(zone_id=None, delivery_order=0)
+    DeliveryZone.objects.filter(name__in=ROUTE_ZONES).delete()
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0009_consignee_delivery_order"),
+    ]
+
+    operations = [
+        migrations.RunPython(assign_route_zones, clear_route_zones),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0011_belorechensk_sochi_apsheronsk_routes.py
+### SIZE: 3927 bytes / 90 lines
+==============================================================================
+
+from django.db import migrations
+
+# Очередность из маршрутных листов 19.10 и 20.10: номер строки — приоритет остановки.
+ROUTE_ZONES = {
+    "Белореченск маршрут 1": [
+        "СОШ 21 Белореченский",
+        "СОШ 18 Белореченск",
+        "СОШ 16 Белореченск",
+        "СОШ 29 Белореченск",
+        "СОШ 30 Белореченск",
+        "СОШ 25 Белореченск",
+        "СОШ 26 Белореченск",
+        "СОШ 7 Белореченск",
+        "СОШ 31 Белореченск (Вита Лайн)",
+        "СОШ 4 Белореченск",
+        "СОШ 36 Белореченск",
+        "СОШ 12 Белореченск",
+    ],
+    "Сочи маршрут 1": [
+        "ООШ 55 Сочи",
+        "СОШ 2 Сочи",
+        "НОШ-ДС № 85 Сочи",
+        "НОШ-ДС № 80 Сочи",
+        "СОШ 96 Сочи",
+        "СОШ 90 Сочи",
+        "СОШ 92 Сочи",
+        "СОШ 79 Сочи",
+    ],
+}
+
+# Зона уже есть и совпадает с листом «Маршрут 1 Апшеронск». Меняется только очередь.
+EXISTING_ORDERS = {
+    "Апшеронск 1 Школы": [
+        "ВИТА ЛАЙН ООО СОШ 17 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 16 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 10 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 37 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 18 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 4 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 30 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 3 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 2 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 1 Апшеронск",
+        "ВИТА ЛАЙН ООО СОШ 5 Апшеронск",
+    ],
+}
+
+
+def assign_route_zones(apps, schema_editor):
+    DeliveryZone = apps.get_model("catalog", "DeliveryZone")
+    Consignee = apps.get_model("catalog", "Consignee")
+    missing = []
+    for zone_name, names in ROUTE_ZONES.items():
+        zone, _created = DeliveryZone.objects.get_or_create(name=zone_name)
+        for index, name in enumerate(names, start=1):
+            updated = Consignee.objects.filter(name=name).update(zone_id=zone.id, delivery_order=index)
+            if not updated:
+                missing.append(name)
+    for zone_name, names in EXISTING_ORDERS.items():
+        zone = DeliveryZone.objects.filter(name=zone_name).first()
+        if zone is None:
+            missing.append(zone_name)
+            continue
+        for index, name in enumerate(names, start=1):
+            updated = Consignee.objects.filter(name=name).update(zone_id=zone.id, delivery_order=index)
+            if not updated:
+                missing.append(name)
+    if missing:
+        raise RuntimeError("Нет грузополучателей: " + ", ".join(missing))
+
+
+def clear_route_zones(apps, schema_editor):
+    DeliveryZone = apps.get_model("catalog", "DeliveryZone")
+    Consignee = apps.get_model("catalog", "Consignee")
+    names = [name for items in ROUTE_ZONES.values() for name in items]
+    Consignee.objects.filter(name__in=names).update(zone_id=None, delivery_order=0)
+    DeliveryZone.objects.filter(name__in=ROUTE_ZONES).delete()
+    kept = [name for items in EXISTING_ORDERS.values() for name in items]
+    Consignee.objects.filter(name__in=kept).update(delivery_order=0)
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0010_temryuk_route_zones"),
+    ]
+
+    operations = [
+        migrations.RunPython(assign_route_zones, clear_route_zones),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0012_category_allowed_grades.py
+### SIZE: 579 bytes / 21 lines
+==============================================================================
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("catalog", "0011_belorechensk_sochi_apsheronsk_routes"),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name="consigneecategory",
+            name="allowed_grades",
+            field=models.ManyToManyField(
+                blank=True,
+                related_name="allowed_in_categories",
+                to="catalog.grade",
+                verbose_name="Можно отгружать",
+            ),
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\migrations\0013_consignee_only.py
+### SIZE: 455 bytes / 19 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-22 14:32
+
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('catalog', '0012_category_allowed_grades'),
+        ('inventory', '0008_consignee_only'),
+        ('planning', '0015_consignee_only'),
+        ('storage', '0005_consignee_only'),
+    ]
+
+    operations = [
+        migrations.DeleteModel(
+            name='Client',
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\catalog\models.py
+### SIZE: 7139 bytes / 222 lines
+==============================================================================
+
+from django.db import models
+
+
+class ProductGroup(models.Model):
+    name = models.CharField("Название", max_length=120, unique=True)
+
+    class Meta:
+        db_table = "product_groups"
+        verbose_name = "Группа товаров"
+        verbose_name_plural = "Группы товаров"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Product(models.Model):
+    name = models.CharField("Название", max_length=120, unique=True)
+    code = models.CharField("Код", max_length=32, unique=True)
+    barcode = models.CharField("Штрихкод", max_length=64, unique=True, null=True, blank=True)
+    group = models.ForeignKey(
+        ProductGroup, null=True, blank=True, on_delete=models.SET_NULL, related_name="products", verbose_name="Группа"
+    )
+
+    class Meta:
+        db_table = "products"
+        verbose_name = "Номенклатура"
+        verbose_name_plural = "Номенклатура"
+        ordering = ["code"]
+
+    def __str__(self):
+        return self.name
+
+
+class ExternalProduct(models.Model):
+    name = models.CharField("Название", max_length=120)
+    code = models.CharField("Код", max_length=32, unique=True)
+    group = models.ForeignKey(
+        ProductGroup,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="external_products",
+        verbose_name="Группа",
+    )
+
+    class Meta:
+        db_table = "external_products"
+        verbose_name = "Номенклатура 1С"
+        verbose_name_plural = "Номенклатура 1С"
+        ordering = ["code"]
+
+    def __str__(self):
+        return self.name
+
+
+class ProductAlias(models.Model):
+    external_product = models.OneToOneField(
+        ExternalProduct, on_delete=models.CASCADE, related_name="alias", verbose_name="Номенклатура 1С"
+    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="aliases", verbose_name="Номенклатура")
+
+    class Meta:
+        db_table = "product_aliases"
+        verbose_name = "Соответствие номенклатуры"
+        verbose_name_plural = "Соответствия номенклатуры"
+
+    def __str__(self):
+        return self.external_product.code
+
+
+class Caliber(models.Model):
+    name = models.CharField("Калибр", max_length=80, unique=True)
+    sort_order = models.IntegerField("Порядок", default=0)
+
+    class Meta:
+        db_table = "calibers"
+        verbose_name = "Калибр"
+        verbose_name_plural = "Калибры"
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Grade(models.Model):
+    name = models.CharField("Сортность", max_length=80, unique=True)
+    sort_order = models.IntegerField("Порядок", default=0)
+
+    class Meta:
+        db_table = "grades"
+        verbose_name = "Сортность"
+        verbose_name_plural = "Сортность"
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Packaging(models.Model):
+    name = models.CharField("Название", max_length=80, unique=True)
+    tare_kg = models.DecimalField("Вес тары, кг", max_digits=12, decimal_places=3, default=0)
+
+    class Meta:
+        db_table = "packagings"
+        verbose_name = "Упаковка"
+        verbose_name_plural = "Упаковка"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Supplier(models.Model):
+    name = models.CharField("Поставщик", max_length=200, unique=True)
+    code = models.CharField("Код", max_length=32, unique=True, null=True, blank=True)
+
+    class Meta:
+        db_table = "suppliers"
+        verbose_name = "Поставщик"
+        verbose_name_plural = "Поставщики"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class DeliveryZone(models.Model):
+    name = models.CharField("Зона доставки", max_length=120, unique=True)
+
+    class Meta:
+        db_table = "delivery_zones"
+        verbose_name = "Зона доставки"
+        verbose_name_plural = "Зоны доставки"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ConsigneeCategory(models.Model):
+    name = models.CharField("Категория", max_length=80, unique=True)
+    sort_order = models.IntegerField("Порядок", default=0)
+    grade = models.ForeignKey(
+        Grade,
+        on_delete=models.PROTECT,
+        related_name="consignee_categories",
+        verbose_name="Сортность",
+    )
+    allowed_grades = models.ManyToManyField(
+        Grade,
+        blank=True,
+        related_name="allowed_in_categories",
+        verbose_name="Можно отгружать",
+    )
+
+    class Meta:
+        db_table = "consignee_categories"
+        verbose_name = "Категория грузополучателя"
+        verbose_name_plural = "Категории грузополучателей"
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Consignee(models.Model):
+    name = models.CharField("Грузополучатель", max_length=200)
+    code = models.CharField("Код", max_length=32, unique=True, null=True, blank=True)
+    address = models.TextField("Адрес", blank=True, default="")
+    shipping_terms = models.TextField("Условия отгрузки", blank=True, default="")
+    zone = models.ForeignKey(
+        DeliveryZone,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="consignees",
+        verbose_name="Зона доставки",
+    )
+    delivery_order = models.PositiveIntegerField(
+        "Очередность в зоне",
+        default=0,
+        help_text="Порядок остановки при сборке маршрута. 0 — без очереди, точка встаёт в конец.",
+    )
+    category = models.ForeignKey(
+        ConsigneeCategory,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="consignees",
+        verbose_name="Категория",
+    )
+    allowed_grades = models.ManyToManyField(
+        Grade,
+        blank=True,
+        related_name="consignees",
+        verbose_name="Допустимая сортность",
+    )
+
+    class Meta:
+        db_table = "consignees"
+        verbose_name = "Грузополучатель"
+        verbose_name_plural = "Грузополучатели"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Seller(models.Model):
+    code = models.CharField("Код", max_length=32, unique=True)
+    name = models.CharField("Название", max_length=200, unique=True)
+    requisites = models.TextField("Реквизиты", blank=True, default="")
+
+    class Meta:
+        db_table = "sellers"
+        verbose_name = "Продавец"
+        verbose_name_plural = "Продавцы"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+==============================================================================
+### FILE: apps\catalog\parties.py
+### SIZE: 6169 bytes / 172 lines
+==============================================================================
+
+from apps.catalog.families import CRITICAL_PRODUCTS, FAMILY_CODE, critical_family
+from apps.catalog.models import Consignee, ExternalProduct, Product, ProductAlias, Supplier
+from apps.common.exceptions import WarehouseError
+
+
+def _clean(value: str, limit: int) -> str:
+    return " ".join((value or "").split())[:limit]
+
+
+def upsert_supplier(name: str, code: str = "") -> Supplier:
+    name = _clean(name, 200)
+    code = _clean(code, 32)
+    if not name:
+        raise WarehouseError("Укажите поставщика")
+    found = Supplier.objects.filter(code=code).first() if code else None
+    if found is None:
+        found = Supplier.objects.filter(name=name).first()
+    if found is None:
+        return Supplier.objects.create(name=name, code=code or None)
+    changed = []
+    if found.name != name:
+        found.name = name
+        changed.append("name")
+    if code and found.code != code:
+        found.code = code
+        changed.append("code")
+    if changed:
+        found.save(update_fields=changed)
+    return found
+
+
+def upsert_consignee(name: str, code: str = "", address: str = "") -> Consignee:
+    name = _clean(name, 200)
+    code = _clean(code, 32)
+    address = _clean(address, 1000)
+    if not name:
+        raise WarehouseError("Укажите грузополучателя")
+    found = Consignee.objects.filter(code=code).first() if code else None
+    if found is None:
+        named = Consignee.objects.filter(name=name).first()
+        if named is not None and (not code or not named.code or named.code == code):
+            found = named
+    if found is None:
+        return Consignee.objects.create(name=name, code=code or None, address=address)
+    changed = []
+    if found.name != name:
+        found.name = name
+        changed.append("name")
+    if code and found.code != code:
+        found.code = code
+        changed.append("code")
+    if address and found.address != address:
+        found.address = address
+        changed.append("address")
+    if changed:
+        found.save(update_fields=changed)
+    return found
+
+
+def load_consignee_addresses(source) -> dict:
+    from apps.common.xlsx import read_rows
+
+    rows = read_rows(source)
+    header = rows.get(1) or {}
+    columns = {value.strip(): key for key, value in header.items()}
+
+    def cell(row: dict, title: str) -> str:
+        key = columns.get(title)
+        if not key:
+            return ""
+        return (row.get(key) or "").strip()
+
+    def moment(row: dict) -> float:
+        raw = cell(row, "Дата").replace(",", ".")
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.0
+
+    parties = {}
+    buyers = {}
+    for number, row in rows.items():
+        if number == 1:
+            continue
+        buyer_name = cell(row, "Покупатель / Поставщик")
+        buyer_code = cell(row, "Код Покупателя")
+        if buyer_name or buyer_code:
+            buyers[buyer_code or buyer_name] = (buyer_name, buyer_code)
+        address = _clean(cell(row, "Адрес доставки"), 1000)
+        if not address:
+            continue
+        code = cell(row, "Код Грузополучателя")
+        name = cell(row, "Грузополучатель")
+        if not code and not name:
+            code = buyer_code
+            name = buyer_name
+        if not code and not name:
+            continue
+        record = (name, code, address, moment(row), number)
+        key = code or name
+        previous = parties.get(key)
+        if previous is None or (record[3], record[4]) >= (previous[3], previous[4]):
+            parties[key] = record
+
+    created = 0
+    updated = 0
+    unchanged = 0
+    for name, code, address, _moment, _number in parties.values():
+        existed = Consignee.objects.filter(code=code).first() if code else None
+        if existed is None:
+            existed = Consignee.objects.filter(name=_clean(name, 200)).first()
+        is_new = existed is None
+        consignee = upsert_consignee(name, code)
+        if is_new:
+            created += 1
+        if consignee.address == address:
+            unchanged += 1
+            continue
+        consignee.address = address
+        consignee.save(update_fields=["address"])
+        updated += 1
+    return {
+        "consignees": len(parties),
+        "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
+    }
+
+
+def _next_product_code() -> str:
+    numbers = []
+    for code, _name in CRITICAL_PRODUCTS:
+        if code.startswith("Т-") and code[2:].isdigit():
+            numbers.append(int(code[2:]))
+    for code in Product.objects.values_list("code", flat=True):
+        if code.startswith("Т-") and code[2:].isdigit():
+            numbers.append(int(code[2:]))
+    return f"Т-{max(numbers, default=0) + 1:03d}"
+
+
+def warehouse_product(family: str) -> Product:
+    family = _clean(family, 120)
+    found = Product.objects.filter(name=family).first()
+    if found is not None:
+        return found
+    code = FAMILY_CODE.get(family) or _next_product_code()
+    taken = Product.objects.filter(code=code).first()
+    if taken is not None:
+        return taken
+    return Product.objects.create(name=family, code=code)
+
+
+def upsert_external(code: str, name: str) -> ExternalProduct:
+    code = _clean(code, 32)
+    name = _clean(name, 120) or code
+    found = ExternalProduct.objects.filter(code=code).first()
+    if found is None:
+        return ExternalProduct.objects.create(code=code, name=name)
+    if name and found.name != name:
+        found.name = name
+        found.save(update_fields=["name"])
+    return found
+
+
+def ensure_alias(external: ExternalProduct, product: Product) -> None:
+    alias = ProductAlias.objects.filter(external_product=external).first()
+    if alias is None:
+        ProductAlias.objects.create(external_product=external, product=product)
+        return
+    if alias.product_id != product.id:
+        alias.product = product
+        alias.save(update_fields=["product"])
+
+
+==============================================================================
+### FILE: apps\catalog\services.py
+### SIZE: 18639 bytes / 428 lines
+==============================================================================
+
+from decimal import Decimal, InvalidOperation
+
+from django.db import IntegrityError
+from django.db.models import Case, F, IntegerField, Value, When
+
+from apps.catalog.models import (
+    Caliber,
+    Consignee,
+    ConsigneeCategory,
+    DeliveryZone,
+    ExternalProduct,
+    Grade,
+    Packaging,
+    Product,
+    ProductAlias,
+    ProductGroup,
+    Seller,
+    Supplier,
+)
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, text
+from apps.common.kg import format_kg
+from apps.printing.models import Printer
+from apps.storage.models import Pallet, WarehouseCell, WarehouseZone, cell_address
+
+NAV = [
+    ("Товары", [
+        ("groups", "Группы"),
+        ("products", "Номенклатура"),
+        ("externals", "Номенклатура 1С"),
+        ("aliases", "Соответствия"),
+        ("calibers", "Калибры"),
+        ("grades", "Сортность"),
+        ("packagings", "Тара"),
+    ]),
+    ("Контрагенты", [
+        ("suppliers", "Поставщики"),
+        ("sellers", "Продавцы"),
+        ("consignees", "Грузополучатели"),
+        ("categories", "Категории"),
+        ("consignee-grades", "Грузополучатель — сорт"),
+    ]),
+    ("Доставка", [
+        ("zones", "Зоны доставки"),
+        ("consignee-zones", "Грузополучатель — зона"),
+    ]),
+    ("Склад", [
+        ("warehouse-zones", "Зоны склада"),
+        ("warehouse-cells", "Ячейки"),
+    ]),
+    ("Пользователи и права", [
+        ("users", "Пользователи"),
+        ("positions", "Должности"),
+    ]),
+    ("Печать", [
+        ("printers", "Принтеры"),
+    ]),
+]
+MODELS = {
+    "groups": ProductGroup,
+    "products": Product,
+    "externals": ExternalProduct,
+    "aliases": ProductAlias,
+    "calibers": Caliber,
+    "grades": Grade,
+    "packagings": Packaging,
+    "suppliers": Supplier,
+    "consignees": Consignee,
+    "categories": ConsigneeCategory,
+    "zones": DeliveryZone,
+    "warehouse-zones": WarehouseZone,
+    "warehouse-cells": WarehouseCell,
+    "sellers": Seller,
+    "printers": Printer,
+}
+TITLES = {key: label for _title, items in NAV for key, label in items}
+
+
+def _picked_grades(form) -> list[Grade]:
+    raw_ids = []
+    for raw in form.getlist("allowed_grade"):
+        try:
+            raw_ids.append(int(raw))
+        except (TypeError, ValueError) as exc:
+            raise WarehouseError("Выберите сортность") from exc
+    grades = list(Grade.objects.filter(pk__in=set(raw_ids)).order_by("sort_order", "name"))
+    if len(grades) != len(set(raw_ids)):
+        raise WarehouseError("Выберите сортность")
+    return grades
+
+
+def assign_consignee_grades(consignee, grade_ids: list[int]) -> str:
+    wanted = list(dict.fromkeys(grade_ids))
+    grades = list(Grade.objects.filter(pk__in=wanted).order_by("sort_order", "name"))
+    if len(grades) != len(wanted):
+        raise WarehouseError("Выберите сортность")
+    consignee.allowed_grades.set(grades)
+    if not grades:
+        return "любой сорт"
+    return ", ".join(item.name for item in grades)
+
+
+def assign_consignee_zone(consignee, name: str) -> str:
+    name = " ".join((name or "").split())
+    if len(name) > 120:
+        raise WarehouseError("Название зоны длиннее 120 символов")
+    if not name:
+        if consignee.zone_id:
+            consignee.zone = None
+            consignee.save(update_fields=["zone"])
+        return ""
+    zone = DeliveryZone.objects.filter(name__iexact=name).first()
+    if zone is None:
+        try:
+            zone = DeliveryZone.objects.create(name=name)
+        except IntegrityError:
+            zone = DeliveryZone.objects.get(name=name)
+    if consignee.zone_id != zone.id:
+        consignee.zone = zone
+        consignee.save(update_fields=["zone"])
+    return zone.name
+
+
+def ensure_category_grade(name: str) -> Grade:
+    grade = Grade.objects.filter(name=name).first()
+    if grade is not None:
+        return grade
+    last = Grade.objects.order_by("-sort_order").values_list("sort_order", flat=True).first() or 0
+    return Grade.objects.create(name=name, sort_order=last + 10)
+
+
+def load_refs() -> dict:
+    return {
+        "products": list(Product.objects.order_by("name")),
+        "calibers": list(Caliber.objects.order_by("sort_order", "name")),
+        "grades": list(Grade.objects.order_by("sort_order", "name")),
+        "packagings": list(Packaging.objects.order_by("name")),
+        "suppliers": list(Supplier.objects.order_by("name")),
+        "consignees": list(Consignee.objects.select_related("category").order_by("name")),
+        "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
+        "sellers": list(Seller.objects.order_by("name")),
+        "open_pallets": list(Pallet.objects.filter(kind="inbound", status="open").order_by("-id")),
+    }
+
+
+def _alias_rows():
+    headers = ["Код 1С", "Номенклатура 1С", "Код", "Номенклатура"]
+    aliases = {
+        item.external_product_id: item
+        for item in ProductAlias.objects.select_related("product", "external_product")
+    }
+    rows = []
+    for external in ExternalProduct.objects.order_by("code"):
+        alias = aliases.get(external.id)
+        if alias is not None:
+            cells = [external.code, external.name, alias.product.code, alias.product.name]
+            href = f"/masters/aliases/{alias.id}"
+            row_id = alias.id
+        else:
+            cells = [external.code, external.name, "", ""]
+            href = f"/masters/aliases/new?external_product_id={external.id}"
+            row_id = external.id
+        rows.append({"id": row_id, "cells": cells, "href": href})
+    return headers, rows
+
+
+def master_rows(kind: str):
+    model = MODELS[kind]
+    if kind == "products":
+        items = model.objects.select_related("group").order_by("code")
+    elif kind == "externals":
+        items = model.objects.select_related("group").order_by("code")
+    elif kind == "aliases":
+        return _alias_rows()
+    elif kind == "consignees":
+        items = (
+            model.objects.select_related("zone", "category")
+            .annotate(
+                delivery_rank=Case(
+                    When(delivery_order=0, then=Value(1_000_000)),
+                    default="delivery_order",
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by(F("zone__name").asc(nulls_last=True), "delivery_rank", "name")
+        )
+    elif kind == "categories":
+        items = model.objects.select_related("grade").prefetch_related("allowed_grades").order_by("sort_order", "name")
+    elif kind == "warehouse-cells":
+        items = model.objects.select_related("zone").order_by("zone__code", "code")
+    elif kind == "warehouse-zones":
+        items = model.objects.order_by("code")
+    elif kind in ("groups", "zones"):
+        items = model.objects.order_by("name")
+    else:
+        items = model.objects.order_by("id")
+    rows = []
+    for item in items:
+        if kind == "products":
+            cells = [item.code, item.barcode or "", item.group.name if item.group_id else "", item.name]
+        elif kind == "externals":
+            cells = [item.code, item.group.name if item.group_id else "", item.name]
+        elif kind in ("calibers", "grades"):
+            cells = [item.name, str(item.sort_order)]
+        elif kind == "suppliers":
+            cells = [item.code or "", item.name]
+        elif kind == "consignees":
+            terms = (item.shipping_terms or "").splitlines()[0] if item.shipping_terms else ""
+            cells = [
+                item.code or "",
+                item.name,
+                item.category.name if item.category_id else "",
+                item.address,
+                item.zone.name if item.zone_id else "",
+                str(item.delivery_order) if item.delivery_order else "",
+                terms,
+            ]
+        elif kind == "categories":
+            allowed = ", ".join(grade.name for grade in item.allowed_grades.all())
+            cells = [item.name, str(item.sort_order), item.grade.name, allowed or "по грузополучателю"]
+        elif kind == "sellers":
+            cells = [item.code, item.name]
+        elif kind == "packagings":
+            cells = [item.name, format_kg(item.tare_kg)]
+        elif kind == "warehouse-zones":
+            cells = [item.code, item.name, item.barcode]
+        elif kind == "warehouse-cells":
+            cells = [item.label(), item.zone.code, item.code, item.barcode]
+        elif kind == "printers":
+            cells = [
+                item.name,
+                "TSC" if item.printer_type == "tsc" else "Сетевой",
+                item.host or item.queue_name,
+                "да" if item.is_default else "",
+            ]
+        else:
+            cells = [item.name]
+        rows.append({"id": item.id, "cells": cells})
+    headers = {
+        "products": ["Код", "ШК", "Группа", "Название"],
+        "externals": ["Код", "Группа", "Название"],
+        "aliases": ["Код 1С", "Номенклатура 1С", "Код", "Номенклатура"],
+        "calibers": ["Калибр", "Порядок"],
+        "grades": ["Сортность", "Порядок"],
+        "sellers": ["Код", "Название"],
+        "packagings": ["Название", "Вес тары, кг"],
+        "suppliers": ["Код", "Поставщик"],
+        "consignees": ["Код", "Грузополучатель", "Категория", "Адрес", "Зона доставки", "Очередность", "Условия отгрузки"],
+        "categories": ["Категория", "Порядок", "Сортность", "Можно отгружать"],
+        "zones": ["Зона доставки"],
+        "warehouse-zones": ["Код", "Зона склада", "QR"],
+        "warehouse-cells": ["Ячейка", "Зона", "Место", "QR"],
+        "printers": ["Имя", "Тип", "Адрес", "По умолчанию"],
+    }.get(kind, ["Название"])
+    return headers, rows
+
+
+def _code(form, label: str, limit: int = 32) -> str:
+    value = " ".join(text(form, "code").split())
+    if not value:
+        raise WarehouseError(f"Укажите {label}")
+    if len(value) > limit:
+        raise WarehouseError(f"{label} длиннее {limit} символов")
+    return value
+
+
+def _save_warehouse_zone(item, form) -> None:
+    name = " ".join(text(form, "name").split())
+    code = _code(form, "код зоны")
+    if not name:
+        raise WarehouseError("Укажите название зоны")
+    if len(name) > 120:
+        raise WarehouseError("Название зоны длиннее 120 символов")
+    barcode_value = " ".join(text(form, "barcode").split()) or code
+    if len(barcode_value) > 64:
+        raise WarehouseError("QR зоны длиннее 64 символов")
+    others = WarehouseZone.objects.exclude(pk=item.pk or 0)
+    if others.filter(code__iexact=code).exists():
+        raise WarehouseError("Такой код зоны уже есть")
+    if others.filter(name__iexact=name).exists():
+        raise WarehouseError("Такая зона уже есть")
+    if others.filter(barcode__iexact=barcode_value).exists():
+        raise WarehouseError("Такой QR зоны уже есть")
+    item.code = code
+    item.name = name
+    item.barcode = barcode_value
+    item.save()
+
+
+def _save_warehouse_cell(item, form) -> None:
+    zone = WarehouseZone.objects.filter(pk=optional_int(form, "zone") or 0).first()
+    if zone is None:
+        raise WarehouseError("Выберите зону склада")
+    code = _code(form, "место")
+    name = " ".join(text(form, "name").split())
+    if len(name) > 120:
+        raise WarehouseError("Название ячейки длиннее 120 символов")
+    barcode_value = " ".join(text(form, "barcode").split()) or cell_address(zone.code, code)
+    if len(barcode_value) > 64:
+        raise WarehouseError("QR ячейки длиннее 64 символов")
+    same_zone = WarehouseCell.objects.filter(zone=zone).exclude(pk=item.pk or 0)
+    if same_zone.filter(code__iexact=code).exists():
+        raise WarehouseError("Такая ячейка уже есть в этой зоне")
+    if WarehouseCell.objects.exclude(pk=item.pk or 0).filter(barcode__iexact=barcode_value).exists():
+        raise WarehouseError("Такой QR ячейки уже есть")
+    item.zone = zone
+    item.code = code
+    item.name = name
+    item.barcode = barcode_value
+    item.save()
+
+
+def apply_master(kind: str, item, form) -> None:
+    if kind == "warehouse-zones":
+        _save_warehouse_zone(item, form)
+        return
+    if kind == "warehouse-cells":
+        _save_warehouse_cell(item, form)
+        return
+    if kind == "printers":
+        from apps.printing.services import apply_printer
+
+        apply_printer(item, form)
+        return
+    if kind == "aliases":
+        external = ExternalProduct.objects.filter(pk=optional_int(form, "external_product_id") or 0).first()
+        product = Product.objects.filter(pk=optional_int(form, "product_id") or 0).first()
+        if external is None or product is None:
+            raise WarehouseError("Выберите номенклатуру 1С и номенклатуру склада")
+        taken = ProductAlias.objects.filter(external_product=external).exclude(pk=item.pk or 0).first()
+        if taken is not None:
+            raise WarehouseError("Соответствие для этого кода уже есть")
+        item.external_product = external
+        item.product = product
+        item.save()
+        return
+    name = text(form, "name")
+    if not name:
+        raise WarehouseError("Укажите название")
+    item.name = name
+    if kind in ("calibers", "grades", "categories"):
+        item.sort_order = optional_int(form, "sort_order") or 0
+    if kind == "categories":
+        taken = ConsigneeCategory.objects.filter(name=item.name).exclude(pk=item.pk or 0).exists()
+        if taken:
+            raise WarehouseError("Такая категория уже есть")
+        item.grade = ensure_category_grade(item.name)
+    if kind == "products":
+        item.code = text(form, "code")
+        item.barcode = text(form, "barcode")
+        if not item.code:
+            raise WarehouseError("Укажите код")
+        if not item.barcode:
+            raise WarehouseError("Укажите штрихкод")
+        if Product.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
+            raise WarehouseError("Такой код уже есть")
+        if Product.objects.filter(barcode=item.barcode).exclude(pk=item.pk or 0).exists():
+            raise WarehouseError("Такой штрихкод уже есть")
+        group_id = optional_int(form, "group_id")
+        if group_id is not None and not ProductGroup.objects.filter(pk=group_id).exists():
+            raise WarehouseError("Выберите группу")
+        item.group_id = group_id
+    if kind == "externals":
+        item.code = text(form, "code")
+        if not item.code:
+            raise WarehouseError("Укажите код")
+        if ExternalProduct.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
+            raise WarehouseError("Такой код уже есть")
+        group_id = optional_int(form, "group_id")
+        if group_id is not None and not ProductGroup.objects.filter(pk=group_id).exists():
+            raise WarehouseError("Выберите группу")
+        item.group_id = group_id
+    if kind == "suppliers":
+        item.code = text(form, "code") or None
+        if item.code and Supplier.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
+            raise WarehouseError("Такой код уже есть")
+    if kind == "consignees":
+        item.code = text(form, "code") or None
+        if item.code and Consignee.objects.filter(code=item.code).exclude(pk=item.pk or 0).exists():
+            raise WarehouseError("Такой код уже есть")
+        item.address = text(form, "address")
+        item.shipping_terms = text(form, "shipping_terms")
+        zone_id = optional_int(form, "zone_id")
+        if zone_id and not DeliveryZone.objects.filter(pk=zone_id).exists():
+            raise WarehouseError("Выберите зону доставки")
+        item.zone_id = zone_id
+        delivery_order = optional_int(form, "delivery_order")
+        if delivery_order is None:
+            item.delivery_order = 0
+        elif delivery_order < 0:
+            raise WarehouseError("Очередность не может быть отрицательной")
+        else:
+            item.delivery_order = delivery_order
+        category_id = optional_int(form, "category_id")
+        if category_id and not ConsigneeCategory.objects.filter(pk=category_id).exists():
+            raise WarehouseError("Выберите категорию")
+        item.category_id = category_id
+    if kind == "sellers":
+        item.code = text(form, "code")
+        if not item.code:
+            raise WarehouseError("Укажите код продавца")
+        item.requisites = text(form, "requisites")
+    if kind == "packagings":
+        raw = text(form, "tare_kg").replace(",", ".")
+        if not raw:
+            item.tare_kg = Decimal("0.000")
+        else:
+            try:
+                tare = Decimal(raw).quantize(Decimal("0.001"))
+            except InvalidOperation as exc:
+                raise WarehouseError("Некорректный вес тары") from exc
+            if tare < 0:
+                raise WarehouseError("Вес тары не может быть отрицательным")
+            item.tare_kg = tare
+    item.save()
+    if kind == "categories":
+        from apps.catalog.grade_policy import fill_consignee_orders
+
+        item.allowed_grades.set(_picked_grades(form))
+        for consignee in Consignee.objects.filter(category=item).select_related("category").prefetch_related(
+            "allowed_grades", "category__allowed_grades"
+        ):
+            fill_consignee_orders(consignee)
+    if kind == "consignees":
+        item.allowed_grades.set(_picked_grades(form))
+        from apps.catalog.grade_policy import fill_consignee_orders
+
+        fill_consignee_orders(item)
+
+
+==============================================================================
+### FILE: apps\catalog\views.py
+### SIZE: 7698 bytes / 229 lines
+==============================================================================
+
+from django.contrib import messages
+from django.db.models import ProtectedError
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+
+from apps.catalog.models import Consignee, ConsigneeCategory, DeliveryZone, ExternalProduct, Grade, Product, ProductGroup
+from apps.storage.models import WarehouseZone
+from apps.catalog.services import MODELS, NAV, TITLES, apply_master, assign_consignee_grades, assign_consignee_zone, master_rows
+from apps.common.exceptions import WarehouseError
+from apps.common.http import done, guarded, roles_required
+
+
+@roles_required("office")
+def office_home(request):
+    return redirect("/masters")
+
+
+@roles_required("office")
+def masters_home(request):
+    return redirect("/masters/products")
+
+
+@roles_required("office")
+def consignee_zones(request):
+    consignees = Consignee.objects.select_related("zone").order_by("name")
+    zones = list(DeliveryZone.objects.order_by("name").values_list("name", flat=True))
+    return render(
+        request,
+        "masters/consignee_zones.html",
+        {
+            "kind": "consignee-zones",
+            "title": "Грузополучатель — зона доставки",
+            "nav": NAV,
+            "consignees": consignees,
+            "zones": zones,
+        },
+    )
+
+
+@roles_required("office")
+def consignee_zone_save(request, consignee_id):
+    consignee = Consignee.objects.filter(pk=consignee_id).first()
+    if consignee is None:
+        return JsonResponse({"ok": False, "error": "Грузополучатель не найден"}, status=404)
+    try:
+        zone = assign_consignee_zone(consignee, request.POST.get("zone", ""))
+    except WarehouseError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True, "zone": zone})
+
+
+@roles_required("office")
+def consignee_grades(request):
+    consignees = Consignee.objects.prefetch_related("allowed_grades").order_by("name")
+    grades = list(Grade.objects.order_by("sort_order", "name"))
+    return render(
+        request,
+        "masters/consignee_grades.html",
+        {
+            "kind": "consignee-grades",
+            "title": "Грузополучатель — сортность",
+            "nav": NAV,
+            "consignees": consignees,
+            "grades": grades,
+        },
+    )
+
+
+@roles_required("office")
+def consignee_grades_save(request, consignee_id):
+    consignee = Consignee.objects.filter(pk=consignee_id).first()
+    if consignee is None:
+        return JsonResponse({"ok": False, "error": "Грузополучатель не найден"}, status=404)
+    raw_ids = []
+    for raw in request.POST.getlist("grade"):
+        try:
+            raw_ids.append(int(raw))
+        except (TypeError, ValueError):
+            return JsonResponse({"ok": False, "error": "Выберите сортность"}, status=400)
+    try:
+        names = assign_consignee_grades(consignee, raw_ids)
+    except WarehouseError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True, "grades": names})
+
+
+@roles_required("office")
+def master_list(request, kind):
+    if kind == "users":
+        return redirect("/users")
+    if kind not in MODELS:
+        raise Http404
+    headers, rows = master_rows(kind)
+    return render(
+        request,
+        "masters/list.html",
+        {
+            "kind": kind,
+            "title": TITLES[kind],
+            "headers": headers,
+            "rows": rows,
+            "nav": NAV,
+            "can_change": kind != "categories" or request.user.role == "admin",
+        },
+    )
+
+
+def _form_context(kind, item, *, external_product_id=None):
+    data = {
+        "kind": kind,
+        "title": TITLES[kind],
+        "item": item,
+        "nav": NAV,
+        "products": list(Product.objects.order_by("name")),
+        "externals": list(ExternalProduct.objects.order_by("code")),
+        "groups": list(ProductGroup.objects.order_by("name")),
+        "zones": list(DeliveryZone.objects.order_by("name")),
+        "grades": list(Grade.objects.order_by("sort_order", "name")),
+        "categories": list(ConsigneeCategory.objects.order_by("sort_order", "name")),
+        "warehouse_zones": list(WarehouseZone.objects.order_by("code")),
+        "external_product_id": external_product_id,
+        "installed_printers": [],
+        "installed_error": "",
+    }
+    if kind == "printers":
+        from apps.printing.installed import list_installed
+
+        try:
+            data["installed_printers"] = list_installed()
+        except Exception as exc:
+            data["installed_error"] = str(exc)
+    return data
+
+
+def _category_locked(request, kind):
+    if kind != "categories" or request.user.role == "admin":
+        return None
+    messages.error(request, "Категории меняет только администратор")
+    return redirect("/masters/categories")
+
+
+@roles_required("office")
+def master_new(request, kind):
+    if kind not in MODELS:
+        raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
+    external_product_id = None
+    if kind == "aliases":
+        try:
+            external_product_id = int(request.GET.get("external_product_id") or 0) or None
+        except ValueError:
+            external_product_id = None
+    return render(request, "masters/form.html", _form_context(kind, None, external_product_id=external_product_id))
+
+
+@roles_required("office")
+def master_create(request, kind):
+    if kind not in MODELS:
+        raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
+
+    def action():
+        item = MODELS[kind]()
+        apply_master(kind, item, request.POST)
+        return item
+
+    result, response = guarded(request, f"/masters/{kind}/new", action)
+    if response:
+        return response
+    return done(request, f"/masters/{kind}", "Сохранено")
+
+
+@roles_required("office")
+def master_edit(request, kind, item_id):
+    if kind not in MODELS:
+        raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
+    item = get_object_or_404(MODELS[kind], pk=item_id)
+    return render(request, "masters/form.html", _form_context(kind, item))
+
+
+@roles_required("office")
+def master_update(request, kind, item_id):
+    if kind not in MODELS:
+        raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
+
+    def action():
+        item = MODELS[kind].objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Запись не найдена")
+        apply_master(kind, item, request.POST)
+        return item
+
+    result, response = guarded(request, f"/masters/{kind}/{item_id}", action)
+    if response:
+        return response
+    return done(request, f"/masters/{kind}", "Сохранено")
+
+
+@roles_required("office")
+def master_delete(request, kind, item_id):
+    if kind not in MODELS:
+        raise Http404
+    locked = _category_locked(request, kind)
+    if locked:
+        return locked
+
+    def action():
+        item = MODELS[kind].objects.filter(pk=item_id).first()
+        if item is None:
+            raise WarehouseError("Запись не найдена")
+        try:
+            item.delete()
+        except ProtectedError as exc:
+            raise WarehouseError("Запись используется и её нельзя удалить") from exc
+
+    result, response = guarded(request, f"/masters/{kind}", action)
+    if response:
+        return response
+    return done(request, f"/masters/{kind}", "Удалено")
+
+
+==============================================================================
+### FILE: apps\common\__init__.py
+### SIZE: 99 bytes / 3 lines
+==============================================================================
+
+from apps.common.apps import CommonConfig
+
+default_app_config = "apps.common.apps.CommonConfig"
+
+
+==============================================================================
+### FILE: apps\common\apps.py
+### SIZE: 210 bytes / 8 lines

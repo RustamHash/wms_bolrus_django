@@ -12,7 +12,7 @@ from apps.common.numbers import barcode, document_number
 from apps.inventory.models import InventoryDocument, InventoryLine, Movement, TransformDocument, TransformInput, TransformOutput, TransformWaste
 from apps.inventory.services import (
     consumed_pallet_ids,
-    has_downstream,
+    has_left,
     inbound_is_reserved,
     lock_balances,
     post_transform_in,
@@ -80,7 +80,7 @@ def _stock_inbound(pallet_id: int):
     )
     if inbound is None:
         raise WarehouseError("Паллета не принята")
-    if has_downstream(inbound):
+    if has_left(inbound):
         raise WarehouseError("Паллета уже отобрана, отгружена или списана")
     return inbound
 
@@ -105,16 +105,76 @@ def create_document(*, kind: str, doc_date, tolerance_kg: Decimal, notes: str, u
 
 
 @transaction.atomic
-def save_header(document: TransformDocument, *, doc_date, tolerance_kg: Decimal, notes: str) -> TransformDocument:
+def save_header(
+    document: TransformDocument,
+    *,
+    doc_date,
+    tolerance_kg: Decimal,
+    notes: str,
+    category_ids: list[int] | None = None,
+    output_consignee_id: int | None = None,
+    output_line_id: int | None = None,
+) -> TransformDocument:
     document = _draft(document)
     tolerance = as_kg(tolerance_kg)
     if tolerance < 0:
         raise WarehouseError("Допуск не может быть отрицательным")
+    if output_consignee_id and output_line_id:
+        raise WarehouseError("Укажите либо строку заказа, либо клиента")
     document.doc_date = doc_date
     document.tolerance_kg = tolerance
     document.notes = (notes or "").strip()
-    document.save(update_fields=["doc_date", "tolerance_kg", "notes"])
+    document.categories_set = True
+    document.output_consignee_id = output_consignee_id or None
+    document.output_line_id = output_line_id or None
+    document.save(update_fields=["doc_date", "tolerance_kg", "notes", "categories_set", "output_consignee", "output_line"])
+    document.allowed_categories.set(_known_categories(category_ids))
+    _output_reserve_fits(document)
     return document
+
+
+def _known_categories(raw: list[int] | None) -> list[int]:
+    from apps.catalog.models import ConsigneeCategory
+
+    if not raw:
+        return []
+    return list(ConsigneeCategory.objects.filter(pk__in=raw).values_list("id", flat=True))
+
+
+def suggest_categories(document: TransformDocument) -> set[int] | None:
+    sets = []
+    inputs = document.inputs.select_related("pallet").prefetch_related("pallet__allowed_categories")
+    for line in inputs:
+        found = {item.id for item in line.pallet.allowed_categories.all()}
+        if found:
+            sets.append(found)
+    if not sets:
+        return set()
+    shared = set.intersection(*sets)
+    if not shared:
+        return None
+    return shared
+
+
+def output_category_ids(document: TransformDocument) -> list[int]:
+    if document.categories_set:
+        return list(document.allowed_categories.values_list("id", flat=True))
+    suggested = suggest_categories(document)
+    if suggested is None:
+        raise WarehouseError("У входных паллет нет общей категории. Отметьте категории выхода")
+    return sorted(suggested)
+
+
+def _output_reserve_fits(document: TransformDocument) -> None:
+    if document.output_line_id and document.output_consignee_id:
+        raise WarehouseError("Укажите либо строку заказа, либо клиента")
+    if not document.output_line_id:
+        return
+    line = document.output_line
+    consignee = line.order.consignee if line.order_id else None
+    allowed = set(output_category_ids(document))
+    if allowed and (consignee is None or consignee.category_id not in allowed):
+        raise WarehouseError("Заказ этой категории не может взять паллету")
 
 
 def stock_choices(document: TransformDocument) -> list[dict]:
@@ -137,7 +197,7 @@ def stock_choices(document: TransformDocument) -> list[dict]:
             f"{pallet.number or pallet.id} · {lot.product.name} · {lot.caliber.name} · "
             f"{lot.grade.name} · {format_kg(movement.qty_kg)} кг"
         )
-        if pallet.order_id or pallet.reserved_client_id or pallet.reserved_line_id:
+        if pallet.order_id or pallet.reserved_consignee_id or pallet.reserved_line_id:
             label += " · резерв"
         choices.append({"id": pallet.id, "label": label})
     return choices
@@ -259,11 +319,11 @@ def _clear_pallet(pallet: Pallet) -> None:
     if unit_ids:
         Allocation.objects.filter(unit_id__in=unit_ids).delete()
     pallet.units.exclude(status="rejected").update(status="transformed")
-    if pallet.order_id or pallet.reserved_client_id or pallet.reserved_line_id:
+    if pallet.order_id or pallet.reserved_consignee_id or pallet.reserved_line_id:
         pallet.order = None
-        pallet.reserved_client = None
+        pallet.reserved_consignee = None
         pallet.reserved_line = None
-        pallet.save(update_fields=["order", "reserved_client", "reserved_line"])
+        pallet.save(update_fields=["order", "reserved_consignee", "reserved_line"])
 
 
 def _output_pallet(user) -> Pallet:
@@ -283,7 +343,11 @@ def _output_pallet(user) -> Pallet:
 
 @transaction.atomic
 def post_document(document: TransformDocument, user) -> str:
-    document = TransformDocument.objects.select_for_update().get(pk=document.pk)
+    document = (
+        TransformDocument.objects.select_for_update(of=("self",))
+        .select_related("output_line__order__consignee", "output_consignee")
+        .get(pk=document.pk)
+    )
     if document.status != TransformDocument.Status.DRAFT:
         raise WarehouseError("Провести можно только черновик")
     if document.kind not in (Lot.Source.REWORK, Lot.Source.WORKSHOP):
@@ -313,6 +377,9 @@ def post_document(document: TransformDocument, user) -> str:
             f"расхождение {format_kg(gap)} при допуске {format_kg(tolerance)}"
         )
     lock_balances(inbound.lot_id for _line, inbound in locked)
+    category_ids = output_category_ids(document)
+    _output_reserve_fits(document)
+    output_reserved = bool(document.output_line_id or document.output_consignee_id)
     parent = _parent_lot(locked)
     for line, inbound, out_part, waste_part in _split(locked, outgoing):
         reserved = inbound_is_reserved(inbound)
@@ -351,7 +418,23 @@ def post_document(document: TransformDocument, user) -> str:
             is_opening=False,
         )
         pallet = _output_pallet(user)
-        post_transform_in(pallet=pallet, lot=lot, qty_kg=line.qty_kg, user=user, document=document)
+        if category_ids:
+            pallet.allowed_categories.set(category_ids)
+        if document.output_line_id:
+            pallet.reserved_line_id = document.output_line_id
+            pallet.order_id = document.output_line.order_id
+        elif document.output_consignee_id:
+            pallet.reserved_consignee_id = document.output_consignee_id
+        if output_reserved:
+            pallet.save(update_fields=["reserved_line", "order", "reserved_consignee"])
+        post_transform_in(
+            pallet=pallet,
+            lot=lot,
+            qty_kg=line.qty_kg,
+            user=user,
+            document=document,
+            reserved=output_reserved,
+        )
         line.lot = lot
         line.pallet = pallet
         line.save(update_fields=["lot", "pallet"])

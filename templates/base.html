@@ -9,7 +9,7 @@
       <a href="/orders" class="{% if request.path|startswith:'/orders' %}active{% endif %}">Заказы</a>
       <div>
         <a href="/orders/suppliers">Поставщикам</a>
-        <a href="/orders/customers">Покупателям</a>
+        <a href="/orders/customers">Грузополучателям</a>
       </div>
     </div>
     {% endif %}
@@ -30,6 +30,7 @@
       <div>
         <a href="/stock">Остатки</a>
         <a href="/demand">Потребность</a>
+        <a href="/reports/nomenclature">Номенклатура 1С</a>
         <a href="/orders/customers/revisions">Расхождения заказов</a>
         <a href="/pallets">Паллеты</a>
         <a href="/inventory">Инвентаризация</a>

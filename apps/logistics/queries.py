@@ -21,10 +21,10 @@ def active_route_order_exists():
 
 def unassigned_orders_queryset(ship_date: date | None = None):
     qs = (
-        Order.objects.filter(status="open")
+        Order.objects.filter(status__in=("open", "partial"))
         .annotate(on_route=active_route_order_exists())
         .filter(on_route=False)
-        .select_related("client", "consignee", "consignee__zone", "seller")
+        .select_related("consignee", "consignee__zone", "seller")
         .prefetch_related(Prefetch("lines", queryset=OrderLine.objects.only("id", "order_id", "qty_kg")))
         .order_by("ship_date", "id")
     )
@@ -56,8 +56,6 @@ def delivery_rank(order) -> tuple:
         seq = consignee.delivery_order or 0
         if consignee.zone_id and consignee.zone is not None:
             zone_name = consignee.zone.name or ""
-    elif order.client_id:
-        party = order.client.name or ""
     return (zone_name.lower(), seq <= 0, seq, party.lower(), order.id)
 
 
@@ -68,7 +66,7 @@ def _order_brief(order, weight: Decimal) -> dict:
         address = (consignee.address or "").strip()
         delivery_order = consignee.delivery_order or 0
     else:
-        party = order.client.name
+        party = ""
         address = ""
         delivery_order = 0
     return {

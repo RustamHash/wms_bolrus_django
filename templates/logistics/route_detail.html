@@ -47,7 +47,7 @@
   <thead>
     <tr>
       {% if route.status == 'draft' or route.status == 'planned' %}<th class="grip"></th>{% endif %}
-      <th>№</th><th>Очередь</th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th>
+      <th>№</th><th>Очередь</th><th>Заказ</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -57,7 +57,6 @@
     <td class="pos">{{ stop.position }}</td>
     <td>{% if stop.order.consignee and stop.order.consignee.delivery_order %}{{ stop.order.consignee.delivery_order }}{% else %}—{% endif %}</td>
     <td><a href="/orders/{{ stop.order_id }}">{{ stop.order.number|default:stop.order_id }}</a></td>
-    <td>{{ stop.order.client.name }}</td>
     <td>{% if stop.order.consignee %}{{ stop.order.consignee.name }}{% endif %}</td>
     <td>{% if stop.order.consignee %}{{ stop.order.consignee.address }}{% endif %}</td>
     <td>{% if stop.order.consignee and stop.order.consignee.zone %}{{ stop.order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
@@ -94,12 +93,11 @@
 <h2>Добавить заказы</h2>
 <form method="post" action="/logistics/routes/{{ route.id }}/add" class="card">{% csrf_token %}
   <table class="sheet">
-    <tr><th></th><th>Заказ</th><th>Покупатель</th><th>Грузополучатель</th><th>Зона</th></tr>
+    <tr><th></th><th>Заказ</th><th>Грузополучатель</th><th>Зона</th></tr>
     {% for order in available %}
     <tr>
       <td><input type="checkbox" name="order_id" value="{{ order.id }}"></td>
       <td>{{ order.number|default:order.id }}</td>
-      <td>{{ order.client.name }}</td>
       <td>{% if order.consignee %}{{ order.consignee.name }}{% endif %}</td>
       <td>{% if order.consignee and order.consignee.zone %}{{ order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
     </tr>

@@ -450,7 +450,7 @@ def route_detail(request, route_id):
     )
     stops = list(
         RouteOrder.objects.filter(route=route)
-        .select_related("order__client", "order__consignee", "order__consignee__zone")
+        .select_related("order__consignee", "order__consignee", "order__consignee__zone")
         .order_by("position", "id")
     )
     order_ids = [stop.order_id for stop in stops]

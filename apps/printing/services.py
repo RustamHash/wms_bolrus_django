@@ -1,16 +1,22 @@
 import ctypes
+import logging
 import os
 import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 from ctypes import wintypes
 from pathlib import Path
+
+from django.db import close_old_connections, connections, transaction
 
 from apps.common.exceptions import PrintError
 from apps.common.present import group_units
 from apps.printing import labels, pdfs
 from apps.printing.models import Printer
+
+log = logging.getLogger(__name__)
 
 
 def apply_printer(item: Printer, form) -> None:
@@ -246,14 +252,77 @@ def print_unit(unit, target: str) -> str:
     raise PrintError("Неизвестная печать")
 
 
-def print_pallet(pallet, target: str) -> str:
+def order_printer(pallet):
+    from apps.inventory.models import Movement
+
+    movement = (
+        Movement.objects.filter(pallet=pallet, kind="in")
+        .select_related("task__purchase_order__printer")
+        .order_by("-id")
+        .first()
+    )
+    if movement is None or movement.task_id is None or movement.task.purchase_order_id is None:
+        return None
+    return movement.task.purchase_order.printer
+
+
+def print_pallet(pallet, target: str, printer=None) -> str:
     if target == "tsc":
-        printer = default_printer("tsc")
-        return send_tspl(printer, labels.pallet_labels(printer, pallet))
+        chosen = printer or order_printer(pallet)
+        if chosen is None or chosen.printer_type != "tsc":
+            chosen = default_printer("tsc")
+        return send_tspl(chosen, labels.pallet_labels(chosen, pallet, copies=2))
     if target == "network":
-        printer = default_printer("network")
-        return send_pdf(printer, pdfs.pallet_passport_pdf(pallet), f"pallet-{pallet.id}")
+        chosen = printer if printer is not None and printer.printer_type != "tsc" else default_printer("network")
+        return send_pdf(chosen, pdfs.pallet_passport_pdf(pallet), f"pallet-{pallet.id}")
     raise PrintError("Неизвестная печать")
+
+
+def print_accepted_passport(pallet) -> str:
+    printer = order_printer(pallet)
+    if printer is None:
+        printer = default_printer("tsc")
+    if printer.printer_type == "tsc":
+        return send_tspl(printer, labels.pallet_labels(printer, pallet, copies=2))
+    return send_pdf(printer, pdfs.pallet_passport_pdf(pallet), f"pallet-{pallet.id}")
+
+
+def schedule_accepted_passport(pallet_id: int, user_id: int | None) -> None:
+    def start():
+        threading.Thread(
+            target=_accepted_passport_job,
+            args=(pallet_id, user_id),
+            daemon=True,
+            name=f"passport-{pallet_id}",
+        ).start()
+
+    transaction.on_commit(start)
+
+
+def _accepted_passport_job(pallet_id: int, user_id: int | None) -> None:
+    from apps.accounts.models import User
+    from apps.common.notices import notify
+    from apps.storage.models import Pallet
+
+    close_old_connections()
+    pallet = None
+    user = None
+    try:
+        user = User.objects.filter(pk=user_id).first() if user_id else None
+        pallet = Pallet.objects.filter(pk=pallet_id).first()
+        if pallet is None:
+            return
+        message = print_accepted_passport(pallet)
+        log.info("%s", message)
+        if user is not None:
+            notify(user, [f"Паспорт {pallet.number}: {message}"])
+    except Exception as exc:
+        log.exception("Паспорт паллеты %s не напечатан", pallet_id)
+        if user is not None:
+            number = pallet.number if pallet is not None else f"#{pallet_id}"
+            notify(user, [f"Паспорт {number} не напечатан: {exc}"])
+    finally:
+        connections.close_all()
 
 
 def print_shipment(shipment, target: str, document: str) -> str:

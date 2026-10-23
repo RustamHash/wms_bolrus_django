@@ -44,7 +44,27 @@
     </select>
   </label>
   {% endif %}
-  {% if kind != 'printers' and kind != 'aliases' %}
+  {% if kind == 'warehouse-cells' %}
+  <label>Зона склада
+    <select name="zone" required>
+      <option value=""></option>
+      {% for zone in warehouse_zones %}
+      <option value="{{ zone.id }}" {% if item and item.zone_id == zone.id %}selected{% endif %}>{{ zone.code }} · {{ zone.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Место <input name="code" value="{% if item %}{{ item.code }}{% else %}{% endif %}" required placeholder="01"></label>
+  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}"></label>
+  <label>QR <input name="barcode" value="{% if item %}{{ item.barcode }}{% else %}{% endif %}" placeholder="Если пусто — А-01"></label>
+  <p class="hint">На складе ячейка — это зона и место: А-01. Отдельного выбора зоны при работе нет. Напольное хранение делится только так.</p>
+  {% endif %}
+  {% if kind == 'warehouse-zones' %}
+  <label>Код <input name="code" value="{% if item %}{{ item.code }}{% else %}{% endif %}" required></label>
+  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+  <label>QR <input name="barcode" value="{% if item %}{{ item.barcode }}{% else %}{% endif %}" placeholder="Если пусто — равен коду"></label>
+  <p class="hint">Код зоны — первая часть адреса ячейки. Место 01 в зоне А называется А-01.</p>
+  {% endif %}
+  {% if kind != 'printers' and kind != 'aliases' and kind != 'warehouse-cells' and kind != 'warehouse-zones' %}
   <label>{% if kind == 'zones' %}Зона доставки{% else %}Название{% endif %} <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
   {% endif %}
   {% if kind == 'calibers' or kind == 'grades' %}
@@ -52,9 +72,15 @@
   {% endif %}
   {% if kind == 'categories' %}
   <label>Порядок <input name="sort_order" type="number" value="{% if item %}{{ item.sort_order }}{% else %}{{ 0 }}{% endif %}"></label>
-  {% endif %}
-  {% if kind == 'categories' %}
-  <p class="hint">Категория грузополучателя. В заказ сортность подставляется с тем же названием. Список меняет только администратор, у грузополучателя категорию выбирает офис.</p>
+  <fieldset class="grades">
+    <legend>Можно отгружать</legend>
+    <div class="grade-picks">
+      {% for grade in grades %}
+      <label><input type="checkbox" name="allowed_grade" value="{{ grade.id }}" {% if item and grade in item.allowed_grades.all %}checked{% endif %}> {{ grade.name }}</label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <p class="hint">Отмеченные сорта можно отгружать всем грузополучателям этой категории. Если ничего не отмечено, действует список на самом грузополучателе. В заказ по-прежнему подставляется сортность с тем же названием, если она разрешена. Список категорий меняет только администратор.</p>
   {% endif %}
   {% if kind == 'clients' or kind == 'consignees' or kind == 'suppliers' %}
   <label>Код <input name="code" value="{% if item and item.code %}{{ item.code }}{% else %}{% endif %}"></label>
@@ -82,7 +108,7 @@
       {% endfor %}
     </select>
   </label>
-  <p class="hint">Сортность в заказе подставляется из категории. В отдельном заказе её можно сменить. Новые категории добавляет только администратор.</p>
+  <p class="hint">Сортность в заказе подставляется из категории. В отдельном заказе её можно сменить. Если у категории отмечены сорта, отгружаем их, а галочки ниже не действуют.</p>
   <fieldset class="grades">
     <legend>Сортность</legend>
     <div class="grade-picks">

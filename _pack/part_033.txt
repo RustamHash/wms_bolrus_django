@@ -1,0 +1,35 @@
+﻿      {% for item in orders %}
+      <option value="{{ item.id }}" {% if order and order.id == item.id %}selected{% endif %}>{{ item.number }} · {{ item.consignee.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+{% else %}
+<p>Нет открытых заказов.</p>
+{% endif %}
+{% for block in blocks %}
+<section class="card">
+  <h2>{{ block.line|describe }}</h2>
+  <p>Осталось {{ block.line|remaining|kg }} кг</p>
+  <h3>Места</h3>
+  {% for unit in block.units %}
+  <form method="post" action="/crossdock/units/{{ unit.id }}" class="row">{% csrf_token %}
+    <input type="hidden" name="line_id" value="{{ block.line.id }}">
+    <input type="hidden" name="order_id" value="{{ order.id }}">
+    <span>{{ unit.barcode }} · {{ unit.net_kg|kg }} кг{% if unit.pallet %} · {{ unit.pallet.number }}{% endif %}</span>
+    <button>Назначить</button>
+  </form>
+  {% empty %}<p>Подходящих свободных мест нет.</p>{% endfor %}
+  <h3>Целые входные паллеты</h3>
+  {% for item in block.pallets %}
+  <form method="post" action="/crossdock/pallets/{{ item.pallet.id }}" class="row">{% csrf_token %}
+    <input type="hidden" name="line_id" value="{{ block.line.id }}">
+    <input type="hidden" name="order_id" value="{{ order.id }}">
+    <span>{{ item.pallet.number }} · {{ item.count }} мест · {{ item.kg|kg }} кг</span>
+    <button>Назначить паллету</button>
+  </form>
+  {% empty %}<p>Подходящих паллет нет.</p>{% endfor %}
+</section>
+{% endfor %}
+{% endblock %}
+

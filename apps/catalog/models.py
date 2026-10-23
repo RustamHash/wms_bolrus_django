@@ -125,20 +125,6 @@ class Supplier(models.Model):
         return self.name
 
 
-class Client(models.Model):
-    name = models.CharField("Покупатель", max_length=200, unique=True)
-    code = models.CharField("Код", max_length=32, unique=True, null=True, blank=True)
-
-    class Meta:
-        db_table = "clients"
-        verbose_name = "Покупатель"
-        verbose_name_plural = "Покупатели"
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name
-
-
 class DeliveryZone(models.Model):
     name = models.CharField("Зона доставки", max_length=120, unique=True)
 
@@ -160,6 +146,12 @@ class ConsigneeCategory(models.Model):
         on_delete=models.PROTECT,
         related_name="consignee_categories",
         verbose_name="Сортность",
+    )
+    allowed_grades = models.ManyToManyField(
+        Grade,
+        blank=True,
+        related_name="allowed_in_categories",
+        verbose_name="Можно отгружать",
     )
 
     class Meta:

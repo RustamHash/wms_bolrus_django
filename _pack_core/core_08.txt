@@ -1,0 +1,2095 @@
+﻿
+==============================================================================
+### FILE: apps\printing\pdfs.py
+### SIZE: 18489 bytes / 521 lines
+==============================================================================
+
+from io import BytesIO
+
+from reportlab.graphics.barcode import code128
+from reportlab.lib.pagesizes import A4, A5, landscape
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+
+from apps.common.fonts import find_font
+from apps.common.present import format_kg, group_units
+
+_font_ready = False
+
+
+def ensure_font() -> None:
+    global _font_ready
+    if not _font_ready:
+        pdfmetrics.registerFont(TTFont("WmsFont", find_font()))
+        _font_ready = True
+
+
+class Sheet:
+    def __init__(self, pagesize):
+        self.buffer = BytesIO()
+        self.pagesize = pagesize
+        self.canvas = canvas.Canvas(self.buffer, pagesize=pagesize)
+        ensure_font()
+        self.width, self.height = pagesize
+        self.y = self.height - 15 * mm
+
+    def page_break(self) -> None:
+        if self.y < 25 * mm:
+            self.canvas.showPage()
+            ensure_font()
+            self.y = self.height - 15 * mm
+
+    def text(self, value: str, size: int = 11, gap: float | None = None) -> None:
+        self.page_break()
+        self.canvas.setFont("WmsFont", size)
+        self.canvas.drawString(15 * mm, self.y, value[:180])
+        self.y -= gap or (size + 4)
+
+    def barcode(self, value: str) -> None:
+        self.page_break()
+        barcode = code128.Code128(value, barHeight=12 * mm, barWidth=0.35 * mm, humanReadable=True)
+        barcode.drawOn(self.canvas, 15 * mm, self.y - 16 * mm)
+        self.y -= 22 * mm
+
+    def finish(self) -> bytes:
+        self.canvas.save()
+        return self.buffer.getvalue()
+
+
+def unit_label_pdf(unit) -> bytes:
+    sheet = Sheet((100 * mm, 70 * mm))
+    sheet.barcode(unit.barcode)
+    for line in (
+        unit.lot.product.name,
+        f"{unit.lot.caliber.name} · {unit.grade.name}",
+        f"{format_kg(unit.net_kg)} кг · {unit.packaging.name}",
+        f"{unit.lot.supplier.name} · {unit.lot.received_on.strftime('%d.%m.%Y')}",
+    ):
+        sheet.text(line, 10, 12)
+    return sheet.finish()
+
+
+def pallet_passport_pdf(pallet) -> bytes:
+    from apps.printing.passport import render_pallet_passport_pdf
+
+    return render_pallet_passport_pdf(pallet)
+
+
+def sticker_pdf(shipment, units) -> bytes:
+    groups = group_units(units)
+    sheet = Sheet(A5)
+    sheet.text(shipment.seller_name, 16, 18)
+    for line in (shipment.seller_requisites or "").splitlines():
+        if line.strip():
+            sheet.text(line.strip(), 10, 12)
+    sheet.text(f"Клиент: {shipment.client_name}", 12, 16)
+    sheet.text(f"Накладная {shipment.number}", 12, 16)
+    sheet.barcode(f"SH{shipment.id:06d}")
+    total = 0
+    for group in groups:
+        sheet.text(
+            f"{group.product} {group.caliber} {group.grade} — {format_kg(group.kg)} кг",
+            10,
+            13,
+        )
+        total += group.kg
+    sheet.text(f"Итого {format_kg(total)} кг", 12, 16)
+    return sheet.finish()
+
+
+def waybill_pdf(shipment, units) -> bytes:
+    groups = group_units(units)
+    sheet = Sheet(A4)
+    sheet.text(f"Отгрузочный лист {shipment.number}", 16, 20)
+    sheet.text(f"Заказ {shipment.order.number} от {shipment.order.ship_date.strftime('%d.%m.%Y')}")
+    sheet.text(f"Клиент: {shipment.client_name}")
+    sheet.text(f"Продавец: {shipment.seller_name}")
+    sheet.text("Условия отгрузки:", 12, 16)
+    for line in (shipment.shipping_terms or "Не указаны").splitlines() or ["Не указаны"]:
+        sheet.text(line, 11, 14)
+    sheet.text("Состав:", 12, 16)
+    total = 0
+    for group in groups:
+        sheet.text(
+            f"{group.product} · {group.caliber} · {group.grade}: {group.count} мест, {format_kg(group.kg)} кг",
+            10,
+            14,
+        )
+        total += group.kg
+    sheet.text(f"Итого {format_kg(total)} кг", 12, 16)
+    sheet.text("Условия отгрузки подтверждены при сборке.", 10, 16)
+    return sheet.finish()
+
+
+def test_pdf() -> bytes:
+    sheet = Sheet(A5)
+    sheet.text("Проверка сетевого принтера", 16, 20)
+    sheet.text("WMS овощного склада")
+    return sheet.finish()
+
+
+def _wrap(value: str, size: int, width: float) -> list[str]:
+    words = (value or "").split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        trial = word if not current else f"{current} {word}"
+        if pdfmetrics.stringWidth(trial, "WmsFont", size) <= width:
+            current = trial
+            continue
+        if current:
+            lines.append(current)
+        current = word
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _line_caliber(line) -> str:
+    if line.caliber_id:
+        return line.caliber.name
+    order_line = line.order_line
+    if order_line is None:
+        return ""
+    if order_line.caliber_mode == "range" and order_line.caliber_from_id and order_line.caliber_to_id:
+        return f"{order_line.caliber_from.name}–{order_line.caliber_to.name}"
+    return ""
+
+
+def _line_grade(line) -> str:
+    if line.grade_id:
+        return line.grade.name
+    return ""
+
+
+def _task_title(task) -> str:
+    titles = {"pick": "Задание на отбор", "ship": "Задание на отгрузку", "receive": "Задание на приёмку"}
+    title = titles.get(task.kind, "Задание")
+    return f"{title} {task.number or task.id}"
+
+
+def _product_group_name(line) -> str:
+    product = line.product
+    if product is not None and product.group_id:
+        return product.group.name
+    return "Без группы"
+
+
+def _lines_by_product_group(lines) -> list[tuple[str, list]]:
+    buckets: dict[str, list] = {}
+    order: list[str] = []
+    for line in lines:
+        title = _product_group_name(line)
+        if title not in buckets:
+            buckets[title] = []
+            order.append(title)
+        buckets[title].append(line)
+    order.sort(key=lambda name: (name == "Без группы", name.casefold()))
+    return [(title, buckets[title]) for title in order]
+
+
+def tasks_pdf(tasks, *, by_groups: bool = False) -> bytes:
+    from apps.common.constants import TASK_STATUS
+
+    ensure_font()
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    left = 12 * mm
+    right = width - 12 * mm
+    columns = (
+        ("№", 10 * mm),
+        ("Номенклатура", 72 * mm),
+        ("Калибр", 28 * mm),
+        ("Сортность", 26 * mm),
+        ("План, кг", 24 * mm),
+        ("Отобрано, кг", 26 * mm),
+    )
+    for index, task in enumerate(tasks):
+        if index:
+            pdf.showPage()
+        y = _task_sheet(pdf, task, left, right, height, columns, TASK_STATUS)
+        _task_lines(pdf, task, y, left, right, height, columns, by_groups=by_groups)
+    pdf.save()
+    return buffer.getvalue()
+
+
+def _text(pdf, x, y, value: str, size: int = 11) -> float:
+    pdf.setFont("WmsFont", size)
+    pdf.drawString(x, y, value)
+    return y - (size + 4)
+
+
+def _task_sheet(pdf, task, left, right, height, columns, statuses) -> float:
+    y = height - 14 * mm
+    pdf.setFont("WmsFont", 16)
+    pdf.drawString(left, y, _task_title(task)[:90])
+    y -= 8 * mm
+    status = statuses.get(task.status, task.status)
+    y = _text(pdf, left, y, f"Статус: {status}", 10)
+    order = task.order
+    purchase = task.purchase_order
+    if order is not None:
+        number = order.number or ""
+        y = _text(pdf, left, y, f"Заказ {number}".strip())
+        y = _text(pdf, left, y, f"Дата отгрузки: {order.ship_date.strftime('%d.%m.%Y')}")
+        if order.consignee_id:
+            y = _text(pdf, left, y, f"Грузополучатель: {order.consignee.name}"[:140])
+        y = _text(pdf, left, y, f"Продавец: {order.seller.name}"[:140])
+        terms = (order.shipping_terms or "").strip()
+        if terms:
+            y = _text(pdf, left, y, "Условия отгрузки:", 11)
+            for part in terms.splitlines():
+                for line in _wrap(part, 10, right - left):
+                    y = _text(pdf, left, y, line, 10)
+    elif purchase is not None:
+        supplier = task.supplier.name if task.supplier_id else purchase.supplier.name
+        y = _text(pdf, left, y, f"Заказ поставщику {purchase.number or ''}".strip())
+        y = _text(pdf, left, y, f"Поставщик: {supplier}"[:140])
+        if task.ttn_number:
+            y = _text(pdf, left, y, f"ТТН {task.ttn_number}")
+        if task.doc_date:
+            y = _text(pdf, left, y, f"Дата прихода: {task.doc_date.strftime('%d.%m.%Y')}")
+    y -= 2 * mm
+    return y
+
+
+def _row(pdf, y, left, cells, widths, size: int, numeric: set[int]) -> float:
+    pad = 1.6 * mm
+    line_h = size + 2
+    wrapped = []
+    for index, (value, width) in enumerate(zip(cells, widths)):
+        wrapped.append(_wrap(str(value), size, width - 2 * pad))
+    height = max(len(item) for item in wrapped) * line_h + 2 * pad
+    x = left
+    pdf.setFont("WmsFont", size)
+    for index, (lines, width) in enumerate(zip(wrapped, widths)):
+        pdf.rect(x, y - height, width, height, stroke=1, fill=0)
+        cursor = y - pad - size
+        for line in lines:
+            if index in numeric:
+                pdf.drawRightString(x + width - pad, cursor, line)
+            else:
+                pdf.drawString(x + pad, cursor, line)
+            cursor -= line_h
+        x += width
+    return y - height
+
+
+def _task_lines(pdf, task, y, left, right, height, columns, *, by_groups: bool = False) -> None:
+    widths = [item[1] for item in columns]
+    titles = [item[0] for item in columns]
+    bottom = 18 * mm
+    table_width = sum(widths)
+
+    def header(top: float) -> float:
+        return _row(pdf, top, left, titles, widths, 9, {4, 5})
+
+    def ensure(top: float, need: float) -> float:
+        if top - need >= bottom:
+            return top
+        pdf.showPage()
+        top = height - 14 * mm
+        top = _text(pdf, left, top, f"{task.number or task.id}, продолжение", 12)
+        top -= 2 * mm
+        return header(top)
+
+    if y < bottom + 20 * mm:
+        pdf.showPage()
+        y = height - 14 * mm
+        y = _text(pdf, left, y, f"{task.number or task.id}, продолжение", 12)
+        y -= 2 * mm
+    y = header(y)
+    lines = list(task.lines.all())
+    sections = _lines_by_product_group(lines) if by_groups else [("", lines)]
+    total = 0
+    number = 0
+    for group_title, group_lines in sections:
+        if by_groups and group_title:
+            y = ensure(y, 10 * mm)
+            y -= 2 * mm
+            pdf.setFont("WmsFont", 10)
+            pdf.drawString(left + 1.6 * mm, y - 8, group_title[:90])
+            pdf.rect(left, y - 10, table_width, 10, stroke=1, fill=0)
+            y -= 10
+        for line in group_lines:
+            number += 1
+            cells = [
+                str(number),
+                line.product.name,
+                _line_caliber(line),
+                _line_grade(line),
+                format_kg(line.qty_kg),
+                "",
+            ]
+            y = ensure(y, 8 * mm)
+            y = _row(pdf, y, left, cells, widths, 9, {0, 4, 5})
+            total += line.qty_kg
+    if not lines:
+        y = _text(pdf, left, y - 4 * mm, "Строк нет")
+    else:
+        y -= 8 * mm
+        y = _text(pdf, left, y, f"Итого план {format_kg(total)} кг", 11)
+    if y < bottom + 16 * mm:
+        pdf.showPage()
+        y = height - 14 * mm
+    y -= 8 * mm
+    _text(pdf, left, y, "Отобрал ____________________", 11)
+    _text(pdf, left + 90 * mm, y, "Дата ______________", 11)
+
+
+def route_sheet_pdf(route, stops, weights: dict) -> bytes:
+    return routes_sheets_pdf([(route, stops, weights)])
+
+
+def routes_sheets_pdf(sheets: list) -> bytes:
+    """Несколько маршрутных листов в одном PDF (каждый маршрут с новой страницы)."""
+    from django.utils import timezone
+
+    if not sheets:
+        raise ValueError("Нет маршрутов для печати")
+
+    ensure_font()
+    buffer = BytesIO()
+    page = landscape(A4)
+    pdf = canvas.Canvas(buffer, pagesize=page)
+    width, height = page
+    left = 12 * mm
+    columns = (
+        ("№", 12 * mm),
+        ("Заказ", 36 * mm),
+        ("Грузополучатель", 70 * mm),
+        ("Адрес", 90 * mm),
+        ("Зона", 36 * mm),
+        ("Кг", 22 * mm),
+    )
+    widths = [item[1] for item in columns]
+    bottom = 18 * mm
+
+    for index, (route, stops, weights) in enumerate(sheets):
+        if index:
+            pdf.showPage()
+        y = height - 14 * mm
+        title = route.name or f"Маршрут {route.id}"
+        pdf.setFont("WmsFont", 16)
+        pdf.drawString(left, y, f"Маршрутный лист · {title}"[:90])
+        y -= 8 * mm
+        y = _text(pdf, left, y, f"Дата: {route.route_date.strftime('%d.%m.%Y')}")
+        driver_name = route.driver.full_name if route.driver_id else "—"
+        y = _text(pdf, left, y, f"Водитель: {driver_name}"[:140])
+        y = _text(pdf, left, y, f"Автомобиль: {route.vehicle_text or '—'}"[:140])
+        if route.planned_load_at:
+            load_at = timezone.localtime(route.planned_load_at)
+            if load_at.date() != route.route_date:
+                y = _text(pdf, left, y, f"Погрузка: {load_at.strftime('%d.%m.%Y %H:%M')}")
+            else:
+                y = _text(pdf, left, y, f"Погрузка: {load_at.strftime('%H:%M')}")
+        else:
+            y = _text(pdf, left, y, "Погрузка: не назначена")
+        y = _text(pdf, left, y, f"Статус: {route.get_status_display()}")
+        notes = (route.notes or "").strip()
+        if notes:
+            y = _text(pdf, left, y, "Комментарий:", 11)
+            for part in notes.splitlines() or [notes]:
+                for line in _wrap(part, 10, width - 24 * mm):
+                    y = _text(pdf, left, y, line, 10)
+        y -= 2 * mm
+
+        def header(top: float) -> float:
+            return _row(pdf, top, left, [item[0] for item in columns], widths, 9, {0, 5})
+
+        def ensure(top: float, need: float) -> float:
+            if top - need >= bottom:
+                return top
+            pdf.showPage()
+            top = height - 14 * mm
+            top = _text(pdf, left, top, f"{title}, продолжение", 12)
+            top -= 2 * mm
+            return header(top)
+
+        y = header(y)
+        total = 0
+        for stop in stops:
+            order = stop.order
+            consignee = order.consignee
+            zone = ""
+            address = ""
+            consignee_name = ""
+            if consignee is not None:
+                consignee_name = consignee.name
+                address = consignee.address or ""
+                zone = consignee.zone.name if consignee.zone_id else "Без зоны"
+            else:
+                zone = "Без зоны"
+            weight = weights.get(order.id) or 0
+            total += weight
+            cells = [
+                str(stop.position),
+                order.number or str(order.id),
+                consignee_name,
+                address,
+                zone,
+                format_kg(weight),
+            ]
+            y = ensure(y, 8 * mm)
+            y = _row(pdf, y, left, cells, widths, 8, {0, 5})
+        y -= 8 * mm
+        if not stops:
+            y = _text(pdf, left, y, "Остановок нет")
+        else:
+            y = _text(pdf, left, y, f"Итого {format_kg(total)} кг · остановок {len(stops)}", 11)
+        y -= 6 * mm
+        _text(pdf, left, y, "Водитель ____________________", 11)
+        _text(pdf, left + 90 * mm, y, "Склад ______________", 11)
+
+    pdf.save()
+    return buffer.getvalue()
+
+
+def schedule_sheet_pdf(tree: dict) -> bytes:
+    """Печать графика таблицей: план | факт | водитель | маршрут | комментарий | вес | ТТ."""
+    ensure_font()
+    buffer = BytesIO()
+    page = landscape(A4)
+    pdf = canvas.Canvas(buffer, pagesize=page)
+    width, height = page
+    left = 12 * mm
+    bottom = 16 * mm
+    day = tree["day"]
+    columns = (
+        ("План", 36 * mm),
+        ("Факт", 24 * mm),
+        ("Водитель", 40 * mm),
+        ("Маршрут", 52 * mm),
+        ("Комментарий", 80 * mm),
+        ("Вес, кг", 26 * mm),
+        ("ТТ", 14 * mm),
+    )
+    widths = [item[1] for item in columns]
+    titles = [item[0] for item in columns]
+    y = height - 12 * mm
+    pdf.setFont("WmsFont", 16)
+    pdf.drawString(left, y, f"График отгрузки · {day.strftime('%d.%m.%Y')}")
+    y -= 7 * mm
+    y = _text(
+        pdf,
+        left,
+        y,
+        f"Маршрутов: {tree.get('route_count', 0)} · "
+        f"Итого {format_kg(tree.get('total_weight', 0))} кг · ТТ {tree.get('total_tt', 0)}",
+        10,
+    )
+    y -= 2 * mm
+
+    def header(top: float) -> float:
+        return _row(pdf, top, left, titles, widths, 9, {5, 6})
+
+    def ensure(top: float, need: float) -> float:
+        if top - need >= bottom:
+            return top
+        pdf.showPage()
+        top = height - 12 * mm
+        top = _text(pdf, left, top, f"График {day.strftime('%d.%m.%Y')}, продолжение", 12)
+        top -= 2 * mm
+        return header(top)
+
+    rows = tree.get("rows") or []
+    if not rows:
+        y = _text(pdf, left, y, "Нет маршрутов с назначенным планом погрузки")
+    else:
+        y = header(y)
+        for row in rows:
+            cells = [
+                row.get("plan") or "",
+                row.get("fact") or "",
+                row.get("label") or "",
+                row.get("route") or "",
+                row.get("notes") or "",
+                format_kg(row.get("weight") or 0),
+                str(row.get("tt_count") or 0),
+            ]
+            y = ensure(y, 8 * mm)
+            y = _row(pdf, y, left, cells, widths, 9, {5, 6})
+        y -= 4 * mm
+        y = _text(
+            pdf,
+            left,
+            y,
+            f"Итого {format_kg(tree.get('total_weight', 0))} кг · ТТ {tree.get('total_tt', 0)}",
+            11,
+        )
+
+    pdf.save()
+    return buffer.getvalue()
+
+
+==============================================================================
+### FILE: apps\printing\services.py
+### SIZE: 14442 bytes / 341 lines
+==============================================================================
+
+import ctypes
+import logging
+import os
+import shutil
+import socket
+import subprocess
+import tempfile
+import threading
+from ctypes import wintypes
+from pathlib import Path
+
+from django.db import close_old_connections, connections, transaction
+
+from apps.common.exceptions import PrintError
+from apps.common.present import group_units
+from apps.printing import labels, pdfs
+from apps.printing.models import Printer
+
+log = logging.getLogger(__name__)
+
+
+def apply_printer(item: Printer, form) -> None:
+    from apps.common.forms import text
+    from apps.printing.installed import list_installed
+
+    name = text(form, "name")
+    if not name:
+        raise PrintError("Укажите название")
+    queue = text(form, "queue_name")
+    installed = {row["name"] for row in list_installed()}
+    if queue not in installed:
+        raise PrintError("Выберите принтер, установленный на сервере")
+    item.name = name
+    item.printer_type = "tsc" if "tsc" in queue.lower() else "network"
+    item.port = 9100
+    item.queue_name = queue
+    item.host = ""
+    item.is_default = form.get("is_default") == "1"
+    item.save()
+    if item.is_default:
+        Printer.objects.filter(printer_type=item.printer_type).exclude(pk=item.pk).update(is_default=False)
+
+
+def default_printer(printer_type: str) -> Printer:
+    printer = Printer.objects.filter(printer_type=printer_type, is_default=True).first()
+    if printer is None:
+        printer = Printer.objects.filter(printer_type=printer_type).first()
+    if printer is None:
+        if printer_type == "tsc":
+            raise PrintError("Не задан термопринтер TSC")
+        raise PrintError("Не задан сетевой принтер")
+    return printer
+
+
+def send_raw(host: str, port: int, payload: bytes) -> None:
+    if not host:
+        raise PrintError("У принтера не задан адрес")
+    try:
+        with socket.create_connection((host, int(port or 9100)), timeout=5) as sock:
+            sock.sendall(payload)
+    except OSError as exc:
+        raise PrintError(f"Принтер недоступен: {exc}") from exc
+
+
+def send_tspl(printer: Printer, payload: bytes) -> str:
+    if printer.queue_name:
+        from apps.printing.installed import print_target
+
+        target = print_target(printer.queue_name)
+        _print_raw_queue(target, payload, f"tsc-{printer.id}")
+        return f"Этикетка отправлена в очередь «{printer.queue_name}»"
+    send_raw(printer.host, printer.port or 9100, payload)
+    return f"Этикетка отправлена на TSC «{printer.name}»"
+
+
+class _DocInfo(ctypes.Structure):
+    _fields_ = [
+        ("pDocName", wintypes.LPWSTR),
+        ("pOutputFile", wintypes.LPWSTR),
+        ("pDatatype", wintypes.LPWSTR),
+    ]
+
+
+def _print_raw_queue(queue: str, payload: bytes, job_name: str) -> None:
+    if os.name == "nt":
+        _print_raw_windows(queue, payload, job_name)
+        return
+    _print_raw_cups(queue, payload, job_name)
+
+
+def _print_raw_windows(queue: str, payload: bytes, job_name: str) -> None:
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), wintypes.LPVOID]
+    winspool.OpenPrinterW.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
+    winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(_DocInfo)]
+    winspool.StartDocPrinterW.restype = wintypes.DWORD
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.WritePrinter.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    winspool.WritePrinter.restype = wintypes.BOOL
+
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        raise PrintError(f"Принтер «{queue}» не найден среди принтеров Windows")
+    try:
+        info = _DocInfo(job_name, None, "RAW")
+        if not winspool.StartDocPrinterW(handle, 1, ctypes.byref(info)):
+            raise PrintError(_windows_print_error(queue))
+        try:
+            if not winspool.StartPagePrinter(handle):
+                raise PrintError(_windows_print_error(queue))
+            written = wintypes.DWORD()
+            buffer = ctypes.create_string_buffer(payload)
+            if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
+                raise PrintError(_windows_print_error(queue))
+            if written.value != len(payload):
+                raise PrintError(f"В очередь «{queue}» ушло {written.value} байт из {len(payload)}")
+            if not winspool.EndPagePrinter(handle):
+                raise PrintError(_windows_print_error(queue))
+        finally:
+            winspool.EndDocPrinter(handle)
+    finally:
+        winspool.ClosePrinter(handle)
+
+
+def _windows_print_error(queue: str) -> str:
+    error = ctypes.WinError(ctypes.get_last_error())
+    detail = str(error).strip()
+    if detail:
+        return f"Очередь «{queue}» не приняла этикетку: {detail}"
+    return f"Очередь «{queue}» не приняла этикетку"
+
+
+def _print_raw_cups(queue: str, payload: bytes, job_name: str) -> None:
+    try:
+        result = subprocess.run(
+            ["lp", "-d", queue, "-o", "raw", "-t", job_name],
+            input=payload,
+            capture_output=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PrintError(f"Очередь «{queue}» не приняла этикетку") from exc
+    except OSError as exc:
+        raise PrintError(f"Не удалось отправить этикетку в очередь «{queue}»") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+        if detail:
+            raise PrintError(detail)
+        raise PrintError(f"Очередь «{queue}» не приняла этикетку")
+
+
+def send_pdf(printer: Printer, payload: bytes, job_name: str) -> str:
+    if printer.queue_name:
+        if os.name == "nt":
+            from apps.printing.installed import print_target
+
+            return _print_windows_queue(print_target(printer.queue_name), payload, job_name)
+        _print_cups_pdf(printer.queue_name, payload, job_name)
+        return f"PDF отправлен в очередь «{printer.queue_name}»"
+    if printer.host:
+        send_raw(printer.host, printer.port or 9100, payload)
+        return f"PDF отправлен на {printer.host}:{printer.port or 9100}"
+    raise PrintError("У сетевого принтера не заданы очередь или адрес")
+
+
+def _print_windows_queue(queue: str, payload: bytes, job_name: str) -> str:
+    folder = Path(tempfile.gettempdir()) / "wms-print"
+    folder.mkdir(exist_ok=True)
+    path = folder / f"{job_name}.pdf"
+    path.write_bytes(payload)
+    script = Path(__file__).with_name("print_queue.ps1")
+    env = os.environ.copy()
+    env["WMS_PDF"] = str(path)
+    env["WMS_PRINTER"] = queue
+    env["WMS_JOB"] = job_name
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+            env=env,
+            capture_output=True,
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PrintError("Печать Windows не завершилась. Проверьте, что принтер не ждёт подтверждения") from exc
+    except OSError as exc:
+        raise PrintError(f"Не удалось вызвать печать Windows: {exc}") from exc
+    if result.returncode != 0:
+        detail = _ps_text(result.stderr) or _ps_text(result.stdout)
+        raise PrintError(_print_failure(queue, detail))
+    return f"PDF отправлен в очередь «{queue}»"
+
+
+def _print_cups_pdf(queue: str, payload: bytes, job_name: str) -> None:
+    folder = Path(tempfile.mkdtemp(prefix="wms-print-"))
+    path = folder / f"{job_name}.pdf"
+    try:
+        path.write_bytes(payload)
+        try:
+            result = subprocess.run(
+                ["lp", "-d", queue, "-t", job_name, str(path)],
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PrintError(f"Очередь «{queue}» не приняла PDF") from exc
+        except OSError as exc:
+            raise PrintError(f"Не удалось отправить PDF в очередь «{queue}»") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+            raise PrintError(detail or f"Очередь «{queue}» не приняла PDF")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _ps_text(data: bytes | None) -> str:
+    if not data:
+        return ""
+    for encoding in ("utf-8-sig", "cp866", "cp1251"):
+        try:
+            return data.decode(encoding).strip()
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace").strip()
+
+
+def _print_failure(queue: str, detail: str) -> str:
+    if detail in ("PRINTER_NOT_FOUND", "PRINTER_MISSING"):
+        return f"Принтер «{queue}» не найден среди принтеров Windows"
+    if detail == "PDF_MISSING":
+        return "Не удалось подготовить PDF для печати"
+    if detail == "PDF_EMPTY":
+        return "PDF не содержит страниц"
+    if detail:
+        return detail
+    return "Windows не приняла PDF"
+
+
+def print_unit(unit, target: str) -> str:
+    if target == "tsc":
+        printer = default_printer("tsc")
+        return send_tspl(printer, labels.unit_label(printer, unit))
+    if target == "network":
+        printer = default_printer("network")
+        return send_pdf(printer, pdfs.unit_label_pdf(unit), f"unit-{unit.id}")
+    raise PrintError("Неизвестная печать")
+
+
+def order_printer(pallet):
+    from apps.inventory.models import Movement
+
+    movement = (
+        Movement.objects.filter(pallet=pallet, kind="in")
+        .select_related("task__purchase_order__printer")
+        .order_by("-id")
+        .first()
+    )
+    if movement is None or movement.task_id is None or movement.task.purchase_order_id is None:
+        return None
+    return movement.task.purchase_order.printer
+
+
+def print_pallet(pallet, target: str, printer=None) -> str:
+    if target == "tsc":
+        chosen = printer or order_printer(pallet)
+        if chosen is None or chosen.printer_type != "tsc":
+            chosen = default_printer("tsc")
+        return send_tspl(chosen, labels.pallet_labels(chosen, pallet, copies=2))
+    if target == "network":
+        chosen = printer if printer is not None and printer.printer_type != "tsc" else default_printer("network")
+        return send_pdf(chosen, pdfs.pallet_passport_pdf(pallet), f"pallet-{pallet.id}")
+    raise PrintError("Неизвестная печать")
+
+
+def print_accepted_passport(pallet) -> str:
+    printer = order_printer(pallet)
+    if printer is None:
+        printer = default_printer("tsc")
+    if printer.printer_type == "tsc":
+        return send_tspl(printer, labels.pallet_labels(printer, pallet, copies=2))
+    return send_pdf(printer, pdfs.pallet_passport_pdf(pallet), f"pallet-{pallet.id}")
+
+
+def schedule_accepted_passport(pallet_id: int, user_id: int | None) -> None:
+    def start():
+        threading.Thread(
+            target=_accepted_passport_job,
+            args=(pallet_id, user_id),
+            daemon=True,
+            name=f"passport-{pallet_id}",
+        ).start()
+
+    transaction.on_commit(start)
+
+
+def _accepted_passport_job(pallet_id: int, user_id: int | None) -> None:
+    from apps.accounts.models import User
+    from apps.common.notices import notify
+    from apps.storage.models import Pallet
+
+    close_old_connections()
+    pallet = None
+    user = None
+    try:
+        user = User.objects.filter(pk=user_id).first() if user_id else None
+        pallet = Pallet.objects.filter(pk=pallet_id).first()
+        if pallet is None:
+            return
+        message = print_accepted_passport(pallet)
+        log.info("%s", message)
+        if user is not None:
+            notify(user, [f"Паспорт {pallet.number}: {message}"])
+    except Exception as exc:
+        log.exception("Паспорт паллеты %s не напечатан", pallet_id)
+        if user is not None:
+            number = pallet.number if pallet is not None else f"#{pallet_id}"
+            notify(user, [f"Паспорт {number} не напечатан: {exc}"])
+    finally:
+        connections.close_all()
+
+
+def print_shipment(shipment, target: str, document: str) -> str:
+    units = list(shipment.units.all())
+    if document == "sticker" and target == "tsc":
+        printer = default_printer("tsc")
+        return send_tspl(printer, labels.shipment_sticker(printer, shipment, group_units(units)))
+    if document == "sticker" and target == "network":
+        printer = default_printer("network")
+        return send_pdf(printer, pdfs.sticker_pdf(shipment, units), f"sticker-{shipment.id}")
+    if document == "waybill":
+        if target == "tsc":
+            raise PrintError("Отгрузочный лист печатается PDF на сетевой принтер")
+        printer = default_printer("network")
+        return send_pdf(printer, pdfs.waybill_pdf(shipment, units), f"waybill-{shipment.id}")
+    raise PrintError("Неизвестный документ")
+
+
+==============================================================================
+### FILE: apps\printing\views.py
+### SIZE: 8141 bytes / 212 lines
+==============================================================================
+
+from django.contrib import messages
+from django.http import HttpResponse
+from django.shortcuts import redirect
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import text
+from apps.common.http import back_url, roles_required
+from apps.planning.models import Task
+from apps.printing import labels, pdfs
+from apps.printing.models import Printer
+from apps.printing.services import print_pallet, print_shipment, print_unit, send_pdf, send_tspl
+from apps.shipping.models import Shipment
+from apps.storage.models import HandlingUnit, Pallet
+
+
+def _pdf(content: bytes, filename: str) -> HttpResponse:
+    return HttpResponse(content, content_type="application/pdf", headers={"Content-Disposition": f"inline; filename={filename}"})
+
+
+def load_print_tasks(ids: list[int]):
+    rows = Task.objects.filter(pk__in=ids).select_related(
+        "order__consignee",
+        "order__consignee",
+        "order__seller",
+        "purchase_order__supplier",
+        "supplier",
+    ).prefetch_related(
+        "lines__product__group",
+        "lines__caliber",
+        "lines__grade",
+        "lines__order_line__caliber_from",
+        "lines__order_line__caliber_to",
+    )
+    found = {item.id: item for item in rows}
+    return [found[item] for item in ids if item in found]
+
+
+def task_sheet_response(tasks, *, by_groups: bool = False) -> HttpResponse:
+    filename = "tasks.pdf" if len(tasks) > 1 else f"task-{tasks[0].id}.pdf"
+    return _pdf(pdfs.tasks_pdf(tasks, by_groups=by_groups), filename)
+
+
+@roles_required("receiver", "warehouse")
+def task_sheet(request, task_id):
+    tasks = load_print_tasks([task_id])
+    if not tasks:
+        return HttpResponse("Не найдено", status=404)
+    return task_sheet_response(tasks, by_groups=text(request.GET, "print_groups") == "1")
+
+
+def _fail(request, target, message):
+    messages.error(request, message)
+    return redirect(target)
+
+
+def _ok(request, target, message):
+    messages.success(request, message)
+    return redirect(target)
+
+
+@roles_required("receiver", "warehouse")
+def unit_pdf(request, unit_id):
+    unit = HandlingUnit.objects.filter(pk=unit_id).select_related("lot__product", "lot__caliber", "lot__supplier", "grade", "packaging").first()
+    if unit is None:
+        return HttpResponse("Не найдено", status=404)
+    return _pdf(pdfs.unit_label_pdf(unit), f"unit-{unit.id}.pdf")
+
+
+@roles_required("receiver", "warehouse")
+def unit_print(request, unit_id):
+    unit = HandlingUnit.objects.filter(pk=unit_id).select_related("lot__product", "lot__caliber", "lot__supplier", "grade", "packaging").first()
+    target = back_url(request, f"/units/{unit_id}")
+    if unit is None:
+        return _fail(request, target, "Место не найдено")
+    try:
+        message = print_unit(unit, text(request.POST, "target"))
+    except WarehouseError as exc:
+        return _fail(request, target, str(exc))
+    return _ok(request, target, message)
+
+
+@roles_required("receiver", "warehouse")
+def pallet_pdf(request, pallet_id):
+    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__consignee", "reserved_consignee", "closed_by", "created_by").prefetch_related(
+        "units__lot__product", "units__lot__caliber", "units__lot__supplier", "units__grade", "units__packaging"
+    ).first()
+    if pallet is None:
+        return HttpResponse("Не найдено", status=404)
+    try:
+        content = pdfs.pallet_passport_pdf(pallet)
+    except WarehouseError as exc:
+        return HttpResponse(str(exc), status=400)
+    return _pdf(content, f"pallet-{pallet.id}.pdf")
+
+
+@roles_required("receiver", "warehouse")
+def pallet_print(request, pallet_id):
+    pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__consignee", "reserved_consignee").prefetch_related(
+        "units__lot__product", "units__lot__caliber", "units__lot__supplier", "units__grade"
+    ).first()
+    target = back_url(request, f"/pallets/{pallet_id}")
+    if pallet is None:
+        return _fail(request, target, "Паллета не найдена")
+    try:
+        message = print_pallet(pallet, text(request.POST, "target"))
+    except WarehouseError as exc:
+        return _fail(request, target, str(exc))
+    return _ok(request, target, message)
+
+
+@roles_required("warehouse")
+def sticker_pdf(request, shipment_id):
+    shipment = Shipment.objects.filter(pk=shipment_id).prefetch_related("units__lot__product", "units__lot__caliber", "units__grade").first()
+    if shipment is None:
+        return HttpResponse("Не найдено", status=404)
+    return _pdf(pdfs.sticker_pdf(shipment, list(shipment.units.all())), f"sticker-{shipment.id}.pdf")
+
+
+@roles_required("warehouse")
+def waybill_pdf(request, shipment_id):
+    shipment = Shipment.objects.filter(pk=shipment_id).select_related("order").prefetch_related(
+        "units__lot__product", "units__lot__caliber", "units__grade"
+    ).first()
+    if shipment is None:
+        return HttpResponse("Не найдено", status=404)
+    return _pdf(pdfs.waybill_pdf(shipment, list(shipment.units.all())), f"waybill-{shipment.id}.pdf")
+
+
+@roles_required("warehouse")
+def shipment_print(request, shipment_id):
+    shipment = Shipment.objects.filter(pk=shipment_id).prefetch_related("units__lot__product", "units__lot__caliber", "units__grade").first()
+    target = back_url(request, f"/shipments/{shipment_id}")
+    if shipment is None:
+        return _fail(request, target, "Накладная не найдена")
+    try:
+        message = print_shipment(shipment, text(request.POST, "target"), text(request.POST, "document"))
+    except WarehouseError as exc:
+        return _fail(request, target, str(exc))
+    return _ok(request, target, message)
+
+
+def load_print_routes(ids: list[int]):
+    from apps.logistics.models import Route
+    from apps.logistics.queries import order_weights
+
+    routes = list(
+        Route.objects.filter(pk__in=ids)
+        .select_related("driver", "driver__vehicle")
+        .prefetch_related(
+            "route_orders__order__consignee",
+            "route_orders__order__consignee__zone",
+        )
+    )
+    found = {route.id: route for route in routes}
+    sheets = []
+    for route_id in ids:
+        route = found.get(route_id)
+        if route is None:
+            continue
+        stops = sorted(route.route_orders.all(), key=lambda row: (row.position, row.id))
+        weights = order_weights([stop.order for stop in stops])
+        sheets.append((route, stops, weights))
+    return sheets
+
+
+def route_sheet_response(sheets) -> HttpResponse:
+    if len(sheets) == 1:
+        filename = f"route-{sheets[0][0].id}.pdf"
+    else:
+        filename = "routes.pdf"
+    return _pdf(pdfs.routes_sheets_pdf(sheets), filename)
+
+
+@roles_required("office")
+def route_sheet(request, route_id):
+    sheets = load_print_routes([route_id])
+    if not sheets:
+        return HttpResponse("Не найдено", status=404)
+    return route_sheet_response(sheets)
+
+
+@roles_required("office")
+def schedule_sheet(request):
+    from datetime import date, timedelta
+
+    from django.utils import timezone
+
+    from apps.logistics.schedule import schedule_print_tree
+
+    raw = (request.GET.get("date") or "").strip()
+    try:
+        day = date.fromisoformat(raw) if raw else timezone.localdate() + timedelta(days=1)
+    except ValueError:
+        return HttpResponse("Некорректная дата", status=400)
+    tree = schedule_print_tree(day)
+    return _pdf(pdfs.schedule_sheet_pdf(tree), f"schedule-{day.isoformat()}.pdf")
+
+
+@roles_required("office")
+def printer_test(request, printer_id):
+    printer = Printer.objects.filter(pk=printer_id).first()
+    target = back_url(request, f"/masters/printers/{printer_id}")
+    if printer is None:
+        return _fail(request, target, "Принтер не найден")
+    try:
+        if printer.printer_type == "tsc":
+            message = send_tspl(printer, labels.test_label(printer))
+        else:
+            message = send_pdf(printer, pdfs.test_pdf(), f"test-{printer.id}")
+    except WarehouseError as exc:
+        return _fail(request, target, str(exc))
+    return _ok(request, target, message)
+
+
+==============================================================================
+### FILE: apps\receiving\models.py
+### SIZE: 3214 bytes / 76 lines
+==============================================================================
+
+from django.db import models
+
+from apps.common.numbers import document_number
+
+
+class Receipt(models.Model):
+    number = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    supplier = models.ForeignKey("catalog.Supplier", on_delete=models.PROTECT, related_name="receipts")
+    doc_date = models.DateField()
+    ttn_number = models.CharField(max_length=80, blank=True, default="")
+    status = models.CharField(max_length=32, default="open")
+    created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="receipts_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "receipts"
+        verbose_name = "Приход"
+        verbose_name_plural = "Приходы"
+
+    def __str__(self):
+        return self.number or f"#{self.pk}"
+
+
+class Lot(models.Model):
+    class Source(models.TextChoices):
+        SUPPLY = "supply", "Поставка"
+        INVENTORY = "inventory", "Инвентаризация"
+        REWORK = "rework", "Переборка"
+        WORKSHOP = "workshop", "Цех"
+
+    number = models.CharField("Номер", max_length=32, unique=True, null=True, blank=True)
+    receipt = models.ForeignKey(Receipt, on_delete=models.PROTECT, related_name="lots")
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="children",
+        verbose_name="Родитель",
+    )
+    source = models.CharField(
+        "Источник", max_length=16, choices=Source.choices, default=Source.SUPPLY
+    )
+    supplier = models.ForeignKey("catalog.Supplier", on_delete=models.PROTECT, related_name="lots")
+    product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT, related_name="lots")
+    caliber = models.ForeignKey("catalog.Caliber", on_delete=models.PROTECT, related_name="lots")
+    grade = models.ForeignKey("catalog.Grade", on_delete=models.PROTECT, related_name="lots")
+    received_on = models.DateField("Дата прихода")
+    expires_on = models.DateField("Срок годности", null=True, blank=True)
+    passport_grade = models.CharField("Сорт с паспорта", max_length=120, blank=True, default="")
+    passport_supplier = models.CharField("Поставщик с паспорта", max_length=200, blank=True, default="")
+    is_opening = models.BooleanField("Начальный остаток", default=False)
+
+    class Meta:
+        db_table = "lots"
+        verbose_name = "Партия"
+        verbose_name_plural = "Партии"
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(parent=models.F("id")),
+                name="lot_parent_not_self",
+            )
+        ]
+
+    def __str__(self):
+        label = f"{self.product.name}, {self.caliber.name}, {self.grade.name}, {self.supplier.name}"
+        if self.number:
+            return f"{self.number}: {label}"
+        return label
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.number:
+            return
+        self.number = document_number("ПТ", self.pk)
+        super().save(update_fields=["number"])
+
+
+==============================================================================
+### FILE: apps\receiving\services.py
+### SIZE: 12135 bytes / 348 lines
+==============================================================================
+
+from decimal import Decimal
+
+from django.db import transaction
+from django.utils import timezone
+
+from apps.catalog.models import Caliber, ConsigneeCategory, Grade, Packaging
+from apps.common.constants import PALLET_TARE
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import get_row
+from apps.common.kg import as_kg
+from apps.common.numbers import barcode, document_number
+from apps.inventory.services import has_left, post_in, remove_in, update_in
+from apps.planning.models import Task, TaskLine
+from apps.receiving.models import Lot, Receipt
+from apps.storage.models import HandlingUnit, Pallet
+
+
+def _open_line(task_line_id: int, kind: str) -> tuple[Task, TaskLine]:
+    line = get_row(TaskLine, task_line_id, "строка задания")
+    task = line.task
+    if task.kind != kind:
+        raise WarehouseError("Задание другого вида")
+    if not task.is_working():
+        raise WarehouseError("Задание не к приемке")
+    return task, line
+
+
+def _ensure_receipt(task: Task, user) -> Receipt:
+    if task.receipt_id:
+        receipt = Receipt.objects.filter(pk=task.receipt_id).first()
+        if receipt is not None:
+            return receipt
+    if task.supplier_id is None or task.doc_date is None:
+        raise WarehouseError("У задания на приёмку нет поставщика или даты")
+    receipt = Receipt.objects.create(
+        supplier_id=task.supplier_id,
+        doc_date=task.doc_date,
+        ttn_number=task.ttn_number,
+        created_by=user,
+        status="open",
+    )
+    receipt.number = document_number("ПР", receipt.id)
+    receipt.save(update_fields=["number"])
+    task.receipt = receipt
+    task.save(update_fields=["receipt"])
+    return receipt
+
+
+def _lot(receipt: Receipt, product_id, caliber_id, grade_id) -> Lot:
+    lot = Lot.objects.filter(
+        receipt=receipt,
+        product_id=product_id,
+        caliber_id=caliber_id,
+        grade_id=grade_id,
+        source=Lot.Source.SUPPLY,
+        parent__isnull=True,
+        is_opening=False,
+    ).first()
+    if lot is not None:
+        return lot
+    lot = Lot.objects.create(
+        receipt=receipt,
+        supplier_id=receipt.supplier_id,
+        product_id=product_id,
+        caliber_id=caliber_id,
+        grade_id=grade_id,
+        received_on=receipt.doc_date,
+        source=Lot.Source.SUPPLY,
+    )
+    lot.number = document_number("ПТ", lot.id)
+    lot.save(update_fields=["number"])
+    return lot
+
+
+def _parts(total: Decimal, count: int) -> list[Decimal]:
+    total = as_kg(total)
+    each = (total / Decimal(count)).quantize(Decimal("0.001"))
+    parts = [each] * (count - 1)
+    last = as_kg(total - each * (count - 1))
+    parts.append(last)
+    if any(part <= 0 for part in parts):
+        raise WarehouseError("Слишком много упаковок для этого веса")
+    return parts
+
+
+def _places(*, receipt, lot, pallet, packaging, places: int, gross_kg, net_kg, grade_id) -> Decimal:
+    gross_parts = _parts(gross_kg, places)
+    net_parts = _parts(net_kg, places)
+    for gross, net in zip(gross_parts, net_parts):
+        unit = HandlingUnit.objects.create(
+            receipt=receipt,
+            lot=lot,
+            packaging=packaging,
+            gross_kg=gross,
+            net_kg=net,
+            grade_id=grade_id,
+            pallet=pallet,
+            status="received",
+        )
+        unit.barcode = barcode("HU", unit.id)
+        unit.save(update_fields=["barcode"])
+    return as_kg(net_kg)
+
+
+def _category_ids(raw: list[int] | None) -> list[int]:
+    if not raw:
+        return []
+    return list(ConsigneeCategory.objects.filter(pk__in=raw).order_by("sort_order", "name").values_list("id", flat=True))
+
+
+def _reserve_fits(customer_line, category_ids: list[int]) -> None:
+    if not category_ids:
+        return
+    order = customer_line.order
+    consignee = order.consignee if order is not None else None
+    if consignee is None or consignee.category_id not in category_ids:
+        raise WarehouseError("Заказ этой категории не может взять паллету")
+
+
+def _fact(caliber_id: int, grade_id: int):
+    return get_row(Caliber, caliber_id, "калибр"), get_row(Grade, grade_id, "сортность")
+
+
+def expected_net(gross: Decimal, places: int, pallet_type: str, package_tare) -> Decimal:
+    pallet = as_kg(PALLET_TARE[pallet_type])
+    packages = as_kg(package_tare) * places
+    return as_kg(gross - pallet - packages)
+
+
+def _resolve_weight(places: int, pallet_type: str, gross_kg, net_kg, package_tare, manual: bool):
+    if places < 1 or places > 500:
+        raise WarehouseError("Укажите количество упаковок")
+    if pallet_type not in PALLET_TARE:
+        raise WarehouseError("Укажите вид паллета")
+    gross = as_kg(gross_kg)
+    if gross <= 0:
+        raise WarehouseError("Укажите грязный вес")
+    net = as_kg(net_kg) if manual else expected_net(gross, places, pallet_type, package_tare)
+    if net <= 0 or net > gross:
+        raise WarehouseError("Чистый вес должен быть больше нуля и не больше грязного")
+    return gross, net
+
+
+@transaction.atomic
+def accept_pallet(
+    *,
+    task_line_id: int,
+    packaging_id: int,
+    places: int,
+    pallet_type: str,
+    gross_kg,
+    net_kg=None,
+    net_manual: bool = False,
+    caliber_id: int,
+    grade_id: int,
+    user,
+    reserve: bool = False,
+    consignee_id: int | None = None,
+    category_ids: list[int] | None = None,
+):
+    task, line = _open_line(task_line_id, "receive")
+    caliber, grade = _fact(caliber_id, grade_id)
+    packaging = get_row(Packaging, packaging_id, "тара")
+    gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, net_manual)
+    receipt = _ensure_receipt(task, user)
+    lot = _lot(receipt, line.product_id, caliber.id, grade.id)
+    customer_line = None
+    order_id = None
+    if task.order_id and line.order_line_id:
+        customer_line = line.order_line
+        order_id = customer_line.order_id
+    elif reserve and line.purchase_line_id and line.purchase_line.customer_line_id:
+        customer_line = line.purchase_line.customer_line
+        order_id = customer_line.order_id
+    consignee = None
+    if order_id is None and consignee_id:
+        from apps.catalog.models import Consignee
+
+        consignee = get_row(Consignee, consignee_id, "грузополучатель")
+    chosen = _category_ids(category_ids)
+    if customer_line is not None:
+        _reserve_fits(customer_line, chosen)
+    pallet = Pallet.objects.create(
+        kind="inbound",
+        status="closed",
+        pallet_type=pallet_type,
+        order_id=order_id,
+        reserved_consignee=consignee,
+        reserved_line=customer_line,
+        created_by=user,
+        closed_by=user,
+        closed_at=timezone.now(),
+    )
+    pallet.number = document_number("ПЛ", pallet.id)
+    pallet.barcode = barcode("PL", pallet.id)
+    pallet.save(update_fields=["number", "barcode"])
+    if chosen:
+        pallet.allowed_categories.set(chosen)
+    _places(
+        receipt=receipt,
+        lot=lot,
+        pallet=pallet,
+        packaging=packaging,
+        places=places,
+        gross_kg=gross,
+        net_kg=net,
+        grade_id=grade.id,
+    )
+    movement = post_in(
+        task=task,
+        task_line=line,
+        pallet=pallet,
+        lot=lot,
+        qty_kg=net,
+        user=user,
+        reserved=order_id is not None or consignee is not None,
+    )
+    from apps.planning.services import refresh_receive_status
+
+    refresh_receive_status(task)
+    from apps.printing.services import schedule_accepted_passport
+
+    schedule_accepted_passport(pallet.id, getattr(user, "id", None))
+    return pallet, movement
+
+
+@transaction.atomic
+def accept_loose(*, task_id: int, rows: list[dict], user):
+    from apps.common.kg import format_kg
+
+    accepted = []
+    for row in rows:
+        qty = as_kg(row["qty_kg"])
+        if qty <= 0:
+            continue
+        task, line = _open_line(row["task_line_id"], "receive")
+        if task.id != task_id:
+            raise WarehouseError("Строка относится к другому заданию")
+        caliber, grade = _fact(row["caliber_id"], row["grade_id"])
+        receipt = _ensure_receipt(task, user)
+        lot = _lot(receipt, line.product_id, caliber.id, grade.id)
+        pallet = Pallet.objects.create(
+            kind="loose",
+            status="closed",
+            pallet_type="",
+            created_by=user,
+            closed_by=user,
+            closed_at=timezone.now(),
+        )
+        pallet.number = document_number("БП", pallet.id)
+        pallet.save(update_fields=["number"])
+        post_in(task=task, task_line=line, pallet=pallet, lot=lot, qty_kg=qty, user=user)
+        accepted.append(f"{line.product.name} {format_kg(qty)} кг")
+    if not accepted:
+        raise WarehouseError("Укажите количество")
+    from apps.planning.services import refresh_receive_status
+
+    refresh_receive_status(task)
+    return accepted
+
+
+def _editable(movement_id: int):
+    from apps.inventory.models import Movement
+
+    movement = get_row(Movement, movement_id, "движение")
+    if movement.kind != "in":
+        raise WarehouseError("Правится только приход")
+    if has_left(movement):
+        raise WarehouseError("По паллете уже есть отбор, отгрузка или переработка")
+    if movement.task_line_id is None:
+        raise WarehouseError("Этот приход проведён документом переработки")
+    pallet = movement.pallet
+    if pallet.kind == "loose":
+        return movement, pallet, movement.lot.receipt
+    unit = pallet.units.select_related("receipt").first()
+    if unit is None:
+        raise WarehouseError("У паллеты нет грузомест")
+    return movement, pallet, unit.receipt
+
+
+@transaction.atomic
+def edit_inbound(
+    movement_id: int,
+    *,
+    caliber_id,
+    grade_id,
+    packaging_id,
+    places,
+    pallet_type,
+    gross_kg,
+    net_kg=None,
+    net_manual: bool = False,
+):
+    movement, pallet, receipt = _editable(movement_id)
+    caliber, grade = _fact(caliber_id, grade_id)
+    packaging = get_row(Packaging, packaging_id, "тара")
+    gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, net_manual)
+    pallet.units.all().delete()
+    pallet.pallet_type = pallet_type
+    pallet.save(update_fields=["pallet_type"])
+    lot = _lot(receipt, movement.task_line.product_id, caliber.id, grade.id)
+    _places(
+        receipt=receipt,
+        lot=lot,
+        pallet=pallet,
+        packaging=packaging,
+        places=places,
+        gross_kg=gross,
+        net_kg=net,
+        grade_id=grade.id,
+    )
+    return update_in(movement, lot=lot, qty_kg=net)
+
+
+def pallet_defaults(task: Task) -> dict[int, dict]:
+    from apps.inventory.models import Movement
+
+    query = Movement.objects.filter(kind="in", task__isnull=False).select_related("pallet", "lot").prefetch_related(
+        "pallet__units"
+    )
+    if task.purchase_order_id:
+        query = query.filter(task__purchase_order_id=task.purchase_order_id)
+    else:
+        query = query.filter(task_id=task.id)
+    found: dict[int, dict] = {}
+    for movement in query.order_by("-id"):
+        product_id = movement.lot.product_id
+        if product_id in found:
+            continue
+        unit = movement.pallet.units.all().first()
+        found[product_id] = {
+            "pallet_type": movement.pallet.pallet_type or "",
+            "packaging_id": unit.packaging_id if unit else None,
+        }
+    return found
+
+
+@transaction.atomic
+def delete_inbound(movement_id: int) -> None:
+    movement, pallet, _receipt = _editable(movement_id)
+    task = movement.task
+    remove_in(movement)
+    pallet.units.all().delete()
+    pallet.delete()
+    if task is not None:
+        from apps.planning.services import refresh_receive_status
+
+        refresh_receive_status(task)
+
+
+==============================================================================
+### FILE: apps\receiving\views.py
+### SIZE: 6181 bytes / 164 lines
+==============================================================================
+
+from django.shortcuts import get_object_or_404, redirect, render
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, parse_date, parse_kg, require_int, text
+from apps.common.http import done, guarded, roles_required
+from apps.inventory.models import Balance
+from apps.planning.models import Task
+from apps.planning.services import require_assigned
+from apps.receiving.models import Lot
+from apps.receiving.services import accept_loose, accept_pallet, delete_inbound, edit_inbound
+
+
+def _category_ids(form) -> list[int]:
+    found = []
+    for raw in form.getlist("category_id"):
+        try:
+            found.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
+def _accept_fields(form):
+    manual = form.get("net_manual") == "1"
+    return dict(
+        packaging_id=require_int(form, "packaging_id", "Упаковка"),
+        places=require_int(form, "places", "Количество упаковок"),
+        pallet_type=text(form, "pallet_type"),
+        gross_kg=parse_kg(form.get("gross"), "Грязный вес"),
+        net_kg=parse_kg(form.get("net"), "Чистый вес") if manual else None,
+        net_manual=manual,
+        caliber_id=require_int(form, "caliber_id", "Калибр"),
+        grade_id=require_int(form, "grade_id", "Сортность"),
+        reserve=form.get("reserve") == "1",
+    )
+
+
+def receipts_redirect(request, receipt_id=None):
+    return redirect("/tasks?kind=receive")
+
+
+@roles_required("receiver", tsd=("receive",))
+def task_receive(request, task_id):
+    form = request.POST
+    back = text(form, "next") or f"/tasks/{task_id}"
+
+    def action():
+        task = Task.objects.filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        require_assigned(task, request.user)
+        if text(form, "action") == "loose":
+            rows = []
+            for raw in form.getlist("line"):
+                try:
+                    line_id = int(raw)
+                except ValueError:
+                    continue
+                qty_raw = (form.get(f"qty-{line_id}") or "").strip()
+                if not qty_raw:
+                    continue
+                rows.append(
+                    {
+                        "task_line_id": line_id,
+                        "caliber_id": require_int(form, f"caliber-{line_id}", "Калибр"),
+                        "grade_id": require_int(form, f"grade-{line_id}", "Сортность"),
+                        "qty_kg": parse_kg(qty_raw, "Количество"),
+                    }
+                )
+            return accept_loose(task_id=task_id, rows=rows, user=request.user)
+        return accept_pallet(
+            task_line_id=require_int(form, "task_line_id", "Строка задания"),
+            user=request.user,
+            consignee_id=optional_int(form, "consignee_id"),
+            category_ids=_category_ids(form),
+            **_accept_fields(form),
+        )
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    if text(form, "action") == "loose":
+        return done(request, back, "Принято без паллета: " + ", ".join(result))
+    pallet = result[0]
+    return done(request, back, f"Паллета {pallet.number} принята. Паспорт печатается")
+
+
+@roles_required("receiver")
+def movement_edit(request, movement_id):
+    form = request.POST
+    back = text(form, "next") or "/tasks?kind=receive"
+
+    def action():
+        return edit_inbound(movement_id, **_accept_fields(form))
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    return done(request, back, "Приход изменён, остаток пересчитан")
+
+
+@roles_required("receiver", tsd=("receive",))
+def movement_delete(request, movement_id):
+    form = request.POST
+    back = text(form, "next") or "/tasks?kind=receive"
+
+    def action():
+        delete_inbound(movement_id)
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    return done(request, back, "Ошибочный приход удалён, остаток возвращён")
+
+
+def _lot_page(lot: Lot) -> dict:
+    balance = Balance.objects.filter(lot=lot).first()
+    children = list(lot.children.select_related("product", "grade").order_by("id"))
+    made = list(lot.transform_outputs.select_related("document").order_by("id"))
+    spent = list(lot.transform_inputs.select_related("document", "pallet").order_by("id"))
+    return {
+        "title": lot.number or "Партия",
+        "lot": lot,
+        "balance": balance,
+        "children": children,
+        "made": made,
+        "spent": spent,
+    }
+
+
+@roles_required("receiver", "warehouse")
+def lot_passport(request, lot_id):
+    lot = get_object_or_404(
+        Lot.objects.select_related(
+            "product", "caliber", "grade", "supplier", "receipt", "parent"
+        ),
+        pk=lot_id,
+    )
+    return render(request, "lots/passport.html", _lot_page(lot))
+
+
+@roles_required("receiver", "warehouse")
+def lot_passport_save(request, lot_id):
+    lot = get_object_or_404(Lot, pk=lot_id)
+    back = f"/lots/{lot.id}"
+
+    def action():
+        raw = text(request.POST, "expires_on")
+        grade = text(request.POST, "passport_grade")
+        supplier = text(request.POST, "passport_supplier")
+        if len(grade) > 120:
+            raise WarehouseError("Сорт с паспорта длиннее 120 символов")
+        if len(supplier) > 200:
+            raise WarehouseError("Поставщик с паспорта длиннее 200 символов")
+        lot.expires_on = parse_date(raw, "Срок годности") if raw else None
+        lot.passport_grade = grade
+        lot.passport_supplier = supplier
+        lot.save(update_fields=["expires_on", "passport_grade", "passport_supplier"])
+        return None
+
+    _, response = guarded(request, back, action)
+    if response:
+        return response
+    return done(request, back, "Паспорт партии сохранён")
+
+
+==============================================================================
+### FILE: apps\shipping\models.py
+### SIZE: 1924 bytes / 46 lines
+==============================================================================
+
+from django.db import models
+
+
+class Allocation(models.Model):
+    unit = models.OneToOneField("storage.HandlingUnit", on_delete=models.CASCADE, related_name="allocation")
+    order_line = models.ForeignKey("planning.OrderLine", on_delete=models.PROTECT, related_name="allocations")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "allocations"
+
+    def __str__(self):
+        return f"{self.unit} → {self.order_line}"
+
+
+class Shipment(models.Model):
+    number = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    order = models.ForeignKey("planning.Order", on_delete=models.PROTECT, related_name="shipments")
+    task = models.ForeignKey("planning.Task", null=True, blank=True, on_delete=models.PROTECT, related_name="shipments")
+    seller_name = models.CharField(max_length=200)
+    seller_requisites = models.TextField(blank=True, default="")
+    client_name = models.CharField(max_length=200)
+    shipping_terms = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="shipments_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+    units = models.ManyToManyField("storage.HandlingUnit", through="ShipmentUnit", related_name="shipments")
+
+    class Meta:
+        db_table = "shipments"
+        verbose_name = "Накладная"
+        verbose_name_plural = "Накладные"
+
+    def __str__(self):
+        return self.number or f"#{self.pk}"
+
+
+class ShipmentUnit(models.Model):
+    shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE)
+    unit = models.ForeignKey("storage.HandlingUnit", on_delete=models.PROTECT)
+
+    class Meta:
+        db_table = "shipment_units"
+        unique_together = (("shipment", "unit"),)
+
+    def __str__(self):
+        return f"{self.shipment} · {self.unit}"
+
+
+==============================================================================
+### FILE: apps\shipping\services.py
+### SIZE: 3892 bytes / 100 lines
+==============================================================================
+
+from django.db import transaction
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import get_row
+from apps.common.numbers import document_number
+from apps.inventory.models import Movement
+from apps.inventory.services import physical_left, post_out
+from apps.planning.models import TaskLine
+from apps.planning.spec import same_spec, specificity
+from apps.shipping.models import Shipment, ShipmentUnit
+from apps.storage.models import Pallet
+
+
+def _same_spec(movement, line: TaskLine) -> bool:
+    return same_spec(movement.lot, line)
+
+
+def _shipment(task, user) -> Shipment:
+    shipment = Shipment.objects.filter(task_id=task.id).first()
+    if shipment is not None:
+        return shipment
+    order = task.order
+    shipment = Shipment.objects.create(
+        order=order,
+        task=task,
+        seller_name=order.seller.name,
+        seller_requisites=order.seller.requisites,
+        client_name=order.consignee.name,
+        shipping_terms=order.shipping_terms,
+        created_by=user,
+    )
+    shipment.number = document_number("ОТ", shipment.id)
+    shipment.save(update_fields=["number"])
+    return shipment
+
+
+def _unshipped_pick(pallet_id: int, order_id: int, movement_id: int | None):
+    shipped = Movement.objects.filter(kind="out").exclude(source_id=None).values("source_id")
+    query = (
+        Movement.objects.filter(kind="pick", pallet_id=pallet_id, task__order_id=order_id)
+        .exclude(id__in=shipped)
+        .select_related("task", "lot")
+    )
+    if movement_id:
+        return query.filter(pk=movement_id).first()
+    return query.order_by("id").first()
+
+
+@transaction.atomic
+def ship_pallet(*, task_line_id: int, pallet_id: int, user, confirmed: bool, movement_id: int | None = None):
+    if not confirmed:
+        raise WarehouseError("Подтвердите условия отгрузки")
+    line = get_row(TaskLine, task_line_id, "строка задания")
+    task = line.task
+    if task.kind != "ship" or not task.is_working():
+        raise WarehouseError("Нет открытого задания на отгрузку")
+    pallet = get_row(Pallet, pallet_id, "паллета")
+    source = _unshipped_pick(pallet.id, task.order_id, movement_id)
+    if source is None:
+        raise WarehouseError("Паллета ещё не отобрана")
+    if not _same_spec(source, line):
+        raise WarehouseError("Паллета не совпадает со строкой задания")
+    movement = post_out(task=task, task_line=line, pallet=pallet, source=source, user=user)
+    shipment = _shipment(task, user)
+    if physical_left(pallet.id) <= 0:
+        for unit in pallet.units.all():
+            unit.status = "shipped"
+            unit.save(update_fields=["status"])
+            ShipmentUnit.objects.get_or_create(shipment=shipment, unit=unit)
+    return movement, shipment
+
+
+def waiting_pallets(task) -> list[dict]:
+    shipped = Movement.objects.filter(kind="out").exclude(source_id=None).values("source_id")
+    rows = (
+        Movement.objects.filter(kind="pick", task__order_id=task.order_id)
+        .exclude(id__in=shipped)
+        .select_related("task", "pallet", "lot__product", "lot__caliber", "lot__grade")
+    )
+    found = []
+    lines = sorted(
+        task.lines.select_related(
+            "order_line__order__consignee",
+            "order_line__caliber_from",
+            "order_line__caliber_to",
+            "caliber",
+            "grade",
+        ).prefetch_related(
+            "order_line__grades",
+            "order_line__order__consignee__allowed_grades",
+            "order_line__order__consignee__category__allowed_grades",
+        ),
+        key=specificity,
+    )
+    for movement in rows:
+        for line in lines:
+            if _same_spec(movement, line):
+                found.append({"line": line, "movement": movement})
+                break
+    return found
+
+
+==============================================================================
+### FILE: apps\shipping\views.py
+### SIZE: 3066 bytes / 78 lines
+==============================================================================
+
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, query_date, require_int, text
+from apps.common.http import done, guarded, roles_required
+from apps.planning.models import Task
+from apps.planning.services import require_assigned
+from apps.shipping.models import Shipment
+from apps.shipping.services import ship_pallet
+
+
+def crossdock_redirect(request):
+    return redirect("/tasks?kind=pick")
+
+
+@roles_required("warehouse")
+def shipment_list(request):
+    date_from = query_date(request.GET.get("date_from"))
+    date_to = query_date(request.GET.get("date_to"))
+    party = (request.GET.get("party") or "").strip()
+    number = (request.GET.get("number") or "").strip()
+    query = Shipment.objects.select_related("order").order_by("-id")
+    if date_from:
+        query = query.filter(created_at__date__gte=date_from)
+    if date_to:
+        query = query.filter(created_at__date__lte=date_to)
+    if party:
+        query = query.filter(Q(client_name__icontains=party) | Q(seller_name__icontains=party))
+    if number:
+        query = query.filter(Q(number__icontains=number) | Q(order__number__icontains=number))
+    return render(
+        request,
+        "shipments/list.html",
+        {
+            "shipments": query,
+            "date_from": request.GET.get("date_from") or "",
+            "date_to": request.GET.get("date_to") or "",
+            "party": party,
+            "number": number,
+        },
+    )
+
+
+@roles_required("warehouse")
+def shipment_detail(request, shipment_id):
+    shipment = get_object_or_404(
+        Shipment.objects.select_related("order").prefetch_related("units__lot__product", "units__lot__caliber", "units__grade", "units__packaging"),
+        pk=shipment_id,
+    )
+    return render(request, "shipments/detail.html", {"shipment": shipment})
+
+
+@roles_required("warehouse", tsd=("ship",))
+def task_ship(request, task_id):
+    form = request.POST
+    back = text(form, "next") or f"/tasks/{task_id}"
+
+    def action():
+        task = Task.objects.filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        require_assigned(task, request.user)
+        return ship_pallet(
+            task_line_id=require_int(form, "task_line_id", "Строка задания"),
+            pallet_id=require_int(form, "pallet_id", "Паллета"),
+            user=request.user,
+            confirmed=form.get("confirm") == "1",
+            movement_id=optional_int(form, "movement_id"),
+        )
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    _movement, shipment = result
+    if text(form, "next"):
+        return done(request, text(form, "next"), "Паллета отгружена")
+    return done(request, f"/shipments/{shipment.id}", "Паллета проведена в накладную")
+
+
+==============================================================================
+### FILE: apps\storage\categories.py
+### SIZE: 398 bytes / 12 lines
+==============================================================================
+
+def category_ids(pallet) -> set[int] | None:
+    found = {item.id for item in pallet.allowed_categories.all()}
+    if not found:
+        return None
+    return found
+
+
+def allows_consignee(pallet, consignee) -> bool:
+    allowed = category_ids(pallet)
+    if allowed is None:
+        return True
+    return bool(consignee and consignee.category_id and consignee.category_id in allowed)
+
+
+==============================================================================
+### FILE: apps\storage\models.py
+### SIZE: 4816 bytes / 120 lines
+==============================================================================
+
+from django.db import models
+
+
+class WarehouseZone(models.Model):
+    code = models.CharField("Код", max_length=32, unique=True)
+    name = models.CharField("Название", max_length=120, unique=True)
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_zones"
+        verbose_name = "Зона склада"
+        verbose_name_plural = "Зоны склада"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.name}"
+
+
+def cell_address(zone_code: str, code: str) -> str:
+    zone = (zone_code or "").strip()
+    place = (code or "").strip()
+    if not zone:
+        return place[:120]
+    prefix = f"{zone}-"
+    if place.casefold().startswith(prefix.casefold()):
+        return place[:120]
+    return f"{zone}-{place}"[:120]
+
+
+class WarehouseCell(models.Model):
+    zone = models.ForeignKey(WarehouseZone, on_delete=models.PROTECT, related_name="cells", verbose_name="Зона")
+    code = models.CharField("Код", max_length=32)
+    name = models.CharField("Название", max_length=120, blank=True, default="")
+    barcode = models.CharField("QR", max_length=64, unique=True)
+
+    class Meta:
+        db_table = "warehouse_cells"
+        verbose_name = "Ячейка"
+        verbose_name_plural = "Ячейки"
+        ordering = ["zone__code", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["zone", "code"], name="warehouse_cell_zone_code"),
+        ]
+
+    def label(self) -> str:
+        return cell_address(self.zone.code, self.code)
+
+    def __str__(self) -> str:
+        return self.label()
+
+
+class Pallet(models.Model):
+    number = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    barcode = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    kind = models.CharField(max_length=32)
+    status = models.CharField(max_length=32, default="open")
+    location = models.CharField(max_length=120, blank=True, default="")
+    cell = models.ForeignKey(
+        WarehouseCell,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pallets",
+        verbose_name="Ячейка",
+    )
+    pallet_type = models.CharField(max_length=8, blank=True, default="")
+    order = models.ForeignKey("planning.Order", null=True, blank=True, on_delete=models.PROTECT, related_name="pallets")
+    reserved_consignee = models.ForeignKey(
+        "catalog.Consignee",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="held_pallets",
+        verbose_name="Резерв под грузополучателя",
+    )
+    reserved_line = models.ForeignKey(
+        "planning.OrderLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="reserved_pallets"
+    )
+    allowed_categories = models.ManyToManyField(
+        "catalog.ConsigneeCategory",
+        blank=True,
+        related_name="pallets",
+        verbose_name="Можно отгружать категориям",
+    )
+    created_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="pallets_created")
+    closed_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.PROTECT, related_name="pallets_closed"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "pallets"
+        verbose_name = "Паллета"
+        verbose_name_plural = "Паллеты"
+
+    def __str__(self):
+        return self.number or self.barcode or f"#{self.pk}"
+
+
+class HandlingUnit(models.Model):
+    barcode = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    receipt = models.ForeignKey("receiving.Receipt", on_delete=models.PROTECT, related_name="units")
+    lot = models.ForeignKey("receiving.Lot", on_delete=models.PROTECT, related_name="units")
+    packaging = models.ForeignKey("catalog.Packaging", on_delete=models.PROTECT, related_name="units")
+    gross_kg = models.DecimalField(max_digits=12, decimal_places=3)
+    net_kg = models.DecimalField(max_digits=12, decimal_places=3)
+    grade = models.ForeignKey("catalog.Grade", on_delete=models.PROTECT, related_name="units")
+    pallet = models.ForeignKey(Pallet, null=True, blank=True, on_delete=models.PROTECT, related_name="units")
+    status = models.CharField(max_length=32, default="received", db_index=True)
+    reject_reason = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "handling_units"
+        verbose_name = "Место"
+        verbose_name_plural = "Места"
+
+    def __str__(self):
+        return self.barcode or f"#{self.pk}"
+

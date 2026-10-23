@@ -42,8 +42,16 @@ def _locked_by_movement(unit: HandlingUnit) -> None:
 
 
 @transaction.atomic
-def create_inbound_pallet(*, user, location: str = "") -> Pallet:
-    pallet = Pallet.objects.create(kind="inbound", status="open", location=location.strip(), created_by=user)
+def create_inbound_pallet(*, user, location: str = "", cell=None) -> Pallet:
+    if cell is not None:
+        location = cell.label()
+    pallet = Pallet.objects.create(
+        kind="inbound",
+        status="open",
+        location=location.strip(),
+        cell=cell,
+        created_by=user,
+    )
     pallet.number = document_number("ПЛ", pallet.id)
     pallet.barcode = barcode("PL", pallet.id)
     pallet.save(update_fields=["number", "barcode"])

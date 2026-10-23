@@ -51,18 +51,27 @@
   <label>Чистый вес, кг <input name="net" inputmode="decimal" required></label>
   <input type="hidden" name="net_manual" value="0">
   <p class="hint">Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок. Поле можно поправить.</p>
-  {% if clients %}
-  <label data-client-box>Клиент
+  {% if consignee_categories %}
+  <fieldset>
+    <legend>Категории отгрузки</legend>
+    {% for item in consignee_categories %}
+    <label class="check"><input type="checkbox" name="category_id" value="{{ item.id }}"> {{ item.name }}</label>
+    {% endfor %}
+    <p class="hint">Ничего не отмечено — паллету можно отдать любой категории. Отмеченные категории ограничивают, кому её можно отгрузить.</p>
+  </fieldset>
+  {% endif %}
+  {% if consignees %}
+  <label data-client-box>Грузополучатель
     <span class="client-pick" data-client-pick>
-      <input type="hidden" name="client_id" value="">
+      <input type="hidden" name="consignee_id" value="">
       <input type="text" data-client-query autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Свободный остаток" enterkeyhint="search">
       <ul data-client-list hidden>
         <li><button type="button" data-id="">Свободный остаток</button></li>
-        {% for item in clients %}<li><button type="button" data-id="{{ item.id }}">{{ item.name }}</button></li>{% endfor %}
+        {% for item in consignees %}<li><button type="button" data-id="{{ item.id }}">{{ item.name }}</button></li>{% endfor %}
       </ul>
     </span>
   </label>
-  <p class="hint" data-client-hint>Начните вводить имя. Пусто — паллета в общий остаток. Клиент — паллета ждёт его заказ и другим не отдаётся.</p>
+  <p class="hint" data-client-hint>Начните вводить имя. Пусто — паллета в общий остаток. Грузополучатель — паллета ждёт его заказ и другим не отдаётся.</p>
   {% endif %}
   <label class="check" data-reserve-box hidden>
     <input type="checkbox" name="reserve" value="1">
@@ -106,7 +115,7 @@
       const clientBox = form.querySelector("[data-client-box]");
       const clientHint = form.querySelector("[data-client-hint]");
       const pick = form.querySelector("[data-client-pick]");
-      const clientValue = pick ? pick.querySelector("[name=client_id]") : null;
+      const clientValue = pick ? pick.querySelector("[name=consignee_id]") : null;
       const clientQuery = pick ? pick.querySelector("[data-client-query]") : null;
       const clientList = pick ? pick.querySelector("[data-client-list]") : null;
       const clientButtons = clientList ? [...clientList.querySelectorAll("button")] : [];

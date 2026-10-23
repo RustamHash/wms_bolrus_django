@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import Client, TestCase
 
 from apps.accounts.models import User
-from apps.catalog.models import Caliber, Client as Buyer, Grade, Product, Supplier
+from apps.catalog.models import Caliber, Consignee, ConsigneeCategory, Grade, Product, Supplier
 from apps.common.exceptions import WarehouseError
 from apps.common.kg import as_kg
 from apps.inventory.count import _lot_on_receipt
@@ -22,7 +22,7 @@ class TransformTests(TestCase):
     def setUpTestData(cls):
         cls.user = User.objects.create_user("transform-tester", "secret", name="Тест", role="admin")
         cls.supplier = Supplier.objects.create(name="Поставщик теста")
-        cls.buyer = Buyer.objects.create(name="Клиент теста")
+        cls.buyer = Consignee.objects.create(name="Грузополучатель теста")
         cls.product = Product.objects.create(name="Картофель тест", code="TST-POT")
         cls.other = Product.objects.create(name="Очищенный тест", code="TST-PEE")
         cls.caliber = Caliber.objects.create(name="5+ тест")
@@ -50,8 +50,8 @@ class TransformTests(TestCase):
         )
         pallet = Pallet.objects.create(kind="inbound", status="closed", created_by=self.user, closed_by=self.user)
         if reserved:
-            pallet.reserved_client = self.buyer
-            pallet.save(update_fields=["reserved_client"])
+            pallet.reserved_consignee = self.buyer
+            pallet.save(update_fields=["reserved_consignee"])
         post_in(
             task=self.task,
             task_line=self.task_line,
@@ -177,7 +177,32 @@ class TransformTests(TestCase):
         self.assertEqual(as_kg(Balance.objects.get(lot=lot).reserved_kg), Decimal("0.000"))
         self.assertEqual(as_kg(Balance.objects.get(lot=lot).free_kg), Decimal("0.000"))
         self.assertEqual(as_kg(Balance.objects.get(lot=child).free_kg), Decimal("10.000"))
-        self.assertIsNone(pallet.reserved_client_id)
+        self.assertIsNone(pallet.reserved_consignee_id)
+        output = document.outputs.get().pallet
+        self.assertIsNone(output.reserved_consignee_id)
+        self.assertIsNone(output.reserved_line_id)
+
+    def test_output_copies_categories_without_reserve(self):
+        lot, pallet = self._pallet(reserved=True)
+        category = ConsigneeCategory.objects.create(name="Сети тест", grade=self.grade)
+        pallet.allowed_categories.add(category)
+        document = self._document()
+        add_input(document, pallet.id)
+        add_output(
+            document,
+            product_id=self.product.id,
+            caliber_id=self.caliber.id,
+            grade_id=self.grade_b.id,
+            qty_kg=Decimal("10.000"),
+            expires_on=None,
+        )
+        post_document(document, self.user)
+        output = document.outputs.get().pallet
+        self.assertEqual(list(output.allowed_categories.values_list("id", flat=True)), [category.id])
+        self.assertIsNone(output.reserved_consignee_id)
+        self.assertIsNone(output.order_id)
+        self.assertEqual(as_kg(Balance.objects.get(lot=lot).reserved_kg), Decimal("0.000"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=output.movements.get().lot).free_kg), Decimal("10.000"))
 
     def test_gain_within_tolerance_increases_stock(self):
         lot, pallet = self._pallet()

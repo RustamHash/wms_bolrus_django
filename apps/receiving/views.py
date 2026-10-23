@@ -4,8 +4,20 @@ from apps.common.exceptions import WarehouseError
 from apps.common.forms import optional_int, parse_date, parse_kg, require_int, text
 from apps.common.http import done, guarded, roles_required
 from apps.inventory.models import Balance
+from apps.planning.models import Task
+from apps.planning.services import require_assigned
 from apps.receiving.models import Lot
 from apps.receiving.services import accept_loose, accept_pallet, delete_inbound, edit_inbound
+
+
+def _category_ids(form) -> list[int]:
+    found = []
+    for raw in form.getlist("category_id"):
+        try:
+            found.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return found
 
 
 def _accept_fields(form):
@@ -33,6 +45,10 @@ def task_receive(request, task_id):
     back = text(form, "next") or f"/tasks/{task_id}"
 
     def action():
+        task = Task.objects.filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        require_assigned(task, request.user)
         if text(form, "action") == "loose":
             rows = []
             for raw in form.getlist("line"):
@@ -55,7 +71,8 @@ def task_receive(request, task_id):
         return accept_pallet(
             task_line_id=require_int(form, "task_line_id", "Строка задания"),
             user=request.user,
-            client_id=optional_int(form, "client_id"),
+            consignee_id=optional_int(form, "consignee_id"),
+            category_ids=_category_ids(form),
             **_accept_fields(form),
         )
 
@@ -64,7 +81,8 @@ def task_receive(request, task_id):
         return response
     if text(form, "action") == "loose":
         return done(request, back, "Принято без паллета: " + ", ".join(result))
-    return done(request, back, f"Паллета {result[0].number} принята")
+    pallet = result[0]
+    return done(request, back, f"Паллета {pallet.number} принята. Паспорт печатается")
 
 
 @roles_required("receiver")

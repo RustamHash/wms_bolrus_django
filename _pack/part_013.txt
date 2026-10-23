@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: apps\onec\orders.py
+### SIZE: 12232 bytes / 290 lines
+==============================================================================
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
+from apps.onec import catalogs
+from apps.onec.client import ODataClient
+from apps.onec.dto import OrderDTO, OrderLineDTO, PartyRef
+from apps.onec.exceptions import OnecNotFound
+
+ENTITY_PURCHASE = "Document_ЗаказПоставщику"
+ENTITY_PURCHASE_LINES = "Document_ЗаказПоставщику_Запасы"
+ENTITY_CUSTOMER = "Document_ЗаказПокупателя"
+ENTITY_CUSTOMER_LINES = "Document_ЗаказПокупателя_Запасы"
+
+PURCHASE_SELECT = (
+    "Ref_Key,Number,Date,Posted,DeletionMark,Комментарий,Контрагент_Key,"
+    "Организация_Key,СостояниеЗаказа_Key,ДатаПоступления,СуммаДокумента"
+)
+CUSTOMER_SELECT = (
+    "Ref_Key,Number,Date,Posted,DeletionMark,Комментарий,Контрагент_Key,"
+    "Организация_Key,Грузополучатель_Key,СостояниеЗаказа,СостояниеЗаказа_Type,"
+    "ДатаОтгрузки,СуммаДокумента,АдресДоставки,СпособДоставки"
+)
+
+
+class OnecOrders:
+    """Прослойка: заказы поставщикам и покупателям из УНФ через OData."""
+
+    def __init__(self, client: ODataClient | None = None):
+        self.client = client or ODataClient.from_settings()
+
+    def list_purchase_orders(
+        self,
+        *,
+        top: int = 50,
+        skip: int = 0,
+        posted: bool | None = True,
+        number: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        with_lines: bool = True,
+        resolve: bool = True,
+    ) -> list[OrderDTO]:
+        rows = self.client.get(
+            ENTITY_PURCHASE,
+            filter=_filter(
+                posted=posted,
+                number=number,
+                date_from=date_from,
+                date_to=date_to,
+                date_field="ДатаПоступления",
+            ),
+            select=PURCHASE_SELECT,
+            orderby="ДатаПоступления desc",
+            top=top,
+            skip=skip,
+        )
+        states = None if resolve else catalogs.states_map(self.client, kind="purchase")
+        return [
+            self._map_purchase(row, with_lines=with_lines, resolve=resolve, states=states)
+            for row in rows
+        ]
+
+    def get_purchase_order(self, ref_key: str, *, with_lines: bool = True) -> OrderDTO:
+        try:
+            row = self.client.get_one(ENTITY_PURCHASE, ref_key, select=PURCHASE_SELECT)
+        except OnecNotFound as exc:
+            raise OnecNotFound(f"Заказ поставщику {ref_key} не найден") from exc
+        return self._map_purchase(row, with_lines=with_lines, resolve=True)
+
+    def expand_purchase(self, stub: OrderDTO) -> OrderDTO:
+        """Строки и справочники по уже загруженной шапке (без повторного GET документа)."""
+        if not stub.raw:
+            return self.get_purchase_order(stub.ref_key, with_lines=True)
+        return self._map_purchase(stub.raw, with_lines=True, resolve=True)
+
+    def find_purchase_by_number(self, number: str, *, with_lines: bool = True, resolve: bool = True) -> OrderDTO | None:
+        rows = self.list_purchase_orders(
+            top=1, posted=None, number=number, with_lines=with_lines, resolve=resolve
+        )
+        return rows[0] if rows else None
+
+    def list_customer_orders(
+        self,
+        *,
+        top: int = 50,
+        skip: int = 0,
+        posted: bool | None = True,
+        number: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        with_lines: bool = True,
+        resolve: bool = True,
+    ) -> list[OrderDTO]:
+        rows = self.client.get(
+            ENTITY_CUSTOMER,
+            filter=_filter(
+                posted=posted,
+                number=number,
+                date_from=date_from,
+                date_to=date_to,
+                date_field="ДатаОтгрузки",
+            ),
+            select=CUSTOMER_SELECT,
+            orderby="ДатаОтгрузки desc",
+            top=top,
+            skip=skip,
+        )
+        states = None if resolve else catalogs.states_map(self.client, kind="customer")
+        return [
+            self._map_customer(row, with_lines=with_lines, resolve=resolve, states=states)
+            for row in rows
+        ]
+
+    def get_customer_order(self, ref_key: str, *, with_lines: bool = True) -> OrderDTO:
+        try:
+            row = self.client.get_one(ENTITY_CUSTOMER, ref_key, select=CUSTOMER_SELECT)
+        except OnecNotFound as exc:
+            raise OnecNotFound(f"Заказ покупателя {ref_key} не найден") from exc
+        return self._map_customer(row, with_lines=with_lines, resolve=True)
+
+    def expand_customer(self, stub: OrderDTO) -> OrderDTO:
+        """Строки и справочники по уже загруженной шапке (без повторного GET документа)."""
+        if not stub.raw:
+            return self.get_customer_order(stub.ref_key, with_lines=True)
+        return self._map_customer(stub.raw, with_lines=True, resolve=True)
+
+    def find_customer_by_number(self, number: str, *, with_lines: bool = True, resolve: bool = True) -> OrderDTO | None:
+        rows = self.list_customer_orders(
+            top=1, posted=None, number=number, with_lines=with_lines, resolve=resolve
+        )
+        return rows[0] if rows else None
+
+    def _map_purchase(
+        self,
+        row: dict[str, Any],
+        *,
+        with_lines: bool,
+        resolve: bool = True,
+        states: dict[str, str] | None = None,
+    ) -> OrderDTO:
+        party_key = catalogs.ref_guid(row, "Контрагент_Key", "Контрагент")
+        org_key = catalogs.ref_guid(row, "Организация_Key", "Организация")
+        state = catalogs.order_state_label(row, kind="purchase", client=self.client, states=states)
+        if resolve:
+            party = catalogs.party(self.client, party_key)
+            organization = catalogs.organization(self.client, org_key)
+        else:
+            party = PartyRef(ref_key=party_key)
+            organization = PartyRef(ref_key=org_key)
+        dto = OrderDTO(
+            kind="purchase",
+            ref_key=str(row.get("Ref_Key") or ""),
+            number=str(row.get("Number") or ""),
+            date=_parse_datetime(row.get("Date")),
+            posted=bool(row.get("Posted")),
+            party=party,
+            organization=organization,
+            state=state,
+            comment=str(row.get("Комментарий") or ""),
+            receive_date=_parse_date(row.get("ДатаПоступления")),
+            amount=_decimal(row.get("СуммаДокумента")),
+            raw=row,
+        )
+        if with_lines and dto.ref_key:
+            dto.lines = self._purchase_lines(dto.ref_key)
+        return dto
+
+    def _map_customer(
+        self,
+        row: dict[str, Any],
+        *,
+        with_lines: bool,
+        resolve: bool = True,
+        states: dict[str, str] | None = None,
+    ) -> OrderDTO:
+        party_key = catalogs.ref_guid(row, "Контрагент_Key", "Контрагент")
+        org_key = catalogs.ref_guid(row, "Организация_Key", "Организация")
+        consignee_key = catalogs.ref_guid(row, "Грузополучатель_Key", "Грузополучатель")
+        state = catalogs.order_state_label(row, kind="customer", client=self.client, states=states)
+        if resolve:
+            party = catalogs.party(self.client, party_key)
+            organization = catalogs.organization(self.client, org_key)
+            consignee = catalogs.party(self.client, consignee_key) if consignee_key else PartyRef()
+        else:
+            party = PartyRef(ref_key=party_key)
+            organization = PartyRef(ref_key=org_key)
+            consignee = PartyRef(ref_key=consignee_key) if consignee_key else PartyRef()
+        dto = OrderDTO(
+            kind="customer",
+            ref_key=str(row.get("Ref_Key") or ""),
+            number=str(row.get("Number") or ""),
+            date=_parse_datetime(row.get("Date")),
+            posted=bool(row.get("Posted")),
+            party=party,
+            organization=organization,
+            consignee=consignee,
+            delivery_address=" ".join(str(row.get("АдресДоставки") or "").split()),
+            state=state,
+            comment=str(row.get("Комментарий") or ""),
+            ship_date=_parse_date(row.get("ДатаОтгрузки")),
+            amount=_decimal(row.get("СуммаДокумента")),
+            raw=row,
+        )
+        if with_lines and dto.ref_key:
+            dto.lines = self._customer_lines(dto.ref_key)
+        return dto
+
+    def _purchase_lines(self, ref_key: str) -> list[OrderLineDTO]:
+        rows = self.client.get(
+            ENTITY_PURCHASE_LINES,
+            filter=f"Ref_Key eq guid'{ref_key}'",
+            orderby="LineNumber",
+        )
+        return [self._map_line(row, product_fields=("Номенклатура_Key", "Номенклатура")) for row in rows]
+
+    def _customer_lines(self, ref_key: str) -> list[OrderLineDTO]:
+        rows = self.client.get(
+            ENTITY_CUSTOMER_LINES,
+            filter=f"Ref_Key eq guid'{ref_key}'",
+            orderby="LineNumber",
+        )
+        return [self._map_line(row, product_fields=("Номенклатура", "Номенклатура_Key")) for row in rows]
+
+    def _map_line(self, row: dict[str, Any], *, product_fields: tuple[str, ...]) -> OrderLineDTO:
+        product_key = catalogs.ref_guid(row, *product_fields)
+        unit_key = catalogs.ref_guid(row, "ЕдиницаИзмерения", "ЕдиницаИзмерения_Key")
+        return OrderLineDTO(
+            line_number=int(row.get("LineNumber") or 0),
+            product=catalogs.product(self.client, product_key),
+            qty=_decimal(row.get("Количество")) or Decimal("0"),
+            unit=catalogs.unit_name(self.client, unit_key),
+            content=str(row.get("Содержание") or ""),
+            price=_decimal(row.get("Цена")),
+            amount=_decimal(row.get("Сумма") or row.get("Всего")),
+            weight=_decimal(row.get("Вес")),
+            raw=row,
+        )
+
+
+def _filter(
+    *,
+    posted: bool | None,
+    number: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    date_field: str = "Date",
+) -> str | None:
+    parts: list[str] = ["DeletionMark eq false"]
+    if posted is True:
+        parts.append("Posted eq true")
+    elif posted is False:
+        parts.append("Posted eq false")
+    if number:
+        safe = number.replace("'", "''")
+        parts.append(f"Number eq '{safe}'")
+    if date_from:
+        parts.append(f"{date_field} ge datetime'{date_from.isoformat()}T00:00:00'")
+    if date_to:
+        nxt = date_to + timedelta(days=1)
+        parts.append(f"{date_field} lt datetime'{nxt.isoformat()}T00:00:00'")
+    return " and ".join(parts) if parts else None
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _parse_date(value: Any) -> date | None:
+    dt = _parse_datetime(value)
+    return dt.date() if dt else None
+
+
+def _decimal(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+==============================================================================
+### FILE: apps\onec\sync.py
+### SIZE: 24797 bytes / 616 lines
+==============================================================================
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable, Iterator
+from datetime import date, timedelta
+from decimal import Decimal
+
+from django.db import transaction
+
+from apps.catalog.models import ExternalProduct, ProductAlias, Seller
+from apps.catalog.parties import upsert_consignee, upsert_external, upsert_supplier
+from apps.common.numbers import document_number
+from apps.onec.dto import OrderDTO
+from apps.onec.orders import OnecOrders
+from apps.planning.import_customer import ImportReport, is_feedback_name
+from apps.planning.models import Order, OrderLine, PurchaseOrder, PurchaseOrderLine
+from apps.planning.purchase_revisions import apply_purchase_import, store_baseline as store_purchase_baseline
+from apps.planning.revisions import apply_import, revision_summary, store_baseline
+from apps.planning.services import create_order
+
+PURCHASE_STATES = {
+    "Отправка на склад": "incoming",
+    "Завершен": "closed",
+}
+CUSTOMER_STATES = {"Отправка на склад"}
+SELLER_ALIASES = (
+    ("большая русь", "болрус"),
+    ("болрус", "болрус"),
+    ("байчора", "байчора"),
+)
+
+LogFn = Callable[[str], None]
+
+
+def _emit(report: ImportReport, message: str, on_log: LogFn | None = None) -> str:
+    report.log.append(message)
+    if on_log:
+        on_log(message)
+    return message
+
+
+def sync_purchase_orders(
+    user,
+    *,
+    update: bool = False,
+    top: int = 2000,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    number: str | None = None,
+    api: OnecOrders | None = None,
+    on_log: LogFn | None = None,
+) -> ImportReport:
+    report = None
+    for item in iter_sync_purchase_orders(
+        user,
+        update=update,
+        top=top,
+        date_from=date_from,
+        date_to=date_to,
+        number=number,
+        api=api,
+        on_log=on_log,
+    ):
+        if isinstance(item, ImportReport):
+            report = item
+    return report or ImportReport()
+
+
+def sync_customer_orders(
+    user,
+    *,
+    update: bool = False,
+    top: int = 2000,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    number: str | None = None,
+    api: OnecOrders | None = None,
+    on_log: LogFn | None = None,
+) -> ImportReport:
+    report = None
+    for item in iter_sync_customer_orders(
+        user,
+        update=update,
+        top=top,
+        date_from=date_from,
+        date_to=date_to,
+        number=number,
+        api=api,
+        on_log=on_log,
+    ):
+        if isinstance(item, ImportReport):
+            report = item
+    return report or ImportReport()
+
+
+def _filter_new_headers(
+    headers: list[OrderDTO],
+    *,
+    existing: set[str],
+    report: ImportReport,
+) -> list[OrderDTO]:
+    """Оставляет только заказы, которых ещё нет в WMS; дубли пишет в report."""
+    fresh = []
+    for doc in headers:
+        external = (doc.number or "").strip()
+        if external and external in existing:
+            report.duplicates.append(external)
+            continue
+        fresh.append(doc)
+    return fresh
+
+
+def _existing_purchase_numbers(numbers: list[str]) -> set[str]:
+    cleaned = [item for item in numbers if item]
+    if not cleaned:
+        return set()
+    return set(
+        PurchaseOrder.objects.filter(external_number__in=cleaned).values_list("external_number", flat=True)
+    )
+
+
+def _existing_customer_numbers(numbers: list[str]) -> set[str]:
+    cleaned = [item for item in numbers if item]
+    if not cleaned:
+        return set()
+    return set(Order.objects.filter(external_number__in=cleaned).values_list("external_number", flat=True))
+
+
+def iter_sync_purchase_orders(
+    user,
+    *,
+    update: bool = False,
+    top: int = 2000,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    number: str | None = None,
+    api: OnecOrders | None = None,
+    on_log: LogFn | None = None,
+) -> Iterator[str | ImportReport]:
+    """Yields log lines, then ImportReport. В 1С ничего не пишет."""
+    report = ImportReport()
+    number = (number or "").strip() or None
+    by_number = bool(number)
+    # Обновление: галочка «Обновить» или импорт по номеру.
+    allow_update = update or by_number
+    if by_number:
+        yield _emit(report, f"Импорт одного заказа по номеру: {number}", on_log)
+    else:
+        date_from, date_to = delivery_period(date_from, date_to)
+        yield _emit(report, f"Период поступления: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}", on_log)
+    if allow_update:
+        mode = "новые и обновление" if update else "по номеру (с обновлением)"
+    else:
+        mode = "только новые (уже есть в WMS — пропуск)"
+    yield _emit(report, f"Режим: {mode}", on_log)
+    yield _emit(report, "Подключение к 1С…", on_log)
+    try:
+        api = api or OnecOrders()
+        if by_number:
+            found = api.find_purchase_by_number(number, with_lines=False, resolve=False)
+            headers = [found] if found else []
+        else:
+            yield _emit(
+                report,
+                f"Запрос шапок заказов поставщику за период (1 запрос OData, лимит {top})…",
+                on_log,
+            )
+            headers = api.list_purchase_orders(
+                top=top, date_from=date_from, date_to=date_to, with_lines=False, resolve=False
+            )
+        yield _emit(report, "Подключение к 1С — успешно", on_log)
+    except Exception as exc:
+        yield _emit(report, f"Подключение к 1С — ошибка: {exc}", on_log)
+        yield report
+        raise
+    if by_number and not headers:
+        yield _emit(report, f"Заказ «{number}» в 1С не найден", on_log)
+        yield _emit(report, "Импорт завершён", on_log)
+        yield report
+        return
+    yield _emit(report, f"Шапок получено: {len(headers)}", on_log)
+    if not by_number and len(headers) >= top:
+        yield _emit(report, f"Внимание: достигнут лимит {top}, в 1С могут быть ещё заказы", on_log)
+    if by_number:
+        candidates = headers
+        skipped = 0
+    else:
+        candidates = [doc for doc in headers if PURCHASE_STATES.get(doc.state)]
+        skipped = len(headers) - len(candidates)
+    report.other_status = skipped
+    yield _emit(report, f"К импорту по статусу: {len(candidates)}", on_log)
+    if skipped:
+        yield _emit(report, f"Пропущено по статусу: {skipped}", on_log)
+    if not allow_update and candidates:
+        existing = _existing_purchase_numbers([(doc.number or "").strip() for doc in candidates])
+        before = len(candidates)
+        candidates = _filter_new_headers(candidates, existing=existing, report=report)
+        skipped_existing = before - len(candidates)
+        if skipped_existing:
+            yield _emit(report, f"Уже есть в WMS, пропущено: {skipped_existing}", on_log)
+        yield _emit(report, f"К загрузке строк (только новые): {len(candidates)}", on_log)
+    externals, aliases = _catalogs()
+    total = len(candidates)
+    for index, header in enumerate(candidates, start=1):
+        label = header.number or header.ref_key or "?"
+        yield _emit(report, f"Строки и справочники {label} — {index} из {total}…", on_log)
+        try:
+            doc = api.expand_purchase(header)
+        except Exception as exc:
+            yield _emit(report, f"Ошибка загрузки {label}: {exc} — {index} из {total}", on_log)
+            continue
+        message = _sync_purchase(
+            doc,
+            user,
+            update=allow_update,
+            externals=externals,
+            aliases=aliases,
+            report=report,
+            any_status=by_number,
+        )
+        if message:
+            yield _emit(report, f"{message} — {index} из {total}", on_log)
+    yield _emit(report, "Импорт завершён", on_log)
+    yield report
+
+
+def iter_sync_customer_orders(
+    user,
+    *,
+    update: bool = False,
+    top: int = 2000,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    number: str | None = None,
+    api: OnecOrders | None = None,
+    on_log: LogFn | None = None,
+) -> Iterator[str | ImportReport]:
+    """Yields log lines, then ImportReport. В 1С ничего не пишет."""
+    report = ImportReport()
+    number = (number or "").strip() or None
+    by_number = bool(number)
+    # Обновление: галочка «Обновить» или импорт по номеру.
+    allow_update = update or by_number
+    if by_number:
+        yield _emit(report, f"Импорт одного заказа по номеру: {number}", on_log)
+    else:
+        date_from, date_to = delivery_period(date_from, date_to)
+        yield _emit(report, f"Период отгрузки: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}", on_log)
+    if allow_update:
+        mode = "новые и обновление" if update else "по номеру (с обновлением)"
+    else:
+        mode = "только новые (уже есть в WMS — пропуск)"
+    yield _emit(report, f"Режим: {mode}", on_log)
+    yield _emit(report, "Подключение к 1С…", on_log)
+    try:
+        api = api or OnecOrders()
+        if by_number:
+            found = api.find_customer_by_number(number, with_lines=False, resolve=False)
+            headers = [found] if found else []
+        else:
+            yield _emit(
+                report,
+                f"Запрос шапок заказов покупателей за период (1 запрос OData, лимит {top})…",
+                on_log,
+            )
+            headers = api.list_customer_orders(
+                top=top, date_from=date_from, date_to=date_to, with_lines=False, resolve=False
+            )
+        yield _emit(report, "Подключение к 1С — успешно", on_log)
+    except Exception as exc:
+        yield _emit(report, f"Подключение к 1С — ошибка: {exc}", on_log)
+        yield report
+        raise
+    if by_number and not headers:
+        yield _emit(report, f"Заказ «{number}» в 1С не найден", on_log)
+        yield _emit(report, "Импорт завершён", on_log)
+        yield report
+        return
+    yield _emit(report, f"Шапок получено: {len(headers)}", on_log)
+    if not by_number and len(headers) >= top:
+        yield _emit(report, f"Внимание: достигнут лимит {top}, в 1С могут быть ещё заказы", on_log)
+    if by_number:
+        candidates = headers
+        skipped = 0
+    else:
+        candidates = [doc for doc in headers if doc.state in CUSTOMER_STATES]
+        skipped = len(headers) - len(candidates)
+    report.other_status = skipped
+    yield _emit(report, f"К импорту (статус «Отправка на склад»): {len(candidates)}", on_log)
+    if skipped:
+        yield _emit(report, f"Пропущено по статусу: {skipped}", on_log)
+    if not allow_update and candidates:
+        existing = _existing_customer_numbers([(doc.number or "").strip() for doc in candidates])
+        before = len(candidates)
+        candidates = _filter_new_headers(candidates, existing=existing, report=report)
+        skipped_existing = before - len(candidates)
+        if skipped_existing:
+            yield _emit(report, f"Уже есть в WMS, пропущено: {skipped_existing}", on_log)
+        yield _emit(report, f"К загрузке строк (только новые): {len(candidates)}", on_log)
+    externals, aliases = _catalogs()
+    total = len(candidates)
+    for index, header in enumerate(candidates, start=1):
+        label = header.number or header.ref_key or "?"
+        yield _emit(report, f"Строки и справочники {label} — {index} из {total}…", on_log)
+        try:
+            doc = api.expand_customer(header)
+        except Exception as exc:
+            yield _emit(report, f"Ошибка загрузки {label}: {exc} — {index} из {total}", on_log)
+            continue
+        message = _sync_customer(
+            doc,
+            user,
+            update=allow_update,
+            externals=externals,
+            aliases=aliases,
+            report=report,
+            any_status=by_number,
+        )
+        if message:
+            yield _emit(report, f"{message} — {index} из {total}", on_log)
+    yield _emit(report, "Импорт завершён", on_log)
+    yield report
+
+
+def delivery_period(date_from: date | None = None, date_to: date | None = None) -> tuple[date, date]:
+    """Период поставки/отгрузки; по умолчанию — завтра."""
+    tomorrow = date.today() + timedelta(days=1)
+    start = date_from or date_to or tomorrow
+    end = date_to or date_from or tomorrow
+    if end < start:
+        start, end = end, start
+    return start, end
+
+
+def _catalogs() -> tuple[dict[str, ExternalProduct], dict[str, object]]:
+    externals = {item.code: item for item in ExternalProduct.objects.all()}
+    aliases = {
+        item.external_product.code: item.product
+        for item in ProductAlias.objects.select_related("external_product", "product")
+    }
+    return externals, aliases
+
+
+def _norm(value: str) -> str:
+    value = (value or "").lower().replace("ё", "е")
+    return re.sub(r"[^a-zа-я0-9]+", " ", value).strip()
+
+
+def _match_seller(text: str) -> Seller | None:
+    hay = _norm(text)
+    if not hay:
+        return None
+    sellers = list(Seller.objects.all())
+    for seller in sellers:
+        name = _norm(seller.name)
+        if len(name) >= 4 and name in hay:
+            return seller
+        if hay and name and (hay in name or name in hay):
+            return seller
+    for needle, key in SELLER_ALIASES:
+        if needle not in hay:
+            continue
+        for seller in sellers:
+            if key in _norm(seller.name):
+                return seller
+    return None
+
+
+def _is_kg(unit: str) -> bool:
+    value = (unit or "").strip().lower().replace(".", "")
+    return value in {"кг", "kg", "кгг"}
+
+
+def _line_dicts(
+    doc: OrderDTO,
+    *,
+    externals: dict,
+    aliases: dict,
+    report: ImportReport,
+    upsert_missing: bool,
+) -> list[dict]:
+    lines = []
+    for item in doc.lines:
+        name = item.product.name or item.content
+        code = (item.product.code or "").strip()
+        feedback = is_feedback_name(name)
+        unit = (item.unit or "").strip() or "кг"
+        if not _is_kg(unit) and not feedback:
+            report.skipped_units.append({"order": doc.number, "name": name or "—", "unit": unit or "—"})
+            continue
+        qty = (item.qty or Decimal("0")).quantize(Decimal("0.001"))
+        if qty <= 0:
+            continue
+        if not code:
+            report.missing_codes.append({"order": doc.number, "code": "", "name": name or "нет кода"})
+            continue
+        card = externals.get(code)
+        if card is None and (upsert_missing or feedback):
+            card = upsert_external(code, name)
+            externals[code] = card
+        if card is None:
+            report.missing_codes.append({"order": doc.number, "code": code, "name": name})
+            continue
+        ours = None if feedback else aliases.get(code)
+        lines.append(
+            {
+                "product_id": ours.id if ours is not None else None,
+                "external_product_id": card.id,
+                "qty_kg": qty,
+                "external_code": code,
+                "external_name": name,
+                "unit": "кг" if _is_kg(unit) else unit,
+                "for_task": not feedback,
+            }
+        )
+    return lines
+
+
+def _purchase_row(order: PurchaseOrder, external: str, party: str, changes: dict | None = None) -> dict:
+    return {
+        "id": order.id,
+        "number": order.number,
+        "external": external,
+        "party": party,
+        "lines": order.lines.count(),
+        "summary": revision_summary(changes or {}),
+        "changes": changes or {},
+    }
+
+
+def _customer_row(order: Order, external: str, party: str, changes: dict | None = None) -> dict:
+    return {
+        "id": order.id,
+        "number": order.number,
+        "external": external,
+        "party": party,
+        "revision": order.revision,
+        "lines": order.lines.count(),
+        "summary": revision_summary(changes or {}),
+        "changes": changes or {},
+    }
+
+
+@transaction.atomic
+def _sync_purchase(
+    doc: OrderDTO,
+    user,
+    *,
+    update: bool,
+    externals: dict,
+    aliases: dict,
+    report: ImportReport,
+    any_status: bool = False,
+) -> str:
+    external = (doc.number or "").strip()
+    if not external:
+        return "Пропущен заказ без номера"
+    status = PURCHASE_STATES.get(doc.state)
+    if status is None:
+        if not any_status:
+            return f"Пропущен {external}: статус «{doc.state or '—'}»"
+        status = "incoming"
+    found = PurchaseOrder.objects.filter(external_number=external).select_related("supplier").first()
+    if found is not None and not update:
+        report.duplicates.append(external)
+        return f"Пропущен {external}: уже есть в WMS"
+    if not doc.party.name:
+        report.missing_files.append(f"{external}: нет поставщика в 1С")
+        return f"Пропущен {external}: нет поставщика в 1С"
+    receipt = doc.receive_date or (doc.date.date() if doc.date else None)
+    if receipt is None:
+        report.missing_files.append(f"{external}: нет даты поступления")
+        return f"Пропущен {external}: нет даты поступления"
+    supplier = upsert_supplier(doc.party.name, doc.party.code)
+    lines = _line_dicts(doc, externals=externals, aliases=aliases, report=report, upsert_missing=True)
+    if not lines:
+        report.empty.append(external)
+        return f"Пропущен {external}: нет строк в кг"
+    if found is None:
+        order = PurchaseOrder.objects.create(
+            external_number=external,
+            supplier=supplier,
+            doc_date=receipt,
+            receipt_date=receipt,
+            status=status,
+            comment=doc.comment or "",
+            created_by=user,
+        )
+        order.number = document_number("ЗП", order.id)
+        order.save(update_fields=["number"])
+        for item in lines:
+            PurchaseOrderLine.objects.create(
+                order=order,
+                product_id=item["product_id"],
+                external_product_id=item["external_product_id"],
+                qty_kg=item["qty_kg"],
+                external_code=item["external_code"],
+                external_name=item["external_name"],
+                unit=item["unit"],
+                for_task=item["for_task"],
+            )
+        store_purchase_baseline(order, user)
+        report.created.append(_purchase_row(order, external, supplier.name))
+        return f"Создан заказ {order.number} ({external})"
+    result = apply_purchase_import(
+        found,
+        user,
+        supplier=supplier,
+        doc_date=receipt,
+        receipt_date=receipt,
+        status=status,
+        comment=doc.comment or "",
+        lines=lines,
+    )
+    row = _purchase_row(found, external, supplier.name, result["changes"])
+    kind = result["kind"]
+    if kind == "updated":
+        row["revision"] = result["revision"]
+        report.updated.append(row)
+        return f"Обновлён заказ {found.number} ({external})"
+    if kind == "closed":
+        report.closed.append(row)
+        return f"Не обновлён {found.number} ({external}): закрыт или уже принят"
+    if kind == "blocked":
+        report.blocked.append(row)
+        return f"Не обновлён {found.number} ({external}): есть блокировки"
+    report.unchanged.append(row)
+    return f"Без изменений {found.number} ({external})"
+
+
+@transaction.atomic
+def _sync_customer(
+    doc: OrderDTO,
+    user,
+    *,
+    update: bool,
+    externals: dict,
+    aliases: dict,
+    report: ImportReport,
+    any_status: bool = False,
+) -> str:
+    external = (doc.number or "").strip()
+    if not external:
+        return "Пропущен заказ без номера"
+    if doc.state not in CUSTOMER_STATES and not any_status:
+        return f"Пропущен {external}: статус «{doc.state or '—'}»"
+    found = Order.objects.filter(external_number=external).select_related("consignee", "seller").first()
+    if found is not None and not update:
+        report.duplicates.append(external)
+        return f"Пропущен {external}: уже есть в WMS"
+    party_name = doc.consignee.name or doc.party.name
+    party_code = doc.consignee.code or doc.party.code
+    if not party_name:
+        report.missing_files.append(f"{external}: нет грузополучателя в 1С")
+        return f"Пропущен {external}: нет грузополучателя в 1С"
+    ship_date = doc.ship_date or (doc.date.date() if doc.date else None)
+    if ship_date is None:
+        report.missing_files.append(f"{external}: нет даты отгрузки")
+        return f"Пропущен {external}: нет даты отгрузки"
+    seller = _match_seller(doc.organization.name)
+    if seller is None:
+        report.missing_files.append(f"{external}: нет продавца для «{doc.organization.name or '—'}»")
+        return f"Пропущен {external}: нет продавца для «{doc.organization.name or '—'}»"
+    address = (doc.delivery_address or "").strip()
+    consignee = upsert_consignee(party_name, party_code, address=address)
+    lines = _line_dicts(doc, externals=externals, aliases=aliases, report=report, upsert_missing=True)
+    if not lines:
+        report.empty.append(external)
+        return f"Пропущен {external}: нет строк в кг"
+    if found is not None:
+        result = apply_import(
+            found,
+            user,
+            consignee=consignee,
+            seller=seller,
+            ship_date=ship_date,
+            terms=doc.comment or "",
+            lines=lines,
+        )
+        row = _customer_row(found, external, consignee.name, result["changes"])
+        kind = result["kind"]
+        if kind == "updated":
+            row["revision"] = result["revision"]
+            report.updated.append(row)
+            return f"Обновлён заказ {found.number} ({external})"
+        if kind == "closed":
+            report.closed.append(row)
+            return f"Не обновлён {found.number} ({external}): заказ закрыт"
+        if kind == "blocked":
+            report.blocked.append(row)
+            return f"Не обновлён {found.number} ({external}): есть блокировки"
+        report.unchanged.append(row)
+        return f"Без изменений {found.number} ({external})"
+    order = create_order(
+        consignee_id=consignee.id,
+        seller_id=seller.id,
+        ship_date=ship_date,
+        shipping_terms=doc.comment or "",
+        user=user,
+        number=external,
+    )
+    for item in lines:
+        OrderLine.objects.create(
+            order=order,
+            product_id=item["product_id"],
+            external_product_id=item["external_product_id"],
+            caliber_mode="any",
+            qty_kg=item["qty_kg"],
+            external_code=item["external_code"],
+            external_name=item["external_name"],
+            unit=item["unit"],
+            for_task=item["for_task"],
+        )
+    store_baseline(order, user)
+    report.created.append(_customer_row(order, external, consignee.name))
+    return f"Создан заказ {order.number} ({external})"
+
+
+==============================================================================
+### FILE: apps\picking\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\picking\apps.py
+### SIZE: 213 bytes / 8 lines
+==============================================================================
+
+from django.apps import AppConfig
+
+
+class PickingConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.picking"
+    label = "picking"
+    verbose_name = "Отбор"
+
+
+==============================================================================
+### FILE: apps\picking\migrations\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\picking\migrations\0001_pick_kg_plan.py
+### SIZE: 1560 bytes / 33 lines
+==============================================================================
+
+# Generated by Django 5.2.18 on 2026-10-22 14:06
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        ('planning', '0014_receive_assignee_printer'),
+        ('storage', '0004_pallet_allowed_categories'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='PickAllocation',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('qty_kg', models.DecimalField(decimal_places=3, max_digits=12, verbose_name='План, кг')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='Создано')),
+                ('pallet', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='pick_allocations', to='storage.pallet', verbose_name='Паллета')),
+                ('task_line', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pick_allocations', to='planning.taskline', verbose_name='Строка задания')),
+            ],
+            options={
+                'verbose_name': 'Назначение отбора',
+                'verbose_name_plural': 'Назначения отбора',
+                'db_table': 'pick_allocations',
+                'constraints': [models.UniqueConstraint(fields=('task_line', 'pallet'), name='pick_allocation_line_pallet')],
+            },
+        ),
+    ]
+
+
+==============================================================================
+### FILE: apps\picking\models.py
+### SIZE: 1301 bytes / 34 lines
+==============================================================================
+
+from django.db import models
+
+from apps.common.kg import format_kg
+
+
+class PickAllocation(models.Model):
+    """План отбора: сколько килограммов строки задания взять с паллеты. Это не движение склада."""
+
+    task_line = models.ForeignKey(
+        "planning.TaskLine",
+        on_delete=models.CASCADE,
+        related_name="pick_allocations",
+        verbose_name="Строка задания",
+    )
+    pallet = models.ForeignKey(
+        "storage.Pallet",
+        on_delete=models.PROTECT,
+        related_name="pick_allocations",
+        verbose_name="Паллета",
+    )
+    qty_kg = models.DecimalField("План, кг", max_digits=12, decimal_places=3)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+
+    class Meta:
+        db_table = "pick_allocations"
+        verbose_name = "Назначение отбора"
+        verbose_name_plural = "Назначения отбора"
+        constraints = [
+            models.UniqueConstraint(fields=["task_line", "pallet"], name="pick_allocation_line_pallet"),
+        ]
+
+    def __str__(self):
+        pallet = self.pallet.number or self.pallet_id
+        return f"{pallet}: {format_kg(self.qty_kg)} кг"
+
+
+==============================================================================
+### FILE: apps\picking\services.py
+### SIZE: 12629 bytes / 344 lines
+==============================================================================
+
+from datetime import date
+from decimal import Decimal
+
+from django.db import transaction
+from django.db.models import Sum
+
+from apps.catalog.grade_policy import allowed_grade_ids
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import get_row
+from apps.common.kg import as_kg, format_kg
+from apps.inventory.models import Movement
+from apps.inventory.services import (
+    consumed_pallet_ids,
+    inbound_for_pallet,
+    pallet_room,
+    post_pick,
+    unpicked_kg,
+)
+from apps.picking.models import PickAllocation
+from apps.planning.models import Task, TaskLine
+from apps.planning.spec import same_spec, specificity
+from apps.storage.categories import allows_consignee
+
+
+def _same_spec(movement, line: TaskLine) -> bool:
+    return same_spec(movement.lot, line)
+
+
+def _picked_kg(line_id: int) -> Decimal:
+    total = Movement.objects.filter(task_line_id=line_id, kind="pick").aggregate(total=Sum("qty_kg"))["total"]
+    return as_kg(total or 0)
+
+
+def _picked_on(line_id: int, pallet_id: int) -> Decimal:
+    total = Movement.objects.filter(task_line_id=line_id, pallet_id=pallet_id, kind="pick").aggregate(total=Sum("qty_kg"))[
+        "total"
+    ]
+    return as_kg(total or 0)
+
+
+def picked_map(task) -> dict[int, Decimal]:
+    rows = (
+        Movement.objects.filter(task_line__task=task, kind="pick")
+        .values("task_line_id")
+        .annotate(total=Sum("qty_kg"))
+    )
+    return {row["task_line_id"]: as_kg(row["total"] or 0) for row in rows}
+
+
+def _planned_kg(line_id: int) -> Decimal:
+    total = PickAllocation.objects.filter(task_line_id=line_id).aggregate(total=Sum("qty_kg"))["total"]
+    return as_kg(total or 0)
+
+
+def _covered(line_id: int, fact: Decimal) -> Decimal:
+    planned = _planned_kg(line_id)
+    return fact if fact >= planned else planned
+
+
+def allocation_rows(task) -> list[dict]:
+    rows = (
+        PickAllocation.objects.filter(task_line__task=task)
+        .select_related("pallet", "task_line__product", "task_line__caliber", "task_line__grade")
+        .order_by("task_line_id", "id")
+    )
+    result = []
+    for alloc in rows:
+        fact = _picked_on(alloc.task_line_id, alloc.pallet_id)
+        left = as_kg(alloc.qty_kg) - fact
+        if left < 0:
+            left = Decimal("0.000")
+        result.append({"allocation": alloc, "fact": fact, "left": left})
+    return result
+
+
+def _fits_task(movement, line, task) -> bool:
+    if not _same_spec(movement, line):
+        return False
+    consignee = task.order.consignee if task.order_id else None
+    if not allows_consignee(movement.pallet, consignee):
+        return False
+    allowed = allowed_grade_ids(consignee)
+    return allowed is None or movement.lot.grade_id in allowed
+
+
+def _pallet_allowed(pallet, line, task) -> bool:
+    if pallet.reserved_line_id and pallet.reserved_line_id != line.order_line_id:
+        return False
+    if pallet.reserved_line_id:
+        return True
+    if pallet.reserved_consignee_id and task.order_id and pallet.reserved_consignee_id != task.order.consignee_id:
+        return False
+    if pallet.order_id and pallet.order_id != task.order_id:
+        return False
+    return True
+
+
+def _open_pick(task):
+    if task.kind != "pick" or not task.is_working():
+        raise WarehouseError("Нет открытого задания на отбор")
+    if not task.order_id:
+        raise WarehouseError("У задания нет заказа")
+    lines = sorted(
+        task.lines.select_related(
+            "order_line__order__consignee",
+            "order_line__caliber_from",
+            "order_line__caliber_to",
+            "caliber",
+            "grade",
+        ).prefetch_related(
+            "order_line__grades",
+            "order_line__order__consignee__allowed_grades",
+            "order_line__order__consignee__category__allowed_grades",
+        ),
+        key=specificity,
+    )
+    if not lines or any(line.order_line_id is None for line in lines):
+        raise WarehouseError("В задании нет строк заказа")
+    return lines
+
+
+def _stock_rows():
+    return (
+        Movement.objects.filter(kind="in")
+        .exclude(pallet_id__in=consumed_pallet_ids())
+        .select_related("lot__product", "lot__caliber", "lot__grade", "pallet")
+        .prefetch_related("pallet__allowed_categories")
+        .order_by("lot__received_on", "id")
+    )
+
+
+def release_unpicked_plan(task) -> None:
+    """Снимает с паллет килограммы, которые в закрытом задании так и не отобрали."""
+    for alloc in PickAllocation.objects.select_for_update(of=("self",)).filter(task_line__task=task):
+        fact = _picked_on(alloc.task_line_id, alloc.pallet_id)
+        if fact <= 0:
+            alloc.delete()
+        elif as_kg(alloc.qty_kg) > fact:
+            alloc.qty_kg = fact
+            alloc.save(update_fields=["qty_kg"])
+
+
+def _sync_order(task) -> None:
+    if not task.order_id:
+        return
+    from apps.planning.services import sync_order_pick_status
+
+    sync_order_pick_status(task.order)
+
+
+def refresh_pick_status(task) -> None:
+    task = Task.objects.select_for_update().get(pk=task.pk)
+    if task.kind != "pick" or task.status == "closed":
+        return
+    lines = list(task.lines.all())
+    if not lines:
+        return
+    facts = {line.id: _picked_kg(line.id) for line in lines}
+    all_done = all(facts[line.id] >= as_kg(line.qty_kg) for line in lines)
+    any_fact = any(facts[line.id] > 0 for line in lines)
+    planned_rows = (
+        PickAllocation.objects.filter(task_line__task_id=task.pk)
+        .values("task_line_id")
+        .annotate(total=Sum("qty_kg"))
+    )
+    planned = {row["task_line_id"]: as_kg(row["total"]) for row in planned_rows}
+    short = any(planned.get(line.id, Decimal("0")) < as_kg(line.qty_kg) for line in lines)
+    if all_done:
+        new = "picked"
+    elif any_fact:
+        new = "in_work"
+    elif planned and short:
+        new = "partial"
+    elif planned:
+        new = "planned"
+    else:
+        new = "created"
+    if new == "picked":
+        release_unpicked_plan(task)
+    if task.status != new:
+        task.status = new
+        task.save(update_fields=["status"])
+    if new == "picked":
+        _sync_order(task)
+
+
+def assert_pick_closable(task) -> None:
+    gap = Decimal("0.000")
+    for line in task.lines.all():
+        left = as_kg(line.qty_kg) - _picked_kg(line.id)
+        if left > 0:
+            gap += left
+    if gap > 0:
+        raise WarehouseError(f"Нельзя закрыть отбор: не хватает {format_kg(gap)} кг")
+
+
+def _mark_allocated(pallet) -> None:
+    if unpicked_kg(pallet.id) > 0:
+        return
+    pallet.units.exclude(status__in=("allocated", "shipped", "transformed", "rejected")).update(status="allocated")
+
+
+@transaction.atomic
+def pick_allocation(*, allocation_id: int, user, qty_kg: Decimal | None = None) -> Movement:
+    alloc = (
+        PickAllocation.objects.select_for_update(of=("self",))
+        .select_related("task_line__task__order", "pallet")
+        .filter(pk=allocation_id)
+        .first()
+    )
+    if alloc is None:
+        raise WarehouseError("Назначение не найдено")
+    line = alloc.task_line
+    task = line.task
+    if task.kind != "pick" or not task.is_working():
+        raise WarehouseError("Нет открытого задания на отбор")
+    fact = _picked_on(line.id, alloc.pallet_id)
+    left = as_kg(alloc.qty_kg) - fact
+    if left <= 0:
+        raise WarehouseError("Это назначение уже отобрано")
+    qty = left if qty_kg is None else as_kg(qty_kg)
+    if qty <= 0:
+        raise WarehouseError("Вес отбора должен быть больше нуля")
+    if qty > left:
+        raise WarehouseError(f"Больше плана назначения. Осталось {format_kg(left)} кг")
+    line_left = as_kg(line.qty_kg) - _picked_kg(line.id)
+    if qty > line_left:
+        raise WarehouseError(f"Больше плана строки. Осталось {format_kg(line_left)} кг")
+    source = inbound_for_pallet(alloc.pallet_id)
+    if source is None:
+        raise WarehouseError("Паллета не принята")
+    movement = post_pick(
+        task=task,
+        task_line=line,
+        pallet=alloc.pallet,
+        source=source,
+        user=user,
+        qty_kg=qty,
+    )
+    _mark_allocated(alloc.pallet)
+    refresh_pick_status(task)
+    return movement
+
+
+@transaction.atomic
+def reserve_for_task(task) -> str:
+    """Назначает килограммы паллет на строки задания. Целую паллету не закрепляет."""
+    lines = _open_pick(task)
+    for alloc in PickAllocation.objects.select_for_update(of=("self",)).filter(task_line__task=task):
+        if _picked_on(alloc.task_line_id, alloc.pallet_id) <= 0:
+            alloc.delete()
+    candidates = list(_stock_rows())
+    rooms: dict[int, Decimal] = {}
+
+    def room(pallet_id: int) -> Decimal:
+        if pallet_id not in rooms:
+            have = pallet_room(pallet_id, exclude_task_id=task.id)
+            for kept in PickAllocation.objects.filter(task_line__task=task, pallet_id=pallet_id):
+                left = as_kg(kept.qty_kg) - _picked_on(kept.task_line_id, pallet_id)
+                if left > 0:
+                    have = as_kg(have - left)
+            rooms[pallet_id] = have if have > 0 else Decimal("0.000")
+        return rooms[pallet_id]
+
+    created = 0
+    planned_kg = Decimal("0.000")
+    short = Decimal("0.000")
+    for line in lines:
+        fact = _picked_kg(line.id)
+        unpicked_kept = Decimal("0.000")
+        for alloc in PickAllocation.objects.filter(task_line=line):
+            got = _picked_on(line.id, alloc.pallet_id)
+            left = as_kg(alloc.qty_kg) - got
+            if left > 0:
+                unpicked_kept += left
+        need = as_kg(line.qty_kg) - fact - unpicked_kept
+        if need < 0:
+            need = Decimal("0.000")
+        ordered = sorted(
+            candidates,
+            key=lambda movement: (
+                0 if movement.pallet.reserved_line_id == line.order_line_id else 1,
+                movement.lot.received_on or date.min,
+                movement.id,
+            ),
+        )
+        for movement in ordered:
+            if need <= 0:
+                break
+            pallet = movement.pallet
+            if not _pallet_allowed(pallet, line, task) or not _fits_task(movement, line, task):
+                continue
+            have = room(pallet.id)
+            if have <= 0:
+                continue
+            take = have if have < need else need
+            existing = PickAllocation.objects.filter(task_line=line, pallet=pallet).first()
+            if existing is None:
+                PickAllocation.objects.create(task_line=line, pallet=pallet, qty_kg=take)
+            else:
+                existing.qty_kg = as_kg(existing.qty_kg) + take
+                existing.save(update_fields=["qty_kg"])
+            rooms[pallet.id] = as_kg(have - take)
+            need = as_kg(need - take)
+            planned_kg += take
+            created += 1
+        if need > 0:
+            short += need
+    refresh_pick_status(task)
+    if created == 0 and planned_kg == 0:
+        covered = all(_covered(line.id, _picked_kg(line.id)) >= as_kg(line.qty_kg) for line in lines)
+        if covered:
+            return "уже в плане"
+        raise WarehouseError("Нет паллет под задание")
+    text = f"{created} назн., {format_kg(planned_kg)} кг"
+    if short > 0:
+        text += f", не хватило {format_kg(short)} кг"
+    return text
+
+
+def pick_ready_task(task, user) -> str:
+    """Проводит оставшийся план по назначениям."""
+    _open_pick(task)
+    ready = [item for item in allocation_rows(task) if item["left"] > 0]
+    if not ready:
+        raise WarehouseError("Нет назначений к отбору")
+    picked = 0
+    kg = Decimal("0.000")
+    failed = []
+    for item in ready:
+        alloc = item["allocation"]
+        try:
+            movement = pick_allocation(allocation_id=alloc.id, user=user)
+            picked += 1
+            kg += as_kg(movement.qty_kg)
+        except WarehouseError as exc:
+            number = alloc.pallet.number or alloc.pallet_id
+            failed.append(f"{number}: {exc}")
+    if picked == 0:
+        raise WarehouseError("; ".join(failed) or "Ничего не отобрано")
+    text = f"{picked} назн., {format_kg(kg)} кг"
+    if failed:
+        text += ", не отобрано: " + "; ".join(failed)
+    return text
+
+
+==============================================================================
+### FILE: apps\picking\tests.py
+### SIZE: 7943 bytes / 171 lines
+==============================================================================
+
+from datetime import date
+from decimal import Decimal
+
+from django.test import TestCase
+
+from apps.accounts.models import User
+from apps.catalog.models import Caliber, Consignee, Grade, Packaging, Product, Seller, Supplier
+from apps.common.kg import as_kg
+from apps.inventory.models import Balance, Movement
+from apps.inventory.services import has_downstream, pallet_room, physical_left, post_in
+from apps.picking.models import PickAllocation
+from apps.picking.services import pick_allocation, pick_ready_task, reserve_for_task
+from apps.planning.models import Order, OrderLine, Task, TaskLine
+from apps.planning.services import close_task
+from apps.receiving.models import Lot, Receipt
+from apps.shipping.services import ship_pallet
+from apps.storage.models import HandlingUnit, Pallet
+
+
+class PartialPickTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user("pick-tester", "secret", name="Тест", role="admin")
+        cls.supplier = Supplier.objects.create(name="Поставщик отбора")
+        cls.consignee = Consignee.objects.create(name="Грузополучатель отбора")
+        cls.seller = Seller.objects.create(code="SEL-PICK", name="Продавец отбора")
+        cls.product = Product.objects.create(name="Картофель отбор", code="PICK-POT")
+        cls.caliber = Caliber.objects.create(name="5+ отбор")
+        cls.grade = Grade.objects.create(name="1 сорт отбор")
+        cls.packaging = Packaging.objects.create(name="Сетка отбор", tare_kg=Decimal("0.200"))
+        cls.receipt = Receipt.objects.create(
+            supplier=cls.supplier, doc_date=date(2026, 10, 1), created_by=cls.user, status="closed"
+        )
+        cls.receive = Task.objects.create(
+            kind="receive", status="closed", supplier=cls.supplier, doc_date=date(2026, 10, 1), created_by=cls.user
+        )
+        cls.receive_line = TaskLine.objects.create(
+            task=cls.receive, product=cls.product, caliber=cls.caliber, grade=cls.grade, qty_kg=Decimal("800.000")
+        )
+
+    def _order(self, qty, number):
+        order = Order.objects.create(
+            number=number,
+            consignee=self.consignee,
+            seller=self.seller,
+            ship_date=date(2026, 10, 22),
+            created_by=self.user,
+        )
+        line = OrderLine.objects.create(order=order, product=self.product, qty_kg=Decimal(qty))
+        task = Task.objects.create(order=order, kind="pick", status="created", created_by=self.user)
+        task_line = TaskLine.objects.create(
+            task=task,
+            order_line=line,
+            product=self.product,
+            caliber=self.caliber,
+            grade=self.grade,
+            qty_kg=Decimal(qty),
+        )
+        return task, task_line
+
+    def _pallet(self, qty):
+        lot = Lot.objects.create(
+            receipt=self.receipt,
+            supplier=self.supplier,
+            product=self.product,
+            caliber=self.caliber,
+            grade=self.grade,
+            received_on=self.receipt.doc_date,
+            source=Lot.Source.SUPPLY,
+        )
+        pallet = Pallet.objects.create(kind="inbound", status="closed", created_by=self.user, closed_by=self.user)
+        post_in(
+            task=self.receive,
+            task_line=self.receive_line,
+            pallet=pallet,
+            lot=lot,
+            qty_kg=Decimal(qty),
+            user=self.user,
+        )
+        unit = HandlingUnit.objects.create(
+            receipt=self.receipt,
+            lot=lot,
+            packaging=self.packaging,
+            gross_kg=Decimal(qty),
+            net_kg=Decimal(qty),
+            grade=self.grade,
+            pallet=pallet,
+            status="received",
+        )
+        return pallet, unit
+
+    def test_plan_takes_part_of_pallet_and_pick_keeps_the_rest(self):
+        pallet, unit = self._pallet("800.000")
+        task, line = self._order("100.000", "ЗК-PICK-1")
+        text = reserve_for_task(task)
+        task.refresh_from_db()
+        alloc = PickAllocation.objects.get(task_line=line, pallet=pallet)
+        self.assertEqual(as_kg(alloc.qty_kg), Decimal("100.000"))
+        self.assertIn("100", text)
+        self.assertEqual(task.status, "planned")
+        self.assertIsNone(pallet.reserved_line_id)
+        self.assertEqual(pallet_room(pallet.id), Decimal("700.000"))
+
+        movement = pick_allocation(allocation_id=alloc.id, user=self.user, qty_kg=Decimal("30.000"))
+        self.assertEqual(as_kg(movement.qty_kg), Decimal("30.000"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=movement.lot).free_kg), Decimal("770.000"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=movement.lot).picked_kg), Decimal("0.000"))
+        self.assertEqual(as_kg(Balance.objects.get(lot=movement.lot).reserved_kg), Decimal("0.000"))
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, "received")
+        self.assertFalse(has_downstream(Movement.objects.get(pallet=pallet, kind="in")))
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_work")
+
+        pick_allocation(allocation_id=alloc.id, user=self.user)
+        task.refresh_from_db()
+        unit.refresh_from_db()
+        self.assertEqual(task.status, "picked")
+        task.order.refresh_from_db()
+        self.assertEqual(task.order.status, "closed")
+        self.assertEqual(unit.status, "received")
+        self.assertFalse(has_downstream(Movement.objects.get(pallet=pallet, kind="in")))
+        self.assertEqual(pallet_room(pallet.id), Decimal("700.000"))
+        self.assertEqual(
+            Movement.objects.filter(pallet=pallet, kind="pick").count(),
+            2,
+        )
+
+        other, _other_line = self._order("50.000", "ЗК-PICK-2")
+        reserve_for_task(other)
+        second = PickAllocation.objects.get(task_line__task=other, pallet=pallet)
+        self.assertEqual(as_kg(second.qty_kg), Decimal("50.000"))
+
+    def test_force_close_keeps_unpicked_in_plan(self):
+        pallet, _unit = self._pallet("10.000")
+        task, _line = self._order("40.000", "ЗК-PICK-3")
+        reserve_for_task(task)
+        task.refresh_from_db()
+        self.assertEqual(task.status, "partial")
+        close_task(task)
+        task.refresh_from_db()
+        task.order.refresh_from_db()
+        self.assertEqual(task.status, "closed")
+        self.assertEqual(task.order.status, "partial")
+        self.assertEqual(Movement.objects.filter(task=task, kind="pick").count(), 0)
+        self.assertEqual(PickAllocation.objects.filter(task_line__task=task).count(), 0)
+        self.assertEqual(pallet_room(pallet.id), Decimal("10.000"))
+
+    def test_ship_partial_pick_leaves_units(self):
+        pallet, unit = self._pallet("80.000")
+        task, line = self._order("20.000", "ЗК-PICK-4")
+        reserve_for_task(task)
+        alloc = PickAllocation.objects.get(task_line=line)
+        pick_ready_task(task, self.user)
+        pick = Movement.objects.get(task_line=line, kind="pick")
+        ship = Task.objects.create(order=task.order, kind="ship", status="to_ship", created_by=self.user)
+        ship_line = TaskLine.objects.create(
+            task=ship, order_line=line.order_line, product=self.product, qty_kg=Decimal("20.000")
+        )
+        ship_pallet(
+            task_line_id=ship_line.id,
+            pallet_id=pallet.id,
+            user=self.user,
+            confirmed=True,
+            movement_id=pick.id,
+        )
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, "received")
+        self.assertEqual(physical_left(pallet.id), Decimal("60.000"))
+        self.assertEqual(as_kg(alloc.qty_kg), Decimal("20.000"))
+        self.assertEqual(Movement.objects.filter(source=pick, kind="out").count(), 1)
+
+
+==============================================================================
+### FILE: apps\picking\views.py
+### SIZE: 1272 bytes / 30 lines
+==============================================================================
+
+from apps.common.exceptions import WarehouseError
+from apps.common.forms import optional_int, parse_kg, text
+from apps.common.http import done, guarded, roles_required
+from apps.common.kg import format_kg
+from apps.picking.services import pick_allocation
+from apps.planning.models import Task
+from apps.planning.services import require_assigned
+
+
+@roles_required("warehouse", tsd=("pick",))
+def task_pick(request, task_id):
+    form = request.POST
+    back = text(form, "next") or f"/tasks/{task_id}"
+
+    def action():
+        task = Task.objects.filter(pk=task_id).first()
+        if task is None:
+            raise WarehouseError("Задание не найдено")
+        require_assigned(task, request.user)
+        raw = text(form, "qty_kg")
+        qty = parse_kg(raw, "Кг") if raw else None
+        allocation_id = optional_int(form, "allocation_id")
+        if not allocation_id:
+            raise WarehouseError("Нет назначения отбора")
+        return pick_allocation(allocation_id=allocation_id, user=request.user, qty_kg=qty)
+
+    result, response = guarded(request, back, action)
+    if response:
+        return response
+    return done(request, back, f"Отобрано {format_kg(result.qty_kg)} кг")
+
+
+==============================================================================
+### FILE: apps\planning\__init__.py
+### SIZE: 0 bytes / 0 lines
+==============================================================================
+
+
+
+==============================================================================
+### FILE: apps\planning\apps.py
+### SIZE: 224 bytes / 8 lines
+==============================================================================
+
+from django.apps import AppConfig
+
+
+class PlanningConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.planning"
+    label = "planning"
+    verbose_name = "Документы"
+
+
+==============================================================================
+### FILE: apps\planning\import_customer.py
+### SIZE: 11683 bytes / 296 lines
+==============================================================================
+
+import re
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+from apps.catalog.models import ExternalProduct, ProductAlias, Seller
+from apps.catalog.parties import upsert_consignee, upsert_external
+from apps.common.exceptions import WarehouseError
+from apps.common.xlsx import read_rows
+from apps.planning.models import Order, OrderLine
+from apps.planning.revisions import apply_import, revision_summary, store_baseline
+from apps.planning.services import create_order
+
+ORDERS_DIR = Path(r"C:\Users\Server\Documents\orders")
+INCOMING = "Отправка на склад"
+CODE = re.compile(r"^НФ-\d+$")
+HEADER = ("Дата", "Номер", "Состояние", "Покупатель", "Дата отгрузки")
+SELLER_ALIASES = (
+    ("большая русь", "болрус"),
+    ("болрус", "болрус"),
+    ("байчора", "байчора"),
+)
+
+
+@dataclass
+class ImportReport:
+    created: list[dict] = field(default_factory=list)
+    updated: list[dict] = field(default_factory=list)
+    unchanged: list[dict] = field(default_factory=list)
+    closed: list[dict] = field(default_factory=list)
+    blocked: list[dict] = field(default_factory=list)
+    duplicates: list[str] = field(default_factory=list)
+    missing_files: list[str] = field(default_factory=list)
+    missing_codes: list[dict] = field(default_factory=list)
+    skipped_units: list[dict] = field(default_factory=list)
+    empty: list[str] = field(default_factory=list)
+    other_status: int = 0
+    log: list[str] = field(default_factory=list)
+
+
+def _parse_date(raw: str) -> date | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    for fmt in ("%d.%m.%Y", "%d.%m.%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    if re.fullmatch(r"\d+(\.\d+)?", value):
+        return date(1899, 12, 30) + timedelta(days=int(float(value)))
+    return None
+
+
+def _columns(header: dict[str, str]) -> dict[str, str]:
+    return {value.strip(): key for key, value in header.items()}
+
+
+def _cell(row: dict[str, str], columns: dict[str, str], title: str) -> str:
+    key = columns.get(title)
+    if not key:
+        return ""
+    return (row.get(key) or "").strip()
+
+
+def _order_key(number: str) -> int | None:
+    match = re.search(r"(\d+)$", number.replace(" ", ""))
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _file_date(path: Path) -> date | None:
+    match = re.search(r"от\s+(\d{2}\.\d{2}\.\d{4})", path.name)
+    if match is None:
+        return None
+    return _parse_date(match.group(1))
+
+
+def _detail_files(key: int) -> list[Path]:
+    token = f"№ НФ-{key} от"
+    if not ORDERS_DIR.is_dir():
+        return []
+    return sorted(path for path in ORDERS_DIR.glob("Заказ покупателя*.xlsx") if token in path.name)
+
+
+def is_feedback_name(name: str) -> bool:
+    value = " ".join((name or "").lower().replace("ё", "е").split())
+    return value == "транспортные услуги" or value.startswith("транспортные услуги ")
+
+
+def _detail_rows(path: Path) -> list[dict]:
+    rows = []
+    for cells in read_rows(path).values():
+        code = (cells.get("R") or "").strip()
+        if not CODE.match(code):
+            continue
+        name = " ".join((cells.get("G") or "").split())
+        unit = (cells.get("X") or "").strip()
+        qty = (cells.get("U") or "").strip().replace(",", ".")
+        rows.append({"code": code, "name": name, "unit": unit, "qty": qty})
+    return rows
+
+
+def _norm(value: str) -> str:
+    value = value.lower().replace("ё", "е")
+    return re.sub(r"[^a-zа-я0-9]+", " ", value).strip()
+
+
+def _executor(path: Path) -> str:
+    for cells in read_rows(path).values():
+        label = (cells.get("B") or "").strip()
+        if label.startswith("Исполнитель"):
+            return " ".join((cells.get("F") or "").split())
+    return ""
+
+
+def _seller(text: str) -> Seller | None:
+    hay = _norm(text)
+    sellers = list(Seller.objects.all())
+    for seller in sellers:
+        name = _norm(seller.name)
+        if len(name) >= 4 and name in hay:
+            return seller
+        for token in re.findall(r"\d{10,12}", seller.requisites or ""):
+            if token in text:
+                return seller
+    for needle, key in SELLER_ALIASES:
+        if needle not in hay:
+            continue
+        for seller in sellers:
+            if key in _norm(seller.name):
+                return seller
+    return None
+
+
+def _order_row(order: Order, external: str, party: str, changes: dict | None = None) -> dict:
+    return {
+        "id": order.id,
+        "number": order.number,
+        "external": external,
+        "party": party,
+        "revision": order.revision,
+        "summary": revision_summary(changes or {}),
+        "changes": changes or {},
+    }
+
+
+def import_customer_orders(source: Path | bytes, user, update: bool = False) -> ImportReport:
+    rows = read_rows(source)
+    header = rows.get(1) or {}
+    columns = _columns(header)
+    missing = [name for name in HEADER if name not in columns]
+    if missing:
+        raise WarehouseError("В шапке нет колонок: " + ", ".join(missing))
+    from apps.catalog.from_orders import sync_customer_catalog
+
+    sync_customer_catalog(source)
+    externals = {item.code: item for item in ExternalProduct.objects.all()}
+    aliases = {
+        item.external_product.code: item.product
+        for item in ProductAlias.objects.select_related("external_product", "product")
+    }
+    report = ImportReport()
+    for number in sorted(row for row in rows if row != 1):
+        cells = rows[number]
+        external = _cell(cells, columns, "Номер")
+        if not external:
+            continue
+        if _cell(cells, columns, "Состояние") != INCOMING:
+            report.other_status += 1
+            continue
+        found = Order.objects.filter(external_number=external).select_related("consignee", "seller").first()
+        if found is not None and not update:
+            report.duplicates.append(external)
+            continue
+        key = _order_key(external)
+        files = _detail_files(key) if key is not None else []
+        if len(files) != 1:
+            reason = "несколько файлов" if len(files) > 1 else "нет файла"
+            report.missing_files.append(f"{external}: {reason}")
+            continue
+        path = files[0]
+        ship_date = _parse_date(_cell(cells, columns, "Дата отгрузки")) or _file_date(path) or _parse_date(_cell(cells, columns, "Дата"))
+        if ship_date is None:
+            report.missing_files.append(f"{external}: нет даты отгрузки")
+            continue
+        buyer_name = _cell(cells, columns, "Покупатель")
+        buyer_code = _cell(cells, columns, "КодПокупатель")
+        consignee_name = _cell(cells, columns, "Грузополучатель") or buyer_name
+        consignee_code = _cell(cells, columns, "Код") or buyer_code
+        if not consignee_name:
+            report.missing_files.append(f"{external}: нет грузополучателя")
+            continue
+        if len(consignee_name) > 200:
+            report.missing_files.append(f"{external}: слишком длинное имя грузополучателя")
+            continue
+        consignee = upsert_consignee(consignee_name, consignee_code)
+        seller = _seller(_executor(path))
+        if seller is None:
+            report.missing_files.append(f"{external}: нет продавца")
+            continue
+        lines = []
+        for item in _detail_rows(path):
+            feedback = is_feedback_name(item["name"])
+            if item["unit"] != "кг" and not feedback:
+                report.skipped_units.append({"order": external, "name": item["name"], "unit": item["unit"] or "—"})
+                continue
+            try:
+                qty = Decimal(item["qty"]).quantize(Decimal("0.001"))
+            except InvalidOperation:
+                report.missing_codes.append(
+                    {"order": external, "code": item["code"], "name": item["name"] or "некорректное количество"}
+                )
+                continue
+            if qty <= 0:
+                continue
+            card = externals.get(item["code"])
+            if card is None and feedback:
+                card = upsert_external(item["code"], item["name"])
+                externals[item["code"]] = card
+            if card is None:
+                report.missing_codes.append({"order": external, "code": item["code"], "name": item["name"]})
+                continue
+            ours = None if feedback else aliases.get(item["code"])
+            lines.append(
+                {
+                    "product_id": ours.id if ours is not None else None,
+                    "external_product_id": card.id,
+                    "qty_kg": qty,
+                    "external_code": item["code"],
+                    "external_name": item["name"],
+                    "unit": item["unit"] or "кг",
+                    "for_task": not feedback,
+                }
+            )
+        if not lines:
+            report.empty.append(external)
+            continue
+        if found is not None:
+            result = apply_import(
+                found,
+                user,
+                consignee=consignee,
+                seller=seller,
+                ship_date=ship_date,
+                terms=_cell(cells, columns, "Комментарий"),
+                lines=lines,
+            )
+            row = _order_row(found, external, consignee_name, result["changes"])
+            kind = result["kind"]
+            if kind == "updated":
+                row["revision"] = result["revision"]
+                report.updated.append(row)
+            elif kind == "closed":
+                report.closed.append(row)
+            elif kind == "blocked":
+                report.blocked.append(row)
+            else:
+                report.unchanged.append(row)
+            continue
+        order = create_order(
+            consignee_id=consignee.id,
+            seller_id=seller.id,
+            ship_date=ship_date,
+            shipping_terms=_cell(cells, columns, "Комментарий"),
+            user=user,
+            number=external,
+        )
+        for item in lines:
+            OrderLine.objects.create(
+                order=order,
+                product_id=item["product_id"],
+                external_product_id=item["external_product_id"],
+                caliber_mode="any",
+                qty_kg=item["qty_kg"],
+                external_code=item["external_code"],
+                external_name=item["external_name"],
+                unit=item.get("unit") or "кг",
+                for_task=item.get("for_task", True),
+            )
+        from apps.catalog.grade_policy import stamp_order_grades
+
+        stamp_order_grades(order)
+        store_baseline(order, user)
+        report.created.append(
+            {
+                "id": order.id,
+                "number": order.number,
+                "external": external,
+                "party": consignee_name,
+                "lines": len(lines),
+            }
+        )
+    return report
+
+
+==============================================================================
+### FILE: apps\planning\import_supplier.py
+### SIZE: 7103 bytes / 182 lines
+==============================================================================
+
+from decimal import Decimal, InvalidOperation
+
+from django.db import transaction
+
+from apps.catalog.models import ExternalProduct, ProductAlias
+from apps.catalog.parties import upsert_external, upsert_supplier
+from apps.common.exceptions import WarehouseError
+from apps.common.numbers import document_number
+from apps.planning.import_customer import (
+    ORDERS_DIR,
+    ImportReport,
+    _cell,
+    _columns,
+    _detail_rows,
+    _order_key,
+    _parse_date,
+    is_feedback_name,
+)
+from apps.planning.models import PurchaseOrder, PurchaseOrderLine
+from apps.planning.purchase_revisions import apply_purchase_import, store_baseline
+from apps.planning.revisions import revision_summary
+
+HEADER = ("Дата поступления", "Номер", "Состояние", "Поставщик")
+STATES = {
+    "Отправка на склад": "incoming",
+    "Завершен": "closed",
+}
+
+
+def _supplier_files(key: int) -> list:
+    token = f"№ НФ-{key} от"
+    if not ORDERS_DIR.is_dir():
+        return []
+    return sorted(path for path in ORDERS_DIR.glob("Заказ поставщику*.xlsx") if token in path.name)
+
+
+def _row(order: PurchaseOrder, external: str, party: str, changes: dict | None = None) -> dict:
+    return {
+        "id": order.id,
+        "number": order.number,
+        "external": external,
+        "party": party,
+        "lines": order.lines.count(),
+        "summary": revision_summary(changes or {}),
+        "changes": changes or {},
+    }
+
+
+def _lines(path, external: str, externals: dict, aliases: dict, report: ImportReport) -> list[dict]:
+    lines = []
+    for item in _detail_rows(path):
+        feedback = is_feedback_name(item["name"])
+        if item["unit"] != "кг" and not feedback:
+            report.skipped_units.append({"order": external, "name": item["name"], "unit": item["unit"] or "—"})
+            continue
+        try:
+            qty = Decimal(item["qty"]).quantize(Decimal("0.001"))
+        except InvalidOperation:
+            report.missing_codes.append(
+                {"order": external, "code": item["code"], "name": item["name"] or "некорректное количество"}
+            )
+            continue
+        if qty <= 0:
+            continue
+        card = externals.get(item["code"])
+        if card is None:
+            card = upsert_external(item["code"], item["name"])
+            externals[item["code"]] = card
+        ours = None if feedback else aliases.get(item["code"])
+        lines.append(
+            {
+                "product_id": ours.id if ours is not None else None,
+                "external_product_id": card.id,

@@ -9,7 +9,7 @@ from apps.common.forms import get_row
 from apps.common.kg import as_kg
 from apps.common.numbers import barcode, document_number
 from apps.inventory.models import InventoryDocument, InventoryLine, Movement
-from apps.inventory.services import consumed_pallet_ids, has_downstream, post_in, remove_in, update_in
+from apps.inventory.services import consumed_pallet_ids, has_left, post_in, remove_in, update_in
 from apps.planning.models import Task, TaskLine
 from apps.receiving.models import Lot, Receipt
 from apps.storage.models import Pallet
@@ -120,7 +120,7 @@ def add_found(
     caliber_id: int,
     grade_id: int,
     supplier_id: int,
-    location: str,
+    cell,
     qty_kg: Decimal,
     user,
 ) -> InventoryLine:
@@ -136,16 +136,16 @@ def add_found(
     supplier = get_row(Supplier, supplier_id, "поставщик")
     if document.scope == InventoryDocument.Scope.PRODUCTS and not document.products.filter(pk=product.id).exists():
         raise WarehouseError("Этот товар не входит в инвентаризацию")
-    place = (location or "").strip()
-    if len(place) > 120:
-        raise WarehouseError("Место длиннее 120 символов")
+    if cell is None:
+        raise WarehouseError("Укажите ячейку существующей зоны")
     return InventoryLine.objects.create(
         document=document,
         product=product,
         caliber=caliber,
         grade=grade,
         supplier=supplier,
-        location=place,
+        cell=cell,
+        location=cell.label(),
         book_kg=Decimal("0.000"),
         fact_kg=qty,
         counted_by=user,
@@ -270,7 +270,8 @@ def _post_found(line: InventoryLine, user) -> None:
     pallet = Pallet.objects.create(
         kind="inbound",
         status="closed",
-        location=line.location or "",
+        cell=line.cell,
+        location=line.place,
         created_by=user,
         closed_by=user,
         closed_at=now,
@@ -297,7 +298,7 @@ def _post_line(line: InventoryLine, user) -> None:
     label = line.pallet.number or f"#{line.pallet_id}"
     if movement is None:
         raise WarehouseError(f"Нет прихода по паллете {label}")
-    if has_downstream(movement):
+    if has_left(movement):
         raise WarehouseError(f"По паллете {label} уже есть отбор, отгрузка или переработка")
     fact = as_kg(line.fact_kg)
     if fact == 0:
@@ -321,7 +322,7 @@ def post_document(document: InventoryDocument, user) -> None:
     document = InventoryDocument.objects.select_for_update().get(pk=document.pk)
     if document.status != InventoryDocument.Status.COUNTING:
         raise WarehouseError("Провести можно только документ в подсчёте")
-    lines = list(document.lines.select_related("lot", "pallet", "supplier", "product", "caliber", "grade"))
+    lines = list(document.lines.select_related("lot", "pallet", "supplier", "product", "caliber", "grade", "cell__zone"))
     pending = sum(1 for line in lines if line.fact_kg is None)
     if pending:
         raise WarehouseError(f"Не посчитано паллет: {pending}")

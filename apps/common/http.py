@@ -29,8 +29,8 @@ def roles_required(*roles, tsd=()):
             login_url = "/tsd/login" if on_tsd else "/login"
             if not user.is_authenticated or not user.is_active:
                 return redirect(login_url)
-            if user.role == "employee" and not on_tsd and request.method != "POST":
-                if not (path.startswith("/shift") and user.can_shift()):
+            if not on_tsd and request.method != "POST" and not user.opens_web():
+                if user.opens_tsd() and not (path.startswith("/shift") and user.can_shift()):
                     return redirect("/tsd")
             needed = set(tsd)
             if needed and needed & user.granted_access():
@@ -45,7 +45,7 @@ def roles_required(*roles, tsd=()):
                     allowed.add("office")
                 if user.role not in allowed:
                     messages.error(request, "Недостаточно прав")
-                    return redirect("/tsd" if on_tsd or user.role == "employee" else "/")
+                    return redirect("/tsd" if on_tsd or user.opens_tsd() else "/")
             return view(request, *args, **kwargs)
 
         return wrapped

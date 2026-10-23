@@ -12,7 +12,7 @@
 <p>{{ pallet.number }}{% if pallet.location %} · сейчас {{ pallet.location }}{% else %} · ячейка не задана{% endif %}</p>
 <form method="post" action="/tsd/move">{% csrf_token %}
   <input type="hidden" name="pallet_id" value="{{ pallet.id }}">
-  <label>Новая ячейка <input name="location" value="{{ pallet.location }}" autofocus required></label>
+  {% include "partials/cell_pick.html" %}
   <button class="btn menu">Переместить</button>
 </form>
 {% endif %}

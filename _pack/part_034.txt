@@ -1,0 +1,2000 @@
+﻿
+==============================================================================
+### FILE: templates\demand.html
+### SIZE: 22002 bytes / 443 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Потребность{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Потребность</h1>
+  </div>
+  <div class="page-tools">
+    <form id="demand-filter" class="doc-filter" method="get" action="/demand">
+      <div class="filter-row">
+        <label>Период
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ date_from }}">
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}">
+          </span>
+        </label>
+        <label>Товар
+          <input name="product" value="{{ product }}" placeholder="Название">
+        </label>
+        <label>Грузополучатель
+          <input name="party" value="{{ party }}" placeholder="Название">
+        </label>
+      </div>
+      <div class="filter-row">
+        <input type="hidden" name="all" value="0">
+        <label class="check">
+          <input type="checkbox" name="all" value="1" {% if show_all %}checked{% endif %}>
+          Показывать все
+        </label>
+        <button class="slim" type="button" id="open-setup">Показать настройки</button>
+        <button class="slim" type="submit" name="run" value="1">Сформировать</button>
+      </div>
+      <div id="setup-fields"></div>
+    </form>
+    {{ grouping|json_script:"group-state" }}
+    {{ column_rows|json_script:"column-state" }}
+    {{ picks|json_script:"pick-state" }}
+    {{ sorts|json_script:"sort-state" }}
+    {{ categories|json_script:"category-state" }}
+    {{ group_fields|json_script:"group-fields" }}
+    {{ column_fields|json_script:"column-fields" }}
+    {{ pick_fields|json_script:"pick-fields" }}
+    {{ pick_ops|json_script:"pick-ops" }}
+    <div class="tool-box stack">
+      <button class="icon-btn" type="submit" form="demand-filter" name="run" value="1" data-tip="Обновить" aria-label="Обновить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+      </button>
+      <button class="icon-btn" type="submit" form="demand-filter" name="export" value="xlsx" data-tip="Скачать Excel" aria-label="Скачать Excel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="demand-body">
+<div class="demand-main">
+{% if not built %}
+<p class="hint">Нажмите «Сформировать», чтобы построить отчёт.</p>
+{% else %}
+<h2 class="sheet-title">Под заказы</h2>
+<table class="sheet" id="demand-orders">
+  <tr>
+    {% for col in columns %}<th class="{% if col.num %}num{% endif %}">{{ col.label }}</th>{% empty %}<th>Поля</th>{% endfor %}
+  </tr>
+  {% include "partials/demand_nodes.html" with nodes=groups %}
+  {% if groups %}
+  <tr class="subtotal">
+    {% for col in columns %}
+    <td class="{% if col.num %}num{% endif %}{% if col.key == 'short' and short_total > 0 %} short{% endif %}">{% if col.total_label %}Итого{% elif col.key == "ordered" %}{{ ordered_total|kg }}{% elif col.key == "picked" %}{{ picked_total|kg }}{% elif col.key == "reserve" %}{{ reserve_total|kg }}{% elif col.key == "free" %}{{ free_total|kg }}{% elif col.key == "blocked" %}{{ blocked_total|kg }}{% elif col.key == "stock" %}{{ stock_total|kg }}{% elif col.key == "incoming" %}{{ incoming_total|kg }}{% elif col.key == "short" %}{{ short_total|kg }}{% endif %}</td>
+    {% empty %}<td>Итого</td>{% endfor %}
+  </tr>
+  {% endif %}
+</table>
+
+<h2 class="sheet-title">К приёмке</h2>
+<table class="sheet">
+  <tr>
+    <th>Заказ</th><th>Поставщик</th><th>Поступление</th>
+    <th>Товар</th><th>Калибр</th><th>Сортность</th>
+    <th class="num">Заказано</th><th class="num">Принято</th><th class="num">Осталось</th>
+  </tr>
+  {% for row in inbound %}
+  <tr data-href="/orders/suppliers/{{ row.order_id }}">
+    <td><a href="/orders/suppliers/{{ row.order_id }}">{{ row.order_number }}</a></td>
+    <td>{{ row.supplier }}</td>
+    <td>{% if row.receipt_date %}{{ row.receipt_date|date:"d.m.Y" }}{% endif %}</td>
+    <td>{{ row.product }}</td>
+    <td>{{ row.caliber }}</td>
+    <td>{{ row.grade }}</td>
+    <td class="num">{{ row.ordered_kg|kg }}</td>
+    <td class="num">{{ row.received_kg|kg }}</td>
+    <td class="num">{{ row.left_kg|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">{% if date_from or date_to or product %}Ничего не найдено.{% else %}Нет заказов, которые ещё нужно принять.{% endif %}</td></tr>
+  {% endfor %}
+  {% if inbound %}
+  <tr>
+    <td colspan="8">Итого к приёмке</td>
+    <td class="num">{{ inbound_total|kg }}</td>
+  </tr>
+  {% endif %}
+</table>
+{% endif %}
+</div>
+<aside class="report-settings" id="report-setup" hidden>
+  <div class="settings-head">
+    <strong>Настройки</strong>
+    <button type="button" class="slim alt" id="hide-setup">Скрыть</button>
+  </div>
+  <div class="settings-tabs">
+    <button type="button" class="settings-tab on" data-tab="grouping">Группировка</button>
+    <button type="button" class="settings-tab" data-tab="filter">Отбор</button>
+    <button type="button" class="settings-tab" data-tab="fields">Поля</button>
+    <button type="button" class="settings-tab" data-tab="sorting">Сортировка</button>
+    <button type="button" class="settings-tab" data-tab="groups">Группы</button>
+  </div>
+  <div class="settings-pane on" data-pane="grouping">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="grouping">Добавить</button>
+      <button type="button" class="slim alt" data-remove="grouping">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="grouping">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="grouping">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th></tr></thead>
+      <tbody id="grouping-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="filter">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="filter">Добавить</button>
+      <button type="button" class="slim alt" data-remove="filter">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="filter">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="filter">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th><th>Вид сравнения</th><th>Значение</th></tr></thead>
+      <tbody id="filter-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="fields">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="fields">Добавить</button>
+      <button type="button" class="slim alt" data-remove="fields">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="fields">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="fields">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th></tr></thead>
+      <tbody id="fields-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="sorting">
+    <div class="settings-actions">
+      <button type="button" class="slim" data-add="sorting">Добавить</button>
+      <button type="button" class="slim alt" data-remove="sorting">Удалить</button>
+      <button type="button" class="slim alt" data-move="up" data-list="sorting">↑</button>
+      <button type="button" class="slim alt" data-move="down" data-list="sorting">↓</button>
+    </div>
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Поле</th><th>Направление</th></tr></thead>
+      <tbody id="sorting-body"></tbody>
+    </table>
+  </div>
+  <div class="settings-pane" data-pane="groups">
+    <table class="grouping-table" data-setup>
+      <thead><tr><th class="grip"></th><th class="mark"></th><th>Группа</th></tr></thead>
+      <tbody id="groups-body"></tbody>
+    </table>
+  </div>
+</aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function readList(id) {
+    const node = document.getElementById(id);
+    return node ? JSON.parse(node.textContent || "[]") : [];
+  }
+  function escapeHtml(text) {
+    return String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+  }
+  const lists = {
+    grouping: readList("group-state"),
+    fields: readList("column-state"),
+    filter: readList("pick-state"),
+    sorting: readList("sort-state"),
+    groups: readList("category-state"),
+  };
+  const catalogs = {
+    grouping: readList("group-fields"),
+    fields: readList("column-fields"),
+    filter: readList("pick-fields"),
+    sorting: readList("column-fields"),
+  };
+  const ops = readList("pick-ops");
+  const bodies = {
+    grouping: "grouping-body",
+    fields: "fields-body",
+    filter: "filter-body",
+    sorting: "sorting-body",
+    groups: "groups-body",
+  };
+  const emptyText = {
+    grouping: ["3", "Нет полей группировки"],
+    fields: ["3", "Нет полей"],
+    filter: ["5", "Нет условий отбора"],
+    sorting: ["4", "Нет полей сортировки"],
+    groups: ["3", "Нет групп"],
+  };
+  let dragKind = null;
+  let dragIndex = null;
+  let suppressClick = false;
+
+  function options(items, selected, valueKey) {
+    return items.map((item) => {
+      const value = item[valueKey || "key"];
+      return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(item.label)}</option>`;
+    }).join("");
+  }
+  function paint(kind) {
+    const body = document.getElementById(bodies[kind]);
+    const rows = lists[kind];
+    if (!rows.length) {
+      const [span, text] = emptyText[kind];
+      body.innerHTML = `<tr class="setup-empty"><td colspan="${span}">${text}</td></tr>`;
+      return;
+    }
+    body.innerHTML = "";
+    rows.forEach((item, index) => {
+      const row = document.createElement("tr");
+      row.dataset.index = String(index);
+      const box = `<td class="grip" draggable="true" title="Перетащить">↕</td><td class="mark"><input type="checkbox" data-index="${index}"${item.on ? " checked" : ""}></td>`;
+      if (kind === "filter") {
+        const needsValue = item.op !== "is_empty" && item.op !== "is_not_empty";
+        const inList = item.op === "in_list" || item.op === "not_in_list";
+        const value = !needsValue
+          ? "<span class=\"muted\">—</span>"
+          : inList
+            ? `<textarea data-value rows="3" placeholder="Значение (каждое с новой строки)">${escapeHtml(item.value || "")}</textarea>`
+            : `<input type="text" data-value value="${escapeHtml(item.value || "")}" placeholder="Значение">`;
+        row.innerHTML = `${box}<td><select data-field>${options(catalogs.filter, item.field)}</select></td><td><select data-op>${options(ops, item.op)}</select></td><td>${value}</td>`;
+      } else if (kind === "sorting") {
+        row.innerHTML = `${box}<td>${escapeHtml(item.label)}</td><td><select data-dir><option value="asc"${item.dir !== "desc" ? " selected" : ""}>По возрастанию</option><option value="desc"${item.dir === "desc" ? " selected" : ""}>По убыванию</option></select></td>`;
+      } else if (kind === "groups") {
+        row.innerHTML = `${box}<td>${escapeHtml(item.name)}</td>`;
+      } else {
+        row.innerHTML = `${box}<td>${escapeHtml(item.label)}</td>`;
+      }
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener("click", (event) => event.stopPropagation());
+      checkbox.addEventListener("change", () => { lists[kind][index].on = checkbox.checked; });
+      const field = row.querySelector("[data-field]");
+      if (field) field.addEventListener("change", () => { lists[kind][index].field = field.value; });
+      const op = row.querySelector("[data-op]");
+      if (op) op.addEventListener("change", () => { lists[kind][index].op = op.value; paint(kind); });
+      const value = row.querySelector("[data-value]");
+      if (value) value.addEventListener("input", () => { lists[kind][index].value = value.value; });
+      const dir = row.querySelector("[data-dir]");
+      if (dir) dir.addEventListener("change", () => { lists[kind][index].dir = dir.value; });
+      row.addEventListener("click", (event) => {
+        if (suppressClick || event.target.closest("input, select, textarea, button, .grip")) return;
+        checkbox.checked = !checkbox.checked;
+        lists[kind][index].on = checkbox.checked;
+      });
+      const grip = row.querySelector(".grip");
+      grip.addEventListener("dragstart", (event) => {
+        dragKind = kind;
+        dragIndex = index;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", kind + ":" + index);
+        row.classList.add("dragging");
+      });
+      grip.addEventListener("dragend", () => {
+        suppressClick = true;
+        setTimeout(() => { suppressClick = false; }, 0);
+        dragKind = null;
+        dragIndex = null;
+        body.querySelectorAll("tr").forEach((item) => item.classList.remove("dragging", "drop-before", "drop-after"));
+      });
+      row.addEventListener("dragover", (event) => {
+        if (dragKind !== kind) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const box = row.getBoundingClientRect();
+        const after = event.clientY > box.top + box.height / 2;
+        row.classList.toggle("drop-after", after);
+        row.classList.toggle("drop-before", !after);
+      });
+      row.addEventListener("drop", (event) => {
+        if (dragKind !== kind || dragIndex === null) return;
+        event.preventDefault();
+        const after = row.classList.contains("drop-after");
+        let to = index + (after ? 1 : 0);
+        const from = dragIndex;
+        if (from < to) to -= 1;
+        dragKind = null;
+        dragIndex = null;
+        if (from === to) return;
+        const [moved] = lists[kind].splice(from, 1);
+        lists[kind].splice(to, 0, moved);
+        paint(kind);
+      });
+      body.appendChild(row);
+    });
+  }
+  ["grouping", "fields", "filter", "sorting", "groups"].forEach(paint);
+
+  function chooseField(title, catalog, taken, onPick) {
+    const modal = document.createElement("div");
+    modal.className = "setup-modal";
+    modal.innerHTML = `<div class="card"><h3>${escapeHtml(title)}</h3><div class="setup-pick"><table class="grouping-table" data-setup><thead><tr><th>Поле</th></tr></thead><tbody>${catalog.map((field, index) => `<tr data-index="${index}"><td>${escapeHtml(field.label)}</td></tr>`).join("")}</tbody></table></div><div class="actions"><button type="button" class="slim alt" data-close>Отмена</button></div></div>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll("tbody tr").forEach((row) => {
+      row.addEventListener("mouseenter", () => { row.style.background = "#e7f0ea"; });
+      row.addEventListener("mouseleave", () => { row.style.background = ""; });
+      row.addEventListener("click", () => {
+        const field = catalog[Number(row.dataset.index)];
+        if (!taken || !taken.has(field.key)) onPick(field);
+        modal.remove();
+      });
+    });
+    modal.querySelector("[data-close]").addEventListener("click", () => modal.remove());
+    modal.addEventListener("click", (event) => { if (event.target === modal) modal.remove(); });
+  }
+  const addTitle = { grouping: "Выберите поле для группировки", filter: "Выберите поле для отбора", fields: "Выберите поле", sorting: "Выберите поле для сортировки" };
+  document.querySelectorAll("[data-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.add;
+      const catalog = catalogs[kind];
+      const taken = kind === "filter" ? null : new Set(lists[kind].map((item) => item.key || item.field));
+      chooseField(addTitle[kind], catalog, taken, (field) => {
+        if (kind === "filter") lists.filter.push({ field: field.key, op: "equals", value: "", on: true });
+        else if (kind === "sorting") lists.sorting.push({ field: field.key, label: field.label, dir: "asc", on: true });
+        else lists[kind].push({ key: field.key, label: field.label, on: true });
+        paint(kind);
+      });
+    });
+  });
+  function marked(kind) {
+    return [...document.querySelectorAll("#" + bodies[kind] + ' input[type="checkbox"]:checked')].map((box) => Number(box.dataset.index));
+  }
+  document.querySelectorAll("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.remove;
+      const indexes = marked(kind).sort((a, b) => b - a);
+      if (!indexes.length) {
+        alert("Выберите строки для удаления (отметьте чекбоксы)");
+        return;
+      }
+      indexes.forEach((index) => lists[kind].splice(index, 1));
+      paint(kind);
+    });
+  });
+  document.querySelectorAll("[data-move]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.list;
+      const rows = lists[kind];
+      const down = button.dataset.move === "down";
+      const indexes = marked(kind).sort((a, b) => down ? b - a : a - b);
+      if (!indexes.length) {
+        alert("Выберите строки для перемещения (отметьте чекбоксы)");
+        return;
+      }
+      indexes.forEach((index) => {
+        const next = down ? index + 1 : index - 1;
+        if (next < 0 || next >= rows.length || indexes.includes(next)) return;
+        [rows[index], rows[next]] = [rows[next], rows[index]];
+      });
+      paint(kind);
+    });
+  });
+
+  const setup = document.getElementById("report-setup");
+  const openSetup = document.getElementById("open-setup");
+  function showSetup(open) {
+    setup.hidden = !open;
+    if (openSetup) openSetup.textContent = open ? "Скрыть настройки" : "Показать настройки";
+  }
+  if (openSetup) openSetup.addEventListener("click", () => showSetup(setup.hidden));
+  document.getElementById("hide-setup").addEventListener("click", () => showSetup(false));
+  document.querySelectorAll(".settings-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".settings-tab").forEach((item) => item.classList.toggle("on", item === tab));
+      document.querySelectorAll(".settings-pane").forEach((pane) => pane.classList.toggle("on", pane.dataset.pane === tab.dataset.tab));
+    });
+  });
+  document.getElementById("demand-filter").addEventListener("submit", () => {
+    const box = document.getElementById("setup-fields");
+    box.replaceChildren();
+    const add = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      box.appendChild(input);
+    };
+    add("group_set", "1");
+    lists.grouping.forEach((item) => { add("group_on", item.on ? "1" : "0"); add("group_by", item.key); });
+    add("col_set", "1");
+    lists.fields.forEach((item) => { add("col_on", item.on ? "1" : "0"); add("col", item.key); });
+    add("pick_set", "1");
+    lists.filter.forEach((item) => {
+      add("pick_on", item.on ? "1" : "0");
+      add("pick_field", item.field);
+      add("pick_op", item.op);
+      add("pick_value", item.value || "");
+    });
+    add("sort_set", "1");
+    lists.sorting.forEach((item) => {
+      add("sort_on", item.on ? "1" : "0");
+      add("sort_by", item.field);
+      add("sort_dir", item.dir || "asc");
+    });
+    add("category_set", "1");
+    lists.groups.filter((item) => item.on).forEach((item) => add("category", String(item.id)));
+  });
+
+  const demandTable = document.getElementById("demand-orders");
+  if (demandTable) {
+    function paintDemand() {
+      const closed = [];
+      [...demandTable.rows].forEach((row) => {
+        if (!row.dataset.level) return;
+        const level = Number(row.dataset.level);
+        while (closed.length && closed[closed.length - 1] >= level) closed.pop();
+        row.classList.toggle("folded", closed.length > 0);
+        if (row.classList.contains("group") && row.dataset.open === "0") closed.push(level);
+      });
+    }
+    demandTable.querySelectorAll("tr.group").forEach((row) => {
+      row.addEventListener("click", () => {
+        row.dataset.open = row.dataset.open === "0" ? "1" : "0";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = row.dataset.open === "0" ? "+" : "−";
+        paintDemand();
+      });
+    });
+  }
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\home.html
+### SIZE: 593 bytes / 13 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}Главная{% endblock %}
+{% block content %}
+<h1>Склад</h1>
+<div class="cards">
+  <div class="stat"><span>Открытые заказы</span><b>{{ orders }}</b></div>
+  <div class="stat"><span>Приёмка</span><b>{{ receive }}</b></div>
+  <div class="stat"><span>Отбор</span><b>{{ pick }}</b></div>
+  <div class="stat"><span>На отгрузку</span><b>{{ ship }}</b></div>
+  <div class="stat"><span>Килограммы на остатке</span><b>{{ stock_kg|kg }}</b></div>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\hub.html
+### SIZE: 283 bytes / 11 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="hub">
+  {% for item in items %}
+  <a class="hub-card" href="{{ item.href }}">{{ item.title }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\detail.html
+### SIZE: 6649 bytes / 138 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ document.number }} · {{ document.doc_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/inventory">К списку</a>
+      {% if document.status == "draft" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <button class="slim" type="submit">Начать</button>
+      </form>
+      {% endif %}
+      {% if document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Провести инвентаризацию и поправить остатки?');">{% csrf_token %}
+        <input type="hidden" name="action" value="post">
+        <button class="slim" type="submit">Провести</button>
+      </form>
+      {% endif %}
+      {% if document.status == "draft" or document.status == "counting" %}
+      <form method="post" action="/inventory/{{ document.id }}" class="inline-form" onsubmit="return confirm('Отменить инвентаризацию?');">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="slim ghost" type="submit">Отменить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<p class="hint">{{ document.get_status_display }} · {{ document.get_scope_display }}{% if document.status == "counting" or document.status == "posted" %} · посчитано {{ counted }} из {{ lines|length }}{% endif %}{% if document.notes %} · {{ document.notes }}{% endif %}</p>
+{% if products %}
+<p class="hint">Номенклатура: {% for product in products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+{% endif %}
+
+{% if document.status == "draft" %}
+<p class="hint">Нажмите «Начать», чтобы зафиксировать учётный вес паллет на складе.</p>
+{% elif open %}
+<p class="hint">Паспорт не нужен: факт и поставщик вводятся в строке. Ноль — паллеты нет. Если паллеты нет в учёте, добавьте её внизу: на остаток она встанет после проводки.</p>
+{% endif %}
+
+{% if lines %}
+<table class="sheet">
+  <tr>
+    <th>Паллета</th>
+    <th>Товар</th>
+    <th>Место</th>
+    <th>Учёт, кг</th>
+    <th>Факт, кг</th>
+    <th>Поставщик</th>
+    <th>Расхождение</th>
+    {% if open %}<th></th>{% endif %}
+  </tr>
+  {% for line in lines %}
+  <tr>
+    <td>{% if line.pallet_id %}<a href="/pallets/{{ line.pallet_id }}">{{ line.pallet.number|default:line.pallet_id }}</a>{% else %}новая{% endif %}</td>
+    <td>{% if line.lot_id %}{{ line.lot.product.name }} · {{ line.lot.caliber.name }} · {{ line.lot.grade.name }}{% else %}{{ line.product.name }} · {{ line.caliber.name }} · {{ line.grade.name }}{% endif %}</td>
+    <td>{{ line.place|default:"—" }}</td>
+    <td>{{ line.book_kg|kg }}</td>
+    <td>
+      {% if open %}
+      <input form="line-{{ line.id }}" name="fact_kg" value="{% if line.fact_kg != None %}{{ line.fact_kg|kg }}{% endif %}" inputmode="decimal">
+      {% elif line.fact_kg != None %}{{ line.fact_kg|kg }}{% else %}—{% endif %}
+    </td>
+    <td>
+      {% if open %}
+      <select form="line-{{ line.id }}" name="supplier_id">
+        {% for supplier in suppliers %}
+        <option value="{{ supplier.id }}" {% if line.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+        {% endfor %}
+      </select>
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% else %}
+      {{ line.supplier.name }}
+      {% if line.lot_id and line.supplier_id != line.lot.supplier_id %}<div class="hint">В учёте: {{ line.lot.supplier.name }}</div>{% endif %}
+      {% endif %}
+    </td>
+    <td>{% if line.delta_kg != None %}{{ line.delta_kg|kg }}{% else %}—{% endif %}</td>
+    {% if open %}
+    <td>
+      <form id="line-{{ line.id }}" method="post" action="/inventory/{{ document.id }}/line" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="line_id" value="{{ line.id }}">
+        <button class="slim" type="submit">Сохранить</button>
+      </form>
+      {% if line.found %}
+      <form method="post" action="/inventory/{{ document.id }}/found/{{ line.id }}/delete" class="inline-form" onsubmit="return confirm('Убрать эту паллету из документа?');">{% csrf_token %}
+        <button class="slim ghost" type="submit">Убрать</button>
+      </form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% elif document.status != "draft" %}
+<p class="hint">В снимке нет паллет. Добавьте те, что стоят на складе.</p>
+{% endif %}
+{% if open %}
+<h2>Паллета не из учёта</h2>
+<form method="post" action="/inventory/{{ document.id }}/found" class="card grid">{% csrf_token %}
+  <label>Товар
+    <select name="product_id" required>
+      <option value=""></option>
+      {% for product in all_products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Калибр
+    <select name="caliber_id" required>
+      <option value=""></option>
+      {% for caliber in calibers %}
+      <option value="{{ caliber.id }}">{{ caliber.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Сорт
+    <select name="grade_id" required>
+      <option value=""></option>
+      {% for grade in grades %}
+      <option value="{{ grade.id }}">{{ grade.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Поставщик
+    <select name="supplier_id" required>
+      <option value=""></option>
+      {% for supplier in suppliers %}
+      <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% include "partials/cell_pick.html" %}
+  <label>Вес, кг <input name="fact_kg" inputmode="decimal" required></label>
+  <div class="actions"><button type="submit">Добавить</button></div>
+</form>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\list.html
+### SIZE: 993 bytes / 25 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Инвентаризация</h1>
+    <a class="btn slim" href="/inventory/new">Новая</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Номер</th><th>Дата</th><th>Режим</th><th>Статус</th><th>Посчитано</th></tr>
+  {% for document in documents %}
+  <tr data-href="/inventory/{{ document.id }}">
+    <td><a href="/inventory/{{ document.id }}">{{ document.number }}</a></td>
+    <td>{{ document.doc_date|date:"d.m.Y" }}</td>
+    <td>{{ document.get_scope_display }}</td>
+    <td>{{ document.get_status_display }}</td>
+    <td>{% if document.status == "draft" %}—{% else %}{{ document.counted_count }} из {{ document.line_count }}{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Документов нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\inventory\new.html
+### SIZE: 1237 bytes / 29 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Новая инвентаризация</h1>
+    <a class="btn slim" href="/inventory">К списку</a>
+  </div>
+</div>
+<form method="post" action="/inventory" class="card">{% csrf_token %}
+  <label>Дата <input type="date" name="doc_date" value="{{ today }}" required></label>
+  <label>Режим
+    <select name="scope">
+      <option value="all">Весь склад</option>
+      <option value="products">Выбранные номенклатуры</option>
+    </select>
+  </label>
+  <label>Номенклатура
+    <select name="product_id" multiple size="12">
+      {% for product in products %}
+      <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="hint">Для режима «Выбранные номенклатуры» отметьте товары. Калибр и сорт не ограничивают снимок.</p>
+  <label>Примечание <textarea name="notes"></textarea></label>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\layout.html
+### SIZE: 689 bytes / 22 lines
+==============================================================================
+
+{% load wms %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}WMS{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v=78">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block header %}{% endblock %}
+  <main>
+    <button type="button" class="back" id="go-back" hidden>Назад</button>
+    {% for flash in flashes %}
+    <p class="flash {{ flash.l }}">{{ flash.m }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/app.js?v=18"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
+
+
+==============================================================================
+### FILE: templates\login.html
+### SIZE: 617 bytes / 16 lines
+==============================================================================
+
+{% extends "layout.html" %}
+{% block title %}Вход{% endblock %}
+{% block body_class %}login-page{% endblock %}
+{% block content %}
+<form method="post" action="/login" class="login-card">{% csrf_token %}
+  <h1>Вход в WMS</h1>
+  <label>Логин
+    <input name="login" autocomplete="username" required autofocus>
+  </label>
+  <label>Пароль
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Войти</button>
+  <a class="login-alt" href="/tsd/login">Вход в ТСД по PIN или QR</a>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\_shift_incoming.html
+### SIZE: 1797 bytes / 29 lines
+==============================================================================
+
+{% load wms %}
+<section class="shift-pane" data-part="incoming">
+  {% include "logistics/_shift_tools.html" with heading="Входящие заказы" part="incoming" %}
+  <div class="shift-scroll">
+    <table class="sheet">
+      <tr>
+        <th>Поступление</th><th>Заказ</th><th>Поставщик</th><th>Вес, кг</th><th>Статус</th><th>Приёмка</th>
+        <th>Комментарий</th><th>Прибыл</th><th>Ворота</th><th>Окончание</th><th>Убыл</th>
+      </tr>
+      {% for order in incoming %}
+      <tr>
+        <td>{{ order.date|date:"d.m.Y" }}</td>
+        <td>{{ order.number }}</td>
+        <td>{{ order.supplier }}</td>
+        <td>{{ order.weight|kg }}</td>
+        <td>{{ PURCHASE_STATUS|label:order.status }}</td>
+        <td>{{ order.receive }}</td>
+        <td>{{ order.comment|default:"—" }}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.arrived_at kind="incoming" item_id=order.id action="arrive" label="Прибыл" %}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.gate_at kind="incoming" item_id=order.id action="gate" label="Постановка" %}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.receive_finished_at kind="incoming" item_id=order.id action="finish" label="Окончание" %}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=order.departed_at kind="incoming" item_id=order.id action="depart" label="Убыл" %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="11">Нет входящих заказов за выбранный период</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+
+==============================================================================
+### FILE: templates\logistics\_shift_orders.html
+### SIZE: 1366 bytes / 28 lines
+==============================================================================
+
+{% load wms %}
+<section class="shift-pane" data-part="orders">
+  {% include "logistics/_shift_tools.html" with heading="Заказы" part="orders" %}
+  <div class="shift-scroll">
+    <table class="sheet">
+      <tr>
+        {% if ranged %}<th>Дата</th>{% endif %}
+        <th>Заказ</th><th>Грузополучатель</th><th>Зона доставки</th><th>Вес, кг</th><th>План погрузки</th><th>Маршрут</th><th>Отбор</th>
+      </tr>
+      {% for order in orders %}
+      <tr>
+        {% if ranged %}<td>{{ order.date|date:"d.m.Y" }}</td>{% endif %}
+        <td>{{ order.number }}</td>
+        <td>{{ order.consignee|default:"—" }}</td>
+        <td>{{ order.zone|default:"Без зоны" }}</td>
+        <td>{{ order.weight|kg }}</td>
+        <td>
+          {% for plan in order.plans %}{% if plan|date:"Y-m-d" != order.date|date:"Y-m-d" %}{{ plan|date:"d.m" }} {% endif %}{{ plan|date:"H:i" }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+        </td>
+        <td>{{ order.route|default:"без маршрута" }}</td>
+        <td>{{ order.pick }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if ranged %}8{% else %}7{% endif %}">Нет заказов за выбранный период</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+
+==============================================================================
+### FILE: templates\logistics\_shift_routes.html
+### SIZE: 3826 bytes / 56 lines
+==============================================================================
+
+{% load wms %}
+<section class="shift-pane routes" data-part="routes">
+  {% include "logistics/_shift_tools.html" with heading="Маршруты" part="routes" %}
+  <div class="shift-scroll">
+    <table class="sheet">
+      <tr>
+        {% if ranged %}<th>Дата</th>{% endif %}
+        <th>Название</th><th>Водитель</th><th>Авто</th><th>План</th><th>Заказов</th><th>Вес, кг</th><th>Статус</th><th>Прибыл</th><th>Постановка</th><th>Отгрузка</th><th>Убыл</th><th></th>
+      </tr>
+      {% for route in routes %}
+      <tr>
+        {% if ranged %}<td>{{ route.route_date|date:"d.m.Y" }}</td>{% endif %}
+        <td>{{ route.name|default:route.id }}</td>
+        <td>{% if route.driver %}{{ route.driver.full_name }}{% else %}—{% endif %}</td>
+        <td>{{ route.vehicle_text|default:"—" }}</td>
+        <td>{% if route.planned_load_at %}{% if route.planned_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.planned_load_at|date:"d.m" }} {% endif %}{{ route.planned_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+        <td>{{ route.order_count }}</td>
+        <td>{{ route.weight|kg }}</td>
+        <td>{{ route.get_status_display }}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=route.arrived_at kind="routes" item_id=route.id action="arrive" label="Прибыл" %}</td>
+        <td>{% if route.docked_at %}{{ route.docked_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+        <td>{% if route.actual_load_at %}{{ route.actual_load_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+        <td class="fit">{% include "logistics/_shift_stamp.html" with when=route.departed_at kind="routes" item_id=route.id action="depart" label="Убыл" %}</td>
+        <td class="fit">
+          {% if route.status == 'draft' or route.status == 'planned' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/dock" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Поставлено к отгрузке</button>
+          </form>
+          {% elif route.status == 'docked' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/ship" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Отгружен</button>
+          </form>
+          <form method="post" action="/shift/routes/{{ route.id }}/revert" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Вернуть</button>
+          </form>
+          {% elif route.status == 'completed' %}
+          <form method="post" action="/shift/routes/{{ route.id }}/revert" class="inline-form">{% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+            <button class="slim" type="submit">Вернуть к погрузке</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if ranged %}13{% else %}12{% endif %}">Нет маршрутов за выбранный период</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+
+==============================================================================
+### FILE: templates\logistics\_shift_stamp.html
+### SIZE: 399 bytes / 7 lines
+==============================================================================
+
+{% if when %}{{ when|date:"d.m.Y H:i" }}{% else %}
+<form method="post" action="/shift/{{ kind }}/{{ item_id }}/{{ action }}" class="inline-form">{% csrf_token %}
+  <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+  <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+  <button class="slim" type="submit">{{ label }}</button>
+</form>
+{% endif %}
+
+
+==============================================================================
+### FILE: templates\logistics\_shift_tools.html
+### SIZE: 562 bytes / 9 lines
+==============================================================================
+
+<div class="shift-head">
+  <h2>{{ heading }}</h2>
+  <div class="actions">
+    <a class="btn slim" href="/shift/{{ part }}/print?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}" target="_blank">Печать</a>
+    <button type="button" class="icon-btn" data-shift-refresh data-tip="Обновить" aria-label="Обновить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+    </button>
+  </div>
+</div>
+
+
+==============================================================================
+### FILE: templates\logistics\driver_form.html
+### SIZE: 1940 bytes / 27 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/drivers">К списку</a>
+  </div>
+</div>
+<form method="post" action="{% if item %}/logistics/drivers/{{ item.id }}{% else %}/logistics/drivers{% endif %}" class="card grid">{% csrf_token %}
+  <label>ФИО <input name="full_name" value="{% if item %}{{ item.full_name }}{% endif %}" required></label>
+  <label>Телефон <input name="phone" value="{% if item %}{{ item.phone }}{% endif %}"></label>
+  <label>Автомобиль
+    <select name="vehicle_id">
+      <option value=""></option>
+      {% for vehicle in vehicles %}
+      <option value="{{ vehicle.id }}" {% if item and item.vehicle_id == vehicle.id %}selected{% endif %}>{{ vehicle.display_name }}{% if vehicle.load_capacity_kg or vehicle.pallet_capacity %} · {% if vehicle.load_capacity_kg %}{{ vehicle.load_capacity_kg }} кг{% endif %}{% if vehicle.load_capacity_kg and vehicle.pallet_capacity %}, {% endif %}{% if vehicle.pallet_capacity %}{{ vehicle.pallet_capacity }} палл.{% endif %}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if item and item.vehicle %}
+  <p class="hint wide">С авто: тоннаж {% if item.vehicle.load_capacity_kg %}{{ item.vehicle.load_capacity_kg }} кг{% else %}—{% endif %}, паллет {% if item.vehicle.pallet_capacity %}{{ item.vehicle.pallet_capacity }}{% else %}—{% endif %}. Меняется в <a href="/logistics/vehicles/{{ item.vehicle_id }}">карточке автомобиля</a>.</p>
+  {% endif %}
+  <label><input type="checkbox" name="is_active" value="1" {% if not item or item.is_active %}checked{% endif %}> Активен</label>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\driver_list.html
+### SIZE: 1152 bytes / 26 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/drivers/new">Добавить</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>ФИО</th><th>Телефон</th><th>Автомобиль</th><th>Тоннаж, кг</th><th>Паллет</th><th>Статус</th><th></th></tr>
+  {% for item in items %}
+  <tr data-href="/logistics/drivers/{{ item.id }}">
+    <td>{{ item.full_name }}</td>
+    <td>{{ item.phone }}</td>
+    <td>{{ item.vehicle_display }}</td>
+    <td>{% if item.vehicle and item.vehicle.load_capacity_kg %}{{ item.vehicle.load_capacity_kg }}{% endif %}</td>
+    <td>{% if item.vehicle and item.vehicle.pallet_capacity %}{{ item.vehicle.pallet_capacity }}{% endif %}</td>
+    <td>{% if item.is_active %}Активен{% else %}Неактивен{% endif %}</td>
+    <td><a href="/logistics/drivers/{{ item.id }}">Изменить</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\index.html
+### SIZE: 1111 bytes / 17 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}Логистика{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Логистика</h1>
+  </div>
+</div>
+<p class="hint">Дата по умолчанию: {{ day|date:"d.m.Y" }}</p>
+<div class="hub">
+  <a class="hub-card" href="/logistics/routing?date={{ day|date:'Y-m-d' }}">Маршрутизация<br><span class="muted" style="font-size:14px;font-weight:400">Свободных заказов: {{ unassigned }}</span></a>
+  <a class="hub-card" href="/logistics/routes?date={{ day|date:'Y-m-d' }}">Маршруты<br><span class="muted" style="font-size:14px;font-weight:400">На день: {{ route_count }}</span></a>
+  <a class="hub-card" href="/logistics/schedule?date={{ day|date:'Y-m-d' }}">График отгрузки</a>
+  <a class="hub-card" href="/logistics/drivers">Водители<br><span class="muted" style="font-size:14px;font-weight:400">Активных: {{ drivers }}</span></a>
+  <a class="hub-card" href="/logistics/vehicles">Автомобили</a>
+</div>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\route_detail.html
+### SIZE: 9523 bytes / 185 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ route.name|default:"Маршрут" }} · {{ route.route_date|date:"d.m.Y" }}</h1>
+    <div class="actions">
+      <a class="btn slim" href="/logistics/routes?date={{ route.route_date|date:'Y-m-d' }}">К списку</a>
+      <a class="btn slim" href="/logistics/routes/{{ route.id }}/print" target="_blank">Маршрутный лист</a>
+      <form method="post" action="/logistics/routes/{{ route.id }}/delete" class="inline-form" onsubmit="return confirm('Удалить маршрут? Заказы снова станут свободными.');">{% csrf_token %}
+        <button type="submit" class="slim">Удалить</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/logistics/routes/{{ route.id }}" class="card grid">{% csrf_token %}
+  <label>Название <input name="name" value="{{ route.name }}"></label>
+  <label>Водитель
+    <select name="driver_id">
+      <option value=""></option>
+      {% for driver in drivers %}
+      <option value="{{ driver.id }}" {% if route.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Статус
+    <select name="status">
+      {% for value, label in statuses.choices %}
+      <option value="{{ value }}" {% if route.status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>План: дата <input type="date" name="planned_load_date" value="{{ load_date }}"></label>
+  <label>План: время <input type="time" name="planned_load_time" value="{{ load_time }}" step="1800"></label>
+  <label>Факт: дата <input type="date" name="actual_load_date" value="{{ actual_date }}"></label>
+  <label>Факт: время отгрузки <input type="time" name="actual_load_time" value="{{ actual_time }}" step="60"></label>
+  <label class="wide">Комментарий <textarea name="notes">{{ route.notes }}</textarea></label>
+  <p class="hint wide">План погрузки может быть накануне рейса ({{ route.route_date|date:"d.m.Y" }}). Постановка к отгрузке: {% if route.docked_at %}{{ route.docked_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}. Факт — фактическое время отгрузки. Авто: {{ route.vehicle_text|default:"—" }} · Всего {{ stops|length }} ост. · {{ total_kg|kg }} кг. Очередность точки задаёт порядок при сборке маршрута. Перетаскивание строки меняет порядок только этого рейса.</p>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+
+<h2>Остановки</h2>
+{% if stops %}
+<table class="sheet" id="route-stops" data-reorder="{% if route.status == 'draft' or route.status == 'planned' %}/logistics/routes/{{ route.id }}/reorder{% endif %}">
+  <thead>
+    <tr>
+      {% if route.status == 'draft' or route.status == 'planned' %}<th class="grip"></th>{% endif %}
+      <th>№</th><th>Очередь</th><th>Заказ</th><th>Грузополучатель</th><th>Адрес</th><th>Зона</th><th>Вес</th><th>Задания</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for stop in stops %}
+  <tr class="route-stop" data-order-id="{{ stop.order_id }}" {% if route.status == 'draft' or route.status == 'planned' %}draggable="true"{% endif %}>
+    {% if route.status == 'draft' or route.status == 'planned' %}<td class="grip" role="button" aria-label="Перетащить" title="Перетащите, чтобы изменить порядок доставки">↕</td>{% endif %}
+    <td class="pos">{{ stop.position }}</td>
+    <td>{% if stop.order.consignee and stop.order.consignee.delivery_order %}{{ stop.order.consignee.delivery_order }}{% else %}—{% endif %}</td>
+    <td><a href="/orders/{{ stop.order_id }}">{{ stop.order.number|default:stop.order_id }}</a></td>
+    <td>{% if stop.order.consignee %}{{ stop.order.consignee.name }}{% endif %}</td>
+    <td>{% if stop.order.consignee %}{{ stop.order.consignee.address }}{% endif %}</td>
+    <td>{% if stop.order.consignee and stop.order.consignee.zone %}{{ stop.order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
+    <td>{{ stop.weight_kg|kg }}</td>
+    <td>
+      {% for task in stop.ship_tasks %}
+      <a href="/tasks/{{ task.id }}">{{ task.number|default:task.id }}</a>{% if not forloop.last %}, {% endif %}
+      {% empty %}—{% endfor %}
+    </td>
+    <td class="fit">
+      {% if route.status == 'draft' or route.status == 'planned' %}
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/move" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="direction" value="up">
+        <button class="slim" type="submit" {% if forloop.first %}disabled{% endif %}>↑</button>
+      </form>
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/move" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="direction" value="down">
+        <button class="slim" type="submit" {% if forloop.last %}disabled{% endif %}>↓</button>
+      </form>
+      <form method="post" action="/logistics/routes/{{ route.id }}/orders/{{ stop.order_id }}/remove" class="inline-form">{% csrf_token %}
+        <button class="slim" type="submit">Убрать</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="hint">В маршруте пока нет заказов.</p>
+{% endif %}
+
+{% if available %}{% if route.status == 'draft' or route.status == 'planned' %}
+<h2>Добавить заказы</h2>
+<form method="post" action="/logistics/routes/{{ route.id }}/add" class="card">{% csrf_token %}
+  <table class="sheet">
+    <tr><th></th><th>Заказ</th><th>Грузополучатель</th><th>Зона</th></tr>
+    {% for order in available %}
+    <tr>
+      <td><input type="checkbox" name="order_id" value="{{ order.id }}"></td>
+      <td>{{ order.number|default:order.id }}</td>
+      <td>{% if order.consignee %}{{ order.consignee.name }}{% endif %}</td>
+      <td>{% if order.consignee and order.consignee.zone %}{{ order.consignee.zone.name }}{% else %}Без зоны{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="actions"><button type="submit">Добавить выбранные</button></div>
+</form>
+{% endif %}{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if route.status == 'draft' or route.status == 'planned' %}
+<script>
+(function () {
+  const table = document.getElementById("route-stops");
+  if (!table || !table.dataset.reorder) return;
+  const tbody = table.querySelector("tbody");
+  const tokenInput = document.querySelector("[name=csrfmiddlewaretoken]");
+  let dragged = null;
+  let moved = false;
+
+  function saveOrder() {
+    const orderIds = Array.from(tbody.querySelectorAll("tr[data-order-id]")).map((row) => Number(row.dataset.orderId));
+    fetch(table.dataset.reorder, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": tokenInput ? tokenInput.value : "",
+      },
+      body: JSON.stringify({ order_ids: orderIds }),
+    })
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || !data.ok) {
+          window.alert((data && data.error) || "Не удалось сохранить порядок");
+          window.location.reload();
+          return;
+        }
+        tbody.querySelectorAll("tr[data-order-id] .pos").forEach((cell, index) => {
+          cell.textContent = String(index + 1);
+        });
+      })
+      .catch(() => {
+        window.alert("Не удалось сохранить порядок");
+        window.location.reload();
+      });
+  }
+
+  tbody.addEventListener("dragstart", (event) => {
+    const row = event.target.closest("tr[data-order-id]");
+    if (!row || event.target.closest("a, button, input, select, textarea")) {
+      event.preventDefault();
+      return;
+    }
+    dragged = row;
+    moved = false;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.dataset.orderId);
+  });
+  tbody.addEventListener("dragend", () => {
+    if (dragged) dragged.classList.remove("dragging");
+    dragged = null;
+    if (moved) saveOrder();
+    moved = false;
+  });
+  tbody.addEventListener("dragover", (event) => {
+    if (!dragged) return;
+    event.preventDefault();
+    const row = event.target.closest("tr[data-order-id]");
+    if (!row || row === dragged) return;
+    const rows = Array.from(tbody.querySelectorAll("tr[data-order-id]"));
+    const from = rows.indexOf(dragged);
+    const to = rows.indexOf(row);
+    if (from < 0 || to < 0 || from === to) return;
+    moved = true;
+    if (from < to) tbody.insertBefore(dragged, row.nextSibling);
+    else tbody.insertBefore(dragged, row);
+  });
+  tbody.addEventListener("drop", (event) => {
+    event.preventDefault();
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\route_list.html
+### SIZE: 2967 bytes / 53 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Маршруты</h1>
+    <a class="btn slim" href="/logistics/routing?date={{ day|date:'Y-m-d' }}">Маршрутизация</a>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/logistics/routes">
+      <div class="filter-row">
+        <label>Дата <input type="date" name="date" value="{{ day|date:'Y-m-d' }}"></label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+    <form id="routes-bulk" class="doc-filter" method="post" action="/logistics/routes/bulk" onsubmit="var act=this.querySelector('[name=action]'); if(act &amp;&amp; act.value==='delete'){ this.target=''; return confirm('Удалить выбранные маршруты?'); } if(act &amp;&amp; act.value==='print'){ this.target='_blank'; return true; } this.target=''; return true;">{% csrf_token %}
+      <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+      <div class="filter-row">
+        <span class="bulk-count" data-bulk-count="routes-bulk">Выбрано: 0</span>
+        <label>Действие
+          <select name="action">
+            <option value="print">Печать листов</option>
+            <option value="delete">Удалить</option>
+          </select>
+        </label>
+        <button class="slim">Выполнить</button>
+      </div>
+    </form>
+  </div>
+</div>
+<table class="sheet" data-bulk="routes-bulk">
+  <tr><th>Название</th><th>Водитель</th><th>Авто</th><th>Статус</th><th>План</th><th>Факт</th><th>Остановок</th><th>Вес, кг</th><th></th></tr>
+  {% for route in routes %}
+  <tr data-href="/logistics/routes/{{ route.id }}" data-id="{{ route.id }}">
+    <td>{{ route.name|default:route.id }}</td>
+    <td>{% if route.driver %}{{ route.driver.full_name }}{% endif %}</td>
+    <td>{{ route.vehicle_text }}</td>
+    <td>{{ route.get_status_display }}</td>
+    <td>{% if route.planned_load_at %}{% if route.planned_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.planned_load_at|date:"d.m" }} {% endif %}{{ route.planned_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+    <td>{% if route.actual_load_at %}{% if route.actual_load_at|date:"Y-m-d" != route.route_date|date:"Y-m-d" %}{{ route.actual_load_at|date:"d.m" }} {% endif %}{{ route.actual_load_at|date:"H:i" }}{% else %}—{% endif %}</td>
+    <td>{{ route.stops }}</td>
+    <td>{{ route.weight_kg|kg }}</td>
+    <td>
+      <a href="/logistics/routes/{{ route.id }}">Открыть</a>
+      · <a href="/logistics/routes/{{ route.id }}/print" target="_blank">Лист</a>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">Нет маршрутов на эту дату</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\routing.html
+### SIZE: 6556 bytes / 141 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Маршрутизация</h1>
+    <a class="btn slim" href="/logistics">К логистике</a>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/logistics/routing">
+      <div class="filter-row">
+        <label>Дата отгрузки <input type="date" name="date" value="{{ ship_date|date:'Y-m-d' }}"></label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+  </div>
+</div>
+<p class="hint">Свободные заказы по зонам, внутри зоны — в очередности доставки точек. Назначьте водителя на зону. Если заказы не помещаются, раскройте зону и отдайте отдельные заказы другому водителю. Затем создайте маршрут или добавьте заказы в существующий.</p>
+
+<table class="sheet" id="routing-sheet">
+  <tr><th>Зона</th><th>Заказов</th><th>ТТ</th><th>Вес, кг</th><th>Водитель</th></tr>
+  {% for row in rows %}
+  <tr class="group zone-row" data-open="0" data-zone="{{ row.zone_id }}">
+    <td class="zone-name"><span class="fold">+</span> {{ row.zone_name }}{% if row.override_count %} <span class="muted">· {{ row.override_count }} отдельно</span>{% endif %}</td>
+    <td>{{ row.order_count }}</td>
+    <td>{{ row.tt_count }}</td>
+    <td>{{ row.weight|kg }}</td>
+    <td>
+      <form method="post" action="/logistics/routing/assign" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+        <input type="hidden" name="zone_id" value="{{ row.zone_id }}">
+        <select name="driver_id" onchange="this.form.submit()">
+          <option value="">—</option>
+          <option value="0" {% if row.driver_id == 0 %}selected{% endif %}>Без водителя</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if row.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </td>
+  </tr>
+  {% for order in row.orders %}
+  <tr class="order-row folded" data-zone="{{ row.zone_id }}">
+    <td class="zone-name" style="padding-left: 22px">{% if order.delivery_order %}{{ order.delivery_order }}. {% endif %}{{ order.number }} · {{ order.party }}</td>
+    <td></td>
+    <td>{{ order.address }}</td>
+    <td>{{ order.weight|kg }}</td>
+    <td>
+      <form method="post" action="/logistics/routing/assign-order" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+        <input type="hidden" name="order_id" value="{{ order.id }}">
+        <select name="driver_id" onchange="this.form.submit()">
+          <option value="" {% if not order.assigned %}selected{% endif %}>Как у зоны</option>
+          <option value="0" {% if order.driver_id == 0 %}selected{% endif %}>Без водителя</option>
+          {% for driver in drivers %}
+          <option value="{{ driver.id }}" {% if order.driver_id == driver.id %}selected{% endif %}>{{ driver.full_name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  {% empty %}
+  <tr><td colspan="5">Нет свободных заказов на эту дату</td></tr>
+  {% endfor %}
+  {% if rows %}
+  <tr class="subtotal">
+    <td>Итого</td>
+    <td>{{ total_orders }}</td>
+    <td></td>
+    <td>{{ total_weight|kg }}</td>
+    <td></td>
+  </tr>
+  {% endif %}
+</table>
+
+{% if driver_loads %}
+<p class="hint">По водителям:
+  {% for item in driver_loads %}
+  <span class="{% if item.over %}short{% endif %}">{{ item.name }} — {{ item.weight|kg }}{% if item.capacity %} из {{ item.capacity }}{% endif %} кг{% if item.over %} · перегруз{% endif %}</span>{% if not forloop.last %}, {% endif %}
+  {% endfor %}
+</p>
+{% endif %}
+
+{% if rows %}
+<div class="actions" style="margin-top:16px">
+  <form method="post" action="/logistics/routing" class="row">{% csrf_token %}
+    <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+    <label>Дата загрузки
+      <input type="date" name="planned_load_date" value="{{ ship_date|date:'Y-m-d' }}">
+    </label>
+    {% for item in driver_loads %}
+    <label>Время · {{ item.name }}
+      <input type="time" name="load_time_{{ item.driver_id }}" step="1800">
+    </label>
+    {% endfor %}
+    <button type="submit">Создать маршруты</button>
+  </form>
+  {% if existing_routes %}
+  <form method="post" action="/logistics/routing/add" class="row">{% csrf_token %}
+    <input type="hidden" name="date" value="{{ ship_date|date:'Y-m-d' }}">
+    <label>В существующий
+      <select name="route_id" required>
+        {% for route in existing_routes %}
+        <option value="{{ route.id }}">{{ route.name|default:route.id }} · {{ route.driver.full_name|default:"без водителя" }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Дата загрузки
+      <input type="date" name="planned_load_date" value="{{ ship_date|date:'Y-m-d' }}">
+    </label>
+    <label>Время загрузки
+      <input type="time" name="planned_load_time" step="1800">
+    </label>
+    <button type="submit" class="slim">Добавить заказы</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const table = document.getElementById("routing-sheet");
+  if (table) {
+    table.querySelectorAll("tr.zone-row").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("form, select, option, a, button, input, label")) return;
+        const open = row.dataset.open === "1";
+        row.dataset.open = open ? "0" : "1";
+        const icon = row.querySelector(".fold");
+        if (icon) icon.textContent = open ? "+" : "−";
+        const zone = row.dataset.zone;
+        table.querySelectorAll("tr.order-row").forEach((next) => {
+          if (next.dataset.zone === zone) next.classList.toggle("folded", open);
+        });
+      });
+    });
+  }
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\schedule.html
+### SIZE: 2108 bytes / 57 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>График отгрузки</h1>
+    <div class="actions">
+      <a class="btn slim" href="/logistics/routes?date={{ day|date:'Y-m-d' }}">Маршруты</a>
+      <a class="btn slim" href="/logistics/schedule/print?date={{ day|date:'Y-m-d' }}" target="_blank">Печать</a>
+    </div>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/logistics/schedule">
+      <div class="filter-row">
+        <label>Дата <input type="date" name="date" value="{{ day|date:'Y-m-d' }}"></label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<p class="hint">Кто во сколько грузится {{ day|date:"d.m.Y" }}, в том числе с погрузкой накануне.</p>
+
+<table class="sheet">
+  <tr>
+    <th>Дата и время</th>
+    <th>Водитель</th>
+    <th>Маршрут</th>
+    <th>Ост.</th>
+    <th>Вес, кг</th>
+  </tr>
+  {% for item in items %}
+  <tr>
+    <td>
+      {% if item.timed %}
+      {{ item.when }}
+      {% else %}
+      <form method="post" action="/logistics/schedule" class="inline-form">{% csrf_token %}
+        <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+        <input type="hidden" name="route_id" value="{{ item.id }}">
+        <input type="date" name="planned_load_date" value="{{ day|date:'Y-m-d' }}" required>
+        <input type="time" name="planned_load_time" step="1800" required>
+        <button class="slim" type="submit">Назначить</button>
+      </form>
+      {% endif %}
+    </td>
+    <td>{{ item.driver }}</td>
+    <td><a href="/logistics/routes/{{ item.id }}">{{ item.name }}</a></td>
+    <td>{{ item.order_count }}</td>
+    <td>{{ item.weight|kg }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">Нет маршрутов на эту дату</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\shift.html
+### SIZE: 2756 bytes / 68 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="shift-page">
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>Смена</h1>
+  </div>
+  <div class="page-tools">
+    <form class="doc-filter" method="get" action="/shift">
+      <div class="filter-row wrap">
+        <span class="shift-presets">
+          <a class="btn slim{% if preset == 'yesterday' %} on{% endif %}" href="/shift?date_from={{ yesterday|date:'Y-m-d' }}&date_to={{ yesterday|date:'Y-m-d' }}">Вчера</a>
+          <a class="btn slim{% if preset == 'today' %} on{% endif %}" href="/shift?date_from={{ today|date:'Y-m-d' }}&date_to={{ today|date:'Y-m-d' }}">Сегодня</a>
+          <a class="btn slim{% if preset == 'tomorrow' %} on{% endif %}" href="/shift?date_from={{ tomorrow|date:'Y-m-d' }}&date_to={{ tomorrow|date:'Y-m-d' }}">Завтра</a>
+        </span>
+        <label>Период
+          <span class="dates">
+            <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <span class="sep">—</span>
+            <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+          </span>
+        </label>
+        <button class="slim">Показать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="shift-board" id="shift-board">
+  {% include "logistics/_shift_orders.html" %}
+  {% include "logistics/_shift_incoming.html" %}
+  {% include "logistics/_shift_routes.html" %}
+</div>
+</div>
+<script>
+(function () {
+  const board = document.getElementById("shift-board");
+  if (!board) return;
+  board.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-shift-refresh]");
+    if (!button) return;
+    const pane = button.closest(".shift-pane");
+    const scroll = pane.querySelector(".shift-scroll");
+    const top = scroll.scrollTop;
+    const left = scroll.scrollLeft;
+    const url = new URL(window.location.href);
+    url.searchParams.set("part", pane.dataset.part);
+    button.disabled = true;
+    try {
+      const response = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+      const html = await response.text();
+      if (!response.ok || !html.includes("data-part")) return;
+      const next = new DOMParser().parseFromString(html, "text/html").querySelector(".shift-pane");
+      if (!next) return;
+      pane.replaceWith(next);
+      const nextScroll = next.querySelector(".shift-scroll");
+      if (nextScroll) {
+        nextScroll.scrollTop = top;
+        nextScroll.scrollLeft = left;
+      }
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\vehicle_form.html
+### SIZE: 1410 bytes / 19 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/vehicles">К списку</a>
+  </div>
+</div>
+<form method="post" action="{% if item %}/logistics/vehicles/{{ item.id }}{% else %}/logistics/vehicles{% endif %}" class="card grid">{% csrf_token %}
+  <label>Госномер <input name="plate_number" value="{% if item %}{{ item.plate_number }}{% endif %}" required></label>
+  <label>Марка и модель <input name="brand_model" value="{% if item %}{{ item.brand_model }}{% endif %}"></label>
+  <label>Госномер прицепа <input name="trailer_plate" value="{% if item %}{{ item.trailer_plate }}{% endif %}"></label>
+  <label>Тоннаж, кг <input name="load_capacity_kg" type="number" min="1" value="{% if item and item.load_capacity_kg %}{{ item.load_capacity_kg }}{% endif %}"></label>
+  <label>Кол-во паллет <input name="pallet_capacity" type="number" min="1" value="{% if item and item.pallet_capacity %}{{ item.pallet_capacity }}{% endif %}"></label>
+  <label><input type="checkbox" name="is_active" value="1" {% if not item or item.is_active %}checked{% endif %}> Активен</label>
+  <div class="actions wide"><button type="submit">Сохранить</button></div>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\logistics\vehicle_list.html
+### SIZE: 1094 bytes / 26 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+    <a class="btn slim" href="/logistics/vehicles/new">Добавить</a>
+  </div>
+</div>
+<table class="sheet">
+  <tr><th>Госномер</th><th>Марка</th><th>Прицеп</th><th>Тоннаж, кг</th><th>Паллет</th><th>Статус</th><th></th></tr>
+  {% for item in items %}
+  <tr data-href="/logistics/vehicles/{{ item.id }}">
+    <td>{{ item.plate_number }}</td>
+    <td>{{ item.brand_model }}</td>
+    <td>{{ item.trailer_plate }}</td>
+    <td>{% if item.load_capacity_kg %}{{ item.load_capacity_kg }}{% endif %}</td>
+    <td>{% if item.pallet_capacity %}{{ item.pallet_capacity }}{% endif %}</td>
+    <td>{% if item.is_active %}Активен{% else %}Неактивен{% endif %}</td>
+    <td><a href="/logistics/vehicles/{{ item.id }}">Изменить</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\lots\passport.html
+### SIZE: 3006 bytes / 68 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ lot.number }}</h1>
+    <a class="btn slim" href="/stock?run=1">К остаткам</a>
+  </div>
+</div>
+<div class="card">
+  <p>{{ lot.get_source_display }}{% if lot.is_opening %} · начальный остаток{% endif %}</p>
+  <p>{{ lot.product.name }}, калибр {{ lot.caliber.name }}, сортность {{ lot.grade.name }}</p>
+  <p>Поставщик в учёте {{ lot.supplier.name }}. Приход {{ lot.receipt.number|default:"—" }}, {{ lot.received_on|date:"d.m.Y" }}.</p>
+  {% if lot.parent_id %}
+  <p>Родитель <a href="/lots/{{ lot.parent_id }}">{{ lot.parent.number }}</a>.</p>
+  {% endif %}
+  {% if balance %}
+  <p>Свободно {{ balance.free_kg|kg }}, резерв {{ balance.reserved_kg|kg }}, отобрано {{ balance.picked_kg|kg }} кг.</p>
+  {% else %}
+  <p class="hint">Остатка по партии ещё нет.</p>
+  {% endif %}
+  {% for item in made %}
+  <p>Создана документом <a href="/transform/{{ item.document_id }}">{{ item.document.number }}</a>.</p>
+  {% endfor %}
+</div>
+{% if children %}
+<h2>Дочерние партии</h2>
+<table class="sheet">
+  <tr><th>Номер</th><th>Источник</th><th>Товар</th><th>Сорт</th></tr>
+  {% for child in children %}
+  <tr>
+    <td><a href="/lots/{{ child.id }}">{{ child.number }}</a></td>
+    <td>{{ child.get_source_display }}</td>
+    <td>{{ child.product.name }}</td>
+    <td>{{ child.grade.name }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if spent %}
+<h2>Списана в переработку</h2>
+<table class="sheet">
+  <tr><th>Документ</th><th>Паллета</th><th class="num">Кг</th></tr>
+  {% for item in spent %}
+  <tr>
+    <td><a href="/transform/{{ item.document_id }}">{{ item.document.number }}</a></td>
+    <td><a href="/pallets/{{ item.pallet_id }}">{{ item.pallet.number }}</a></td>
+    <td class="num">{{ item.qty_kg|kg }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+<form method="post" action="/lots/{{ lot.id }}" class="card grid">{% csrf_token %}
+  <h2>Паспорт</h2>
+  <label>Срок годности
+    <input type="date" name="expires_on" value="{{ lot.expires_on|date:'Y-m-d' }}">
+  </label>
+  <label>Сорт с паспорта
+    <input name="passport_grade" value="{{ lot.passport_grade }}" maxlength="120">
+  </label>
+  <label>Поставщик с паспорта
+    <input name="passport_supplier" value="{{ lot.passport_supplier }}" maxlength="200">
+  </label>
+  <p class="hint">Сорт и поставщик в учёте остаются справочными. Сюда пишется текст с бумажного паспорта, если он отличается.</p>
+  <button type="submit">Сохранить</button>
+</form>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\masters\consignee_grades.html
+### SIZE: 4095 bytes / 108 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <form class="journal-bar" data-grade-filter onsubmit="return false">
+      <div class="journal-title">{{ title }} <span class="journal-count">{{ consignees|length }}</span></div>
+      <label>Найти
+        <input type="search" placeholder="Код, название или адрес">
+      </label>
+    </form>
+    {% include "masters/nav.html" %}
+  </div>
+  <p class="hint">Пустые галочки — грузополучателю можно любой сорт. Отмеченные — отгружаем только их. Если у его категории уже отмечены сорта, действует список категории, а эта строка не меняет отгрузку. Кнопка сохраняет только эту строку.</p>
+  <form hidden>{% csrf_token %}</form>
+  <div class="journal-table">
+<table class="sheet" data-grade-map>
+  <tr>
+    <th>Код</th>
+    <th>Грузополучатель</th>
+    <th>Адрес</th>
+    {% for grade in grades %}<th>{{ grade.name }}</th>{% endfor %}
+    <th></th>
+  </tr>
+  {% for item in consignees %}
+  <tr data-grade-row data-search="{{ item.code }} {{ item.name }} {{ item.address }}">
+    <td>{{ item.code }}</td>
+    <td>{{ item.name }}</td>
+    <td>{{ item.address }}</td>
+    {% for grade in grades %}
+    <td class="fit">
+      <input type="checkbox" data-grade value="{{ grade.id }}" {% if grade in item.allowed_grades.all %}checked{% endif %}>
+    </td>
+    {% endfor %}
+    <td class="fit">
+      <button type="button" class="slim" data-save-grades="/masters/consignee-grades/{{ item.id }}">Сохранить</button>
+      <span class="zone-status" data-status></span>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="{{ grades|length|add:4 }}">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const table = document.querySelector("[data-grade-map]");
+  if (!table) return;
+  const tokenNode = document.querySelector("[name=csrfmiddlewaretoken]");
+  const token = tokenNode ? tokenNode.value : "";
+
+  function mark(row, text, failed) {
+    const status = row.querySelector("[data-status]");
+    status.textContent = text;
+    status.classList.toggle("bad", !!failed);
+  }
+
+  async function save(row) {
+    const button = row.querySelector("[data-save-grades]");
+    button.disabled = true;
+    mark(row, "", false);
+    try {
+      const body = new FormData();
+      row.querySelectorAll("[data-grade]:checked").forEach((box) => body.append("grade", box.value));
+      const response = await fetch(button.dataset.saveGrades, {
+        method: "POST",
+        headers: { "X-CSRFToken": token },
+        body: body,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        mark(row, data.error || "Не сохранилось", true);
+        return;
+      }
+      mark(row, data.grades || "Сохранено", false);
+    } catch (error) {
+      mark(row, "Не сохранилось", true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  table.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-save-grades]");
+    if (!button) return;
+    save(button.closest("tr"));
+  });
+  table.addEventListener("change", (event) => {
+    const box = event.target.closest("[data-grade]");
+    if (!box) return;
+    mark(box.closest("tr"), "", false);
+  });
+
+  const filter = document.querySelector("[data-grade-filter] input");
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const query = filter.value.trim().toLowerCase();
+      table.querySelectorAll("[data-grade-row]").forEach((row) => {
+        row.hidden = query !== "" && !row.dataset.search.toLowerCase().includes(query);
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\masters\consignee_zones.html
+### SIZE: 6154 bytes / 179 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="journal">
+  <div class="journal-tools">
+    <form class="journal-bar" data-zone-filter onsubmit="return false">
+      <div class="journal-title">{{ title }} <span class="journal-count">{{ consignees|length }}</span></div>
+      <label>Найти
+        <input type="search" placeholder="Код, название или адрес">
+      </label>
+    </form>
+    {% include "masters/nav.html" %}
+  </div>
+  <p class="hint">Выберите зону из списка или введите новую. Пустое поле снимает зону. Кнопка сохраняет только эту строку.</p>
+  <form hidden>{% csrf_token %}</form>
+  {{ zones|json_script:"zone-names" }}
+  <div class="journal-table">
+<table class="sheet" data-zone-map>
+    <tr>
+      <th>Код</th>
+      <th>Грузополучатель</th>
+      <th>Адрес</th>
+      <th>Зона доставки</th>
+      <th></th>
+    </tr>
+    {% for item in consignees %}
+    <tr data-zone-row data-search="{{ item.code }} {{ item.name }} {{ item.address }}">
+      <td>{{ item.code }}</td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.address }}</td>
+      <td>
+        <input class="zone-input" data-zone value="{% if item.zone_id %}{{ item.zone.name }}{% endif %}" autocomplete="off">
+      </td>
+      <td class="fit">
+        <button type="button" class="slim" data-save-zone="/masters/consignee-zones/{{ item.id }}">Сохранить</button>
+        <span class="zone-status" data-status></span>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Пока пусто</td></tr>
+    {% endfor %}
+</table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const table = document.querySelector("[data-zone-map]");
+  if (!table) return;
+  const namesNode = document.getElementById("zone-names");
+  const names = namesNode ? JSON.parse(namesNode.textContent || "[]") : [];
+  const tokenNode = document.querySelector("[name=csrfmiddlewaretoken]");
+  const token = tokenNode ? tokenNode.value : "";
+  const menu = document.createElement("div");
+  menu.className = "combo-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+  let current = null;
+
+  function closeMenu() {
+    menu.hidden = true;
+    current = null;
+  }
+
+  function placeMenu(input) {
+    const box = input.getBoundingClientRect();
+    menu.style.left = box.left + "px";
+    menu.style.top = (box.bottom + 2) + "px";
+    menu.style.minWidth = box.width + "px";
+  }
+
+  function openMenu(input, filter) {
+    current = input;
+    const query = filter ? input.value.trim().toLowerCase() : "";
+    const matches = names.filter((name) => !query || name.toLowerCase().includes(query));
+    menu.innerHTML = "";
+    if (!matches.length) {
+      closeMenu();
+      return;
+    }
+    matches.forEach((name) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = name;
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        input.value = name;
+        closeMenu();
+      });
+      menu.appendChild(button);
+    });
+    placeMenu(input);
+    menu.hidden = false;
+  }
+
+  function remember(name) {
+    if (!name || names.some((item) => item.toLowerCase() === name.toLowerCase())) return;
+    names.push(name);
+    names.sort((left, right) => left.localeCompare(right, "ru"));
+  }
+
+  function mark(row, text, failed) {
+    const status = row.querySelector("[data-status]");
+    status.textContent = text;
+    status.classList.toggle("bad", !!failed);
+  }
+
+  async function save(row) {
+    const button = row.querySelector("[data-save-zone]");
+    const input = row.querySelector("[data-zone]");
+    button.disabled = true;
+    mark(row, "", false);
+    try {
+      const body = new FormData();
+      body.append("zone", input.value);
+      const response = await fetch(button.dataset.saveZone, {
+        method: "POST",
+        headers: { "X-CSRFToken": token },
+        body: body,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        mark(row, data.error || "Не сохранилось", true);
+        return;
+      }
+      input.value = data.zone || "";
+      remember(data.zone || "");
+      mark(row, "Сохранено", false);
+    } catch (error) {
+      mark(row, "Не сохранилось", true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  table.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-save-zone]");
+    if (!button) return;
+    save(button.closest("tr"));
+  });
+  table.addEventListener("focusin", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (input) openMenu(input, false);
+  });
+  table.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (!input) return;
+    mark(input.closest("tr"), "", false);
+    openMenu(input, true);
+  });
+  table.addEventListener("keydown", (event) => {
+    const input = event.target.closest("[data-zone]");
+    if (!input || event.key !== "Enter") return;
+    event.preventDefault();
+    closeMenu();
+    save(input.closest("tr"));
+  });
+  document.addEventListener("mousedown", (event) => {
+    if (event.target.closest(".combo-menu") || event.target.closest("[data-zone]")) return;
+    closeMenu();
+  });
+  window.addEventListener("scroll", (event) => {
+    if (event.target === menu || !current) return;
+    placeMenu(current);
+  }, true);
+
+  const filter = document.querySelector("[data-zone-filter] input");
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const query = filter.value.trim().toLowerCase();
+      table.querySelectorAll("[data-zone-row]").forEach((row) => {
+        row.hidden = query !== "" && !row.dataset.search.toLowerCase().includes(query);
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}
+
+
+==============================================================================
+### FILE: templates\masters\form.html
+### SIZE: 10948 bytes / 179 lines
+==============================================================================
+
+{% extends "base.html" %}
+{% load wms %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-bar">
+  <div class="page-bar-row">
+    <h1>{{ title }}</h1>
+  </div>
+  <div class="page-tools">
+    {% include "masters/nav.html" %}
+  </div>
+</div>

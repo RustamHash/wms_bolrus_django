@@ -18,14 +18,15 @@
 <form method="post" action="{% if item %}/users/{{ item.id }}{% else %}/users{% endif %}" id="user-form">{% csrf_token %}
   <input type="hidden" name="screens_present" value="1">
   <div class="card grid" data-pane="card">
-    <label>Имя <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
-    <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% else %}{% endif %}" required></label>
-    <label>Пароль <input name="password" type="password" placeholder="{% if item %}оставьте пустым, чтобы не менять{% else %}{% endif %}"></label>
-    <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
+    <label>Фамилия <input name="last_name" value="{% if item %}{{ item.last_name }}{% endif %}" required></label>
+    <label>Имя <input name="first_name" value="{% if item %}{% if item.first_name %}{{ item.first_name }}{% elif not item.last_name %}{{ item.name }}{% endif %}{% endif %}" required></label>
+    <label>Отчество <input name="middle_name" value="{% if item %}{{ item.middle_name }}{% endif %}"></label>
+    <label>Логин <input name="login" value="{% if item %}{{ item.login }}{% endif %}" required></label>
+    <label>Пароль <input name="password" type="password" placeholder="{% if item %}пусто — не менять{% else %}нужен только для входа в веб{% endif %}"></label>
     <label>Роль
       <select name="role" id="user-role">
         {% for key, label in roles.items %}
-        <option value="{{ key }}" {% if item and item.role == key %}selected{% endif %}>{{ label }}</option>
+        <option value="{{ key }}" {% if item and item.role == key or not item and key == 'none' %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </label>
@@ -37,7 +38,9 @@
         {% endfor %}
       </select>
     </label>
-    <p class="hint wide">Права должности задаются в справочнике «Должности» и действуют, пока доступы этой карточки не сохранены. Экран смены открывается, если у должности отмечен этот доступ. Офис и администратор видят его и без должности, пока галочки не заданы отдельно.</p>
+    <label>Короткий код ТСД <input name="tsd_code" value="{% if item and item.tsd_code %}{{ item.tsd_code }}{% endif %}" inputmode="numeric" maxlength="6" placeholder="4–6 цифр, можно не задавать"></label>
+    <label>PIN для ТСД <input name="pin" inputmode="numeric" placeholder="не менять, если пусто"></label>
+    <p class="hint wide">Один человек — одна карточка. Роль подставляет экраны веба и ТСД, их можно поправить на соседних вкладках. «Без доступа» — человек числится, например грузчик или переборка, и в программу не входит. Должность только называет работу и сама доступ не открывает.</p>
     {% if can_grant %}
     <label>Доступ в админку
       <input type="checkbox" name="admin_access" value="1" {% if admin_access %}checked{% endif %}>
@@ -51,7 +54,7 @@
     {% include "users/access_grid.html" with screens=web_screens %}
   </div>
   <div class="card" data-pane="tsd" hidden>
-    <p class="hint">Кнопки меню терминала. Чтение показывает пункт и открывает экран, запись разрешает сохранять операцию. Пока карточку с этими галочками не сохраняли, терминал берёт операции из должности и роли.</p>
+    <p class="hint">Кнопки меню терминала. Чтение показывает пункт и открывает экран, запись разрешает сохранять операцию. Пустые галочки — на ТСД входа нет.</p>
     {% include "users/access_grid.html" with screens=tsd_screens %}
   </div>
   <button>Сохранить</button>
@@ -96,10 +99,8 @@
     const marks = new Set(presets[role.value] || []);
     form.querySelectorAll("input[name=screen]").forEach((box) => { box.checked = marks.has(box.value); });
   };
-  {% if not item %}
-  apply();
+  if (!{{ item|yesno:"true,false" }}) apply();
   role.addEventListener("change", apply);
-  {% endif %}
 })();
 </script>
 {% endblock %}

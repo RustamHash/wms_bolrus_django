@@ -8,7 +8,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from apps.catalog.models import ExternalProduct, ProductAlias, Seller
-from apps.catalog.parties import consignee_for_buyer, upsert_client, upsert_consignee, upsert_external, upsert_supplier
+from apps.catalog.parties import upsert_consignee, upsert_external, upsert_supplier
 from apps.common.numbers import document_number
 from apps.onec.dto import OrderDTO
 from apps.onec.orders import OnecOrders
@@ -544,13 +544,15 @@ def _sync_customer(
         return "Пропущен заказ без номера"
     if doc.state not in CUSTOMER_STATES and not any_status:
         return f"Пропущен {external}: статус «{doc.state or '—'}»"
-    found = Order.objects.filter(external_number=external).select_related("client", "consignee", "seller").first()
+    found = Order.objects.filter(external_number=external).select_related("consignee", "seller").first()
     if found is not None and not update:
         report.duplicates.append(external)
         return f"Пропущен {external}: уже есть в WMS"
-    if not doc.party.name:
-        report.missing_files.append(f"{external}: нет покупателя в 1С")
-        return f"Пропущен {external}: нет покупателя в 1С"
+    party_name = doc.consignee.name or doc.party.name
+    party_code = doc.consignee.code or doc.party.code
+    if not party_name:
+        report.missing_files.append(f"{external}: нет грузополучателя в 1С")
+        return f"Пропущен {external}: нет грузополучателя в 1С"
     ship_date = doc.ship_date or (doc.date.date() if doc.date else None)
     if ship_date is None:
         report.missing_files.append(f"{external}: нет даты отгрузки")
@@ -559,15 +561,8 @@ def _sync_customer(
     if seller is None:
         report.missing_files.append(f"{external}: нет продавца для «{doc.organization.name or '—'}»")
         return f"Пропущен {external}: нет продавца для «{doc.organization.name or '—'}»"
-    client = upsert_client(doc.party.name, doc.party.code)
     address = (doc.delivery_address or "").strip()
-    if doc.consignee.name:
-        consignee = upsert_consignee(doc.consignee.name, doc.consignee.code, address=address)
-    else:
-        consignee = consignee_for_buyer(client)
-        if address and consignee.address != address:
-            consignee.address = address
-            consignee.save(update_fields=["address"])
+    consignee = upsert_consignee(party_name, party_code, address=address)
     lines = _line_dicts(doc, externals=externals, aliases=aliases, report=report, upsert_missing=True)
     if not lines:
         report.empty.append(external)
@@ -576,14 +571,13 @@ def _sync_customer(
         result = apply_import(
             found,
             user,
-            client=client,
             consignee=consignee,
             seller=seller,
             ship_date=ship_date,
             terms=doc.comment or "",
             lines=lines,
         )
-        row = _customer_row(found, external, client.name, result["changes"])
+        row = _customer_row(found, external, consignee.name, result["changes"])
         kind = result["kind"]
         if kind == "updated":
             row["revision"] = result["revision"]
@@ -598,15 +592,13 @@ def _sync_customer(
         report.unchanged.append(row)
         return f"Без изменений {found.number} ({external})"
     order = create_order(
-        client_id=client.id,
+        consignee_id=consignee.id,
         seller_id=seller.id,
         ship_date=ship_date,
         shipping_terms=doc.comment or "",
         user=user,
-        consignee_id=consignee.id,
+        number=external,
     )
-    order.external_number = external
-    order.save(update_fields=["external_number"])
     for item in lines:
         OrderLine.objects.create(
             order=order,
@@ -620,5 +612,5 @@ def _sync_customer(
             for_task=item["for_task"],
         )
     store_baseline(order, user)
-    report.created.append(_customer_row(order, external, client.name))
+    report.created.append(_customer_row(order, external, consignee.name))
     return f"Создан заказ {order.number} ({external})"

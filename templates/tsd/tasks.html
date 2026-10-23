@@ -7,10 +7,10 @@
   {% for task in tasks %}
   <a class="btn menu" href="/tsd/tasks/{{ task.id }}" {% if forloop.counter <= 9 %}data-digit="{{ forloop.counter }}"{% endif %}>
     {% if forloop.counter <= 9 %}<span class="digit">{{ forloop.counter }}</span>{% endif %}
-    <span>{{ task.number }} · {% if task.purchase_order %}{{ task.purchase_order.supplier.name }}{% elif task.order %}{{ task.order.number }}{% endif %}</span>
+    <span>{{ task.number }} · {% if task.purchase_order %}{{ task.purchase_order.supplier.name }}{% elif task.order %}{{ task.order.number }}{% endif %}{% if task.assignee %} · {{ task.assignee.name }}{% endif %}</span>
   </a>
   {% empty %}
-  <p>Заданий нет.</p>
+  <p>{{ empty|default:"Вам не назначены задания." }}</p>
   {% endfor %}
   <a class="btn menu back" data-digit="0" href="/tsd"><span class="digit">0</span>Меню</a>
 </nav>

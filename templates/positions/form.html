@@ -18,7 +18,7 @@
       <label><input type="checkbox" name="access" value="{{ key }}" {% if key in selected %}checked{% endif %}> {{ label }}</label>
       {% endfor %}
     </div>
-    <p class="hint">Эти права получают все, кому назначена должность.</p>
+    <p class="hint">Подпись к должности, не вход в программу. Грузчик и переборка остаются без галочек. Куда человек входит, задают роль и экраны в его карточке.</p>
   </fieldset>
   <label>Активна <input type="checkbox" name="active" value="1" {% if not item or item.is_active %}checked{% endif %}></label>
   <button>Сохранить</button>
