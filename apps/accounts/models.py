@@ -87,6 +87,26 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.name
 
+    def short_name(self) -> str:
+        last = (self.last_name or "").strip()
+        first = (self.first_name or "").strip()
+        middle = (self.middle_name or "").strip()
+        if not last and not first and not middle:
+            parts = (self.name or "").split()
+            if len(parts) >= 2:
+                last, first = parts[0], parts[1]
+                middle = " ".join(parts[2:])
+            else:
+                return (self.name or self.login or "").strip()
+        initials = ""
+        if first:
+            initials += f"{first[0].upper()}."
+        if middle:
+            initials += f"{middle[0].upper()}."
+        if last and initials:
+            return f"{last} {initials}"
+        return last or initials or (self.name or "").strip()
+
     def apply_fio(self, last_name: str, first_name: str, middle_name: str = "") -> None:
         self.last_name = last_name
         self.first_name = first_name

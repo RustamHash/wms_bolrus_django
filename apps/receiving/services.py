@@ -295,16 +295,14 @@ def edit_inbound(
     caliber, grade = _fact(caliber_id, grade_id)
     packaging = get_row(Packaging, packaging_id, "тара")
     gross, net = _resolve_weight(places, pallet_type, gross_kg, net_kg, packaging.tare_kg, net_manual)
-    pallet.units.all().delete()
-    pallet.pallet_type = pallet_type
-    pallet.save(update_fields=["pallet_type"])
     lot = _lot(receipt, movement.task_line.product_id, caliber.id, grade.id)
-    _places(
+    replace_units(
+        pallet=pallet,
         receipt=receipt,
         lot=lot,
-        pallet=pallet,
         packaging=packaging,
         places=places,
+        pallet_type=pallet_type,
         gross_kg=gross,
         net_kg=net,
         grade_id=grade.id,
@@ -312,25 +310,46 @@ def edit_inbound(
     return update_in(movement, lot=lot, qty_kg=net)
 
 
+def replace_units(*, pallet, receipt, lot, packaging, places: int, pallet_type: str, gross_kg, net_kg, grade_id):
+    pallet.units.all().delete()
+    pallet.pallet_type = pallet_type
+    pallet.save(update_fields=["pallet_type"])
+    return _places(
+        receipt=receipt,
+        lot=lot,
+        pallet=pallet,
+        packaging=packaging,
+        places=places,
+        gross_kg=gross_kg,
+        net_kg=net_kg,
+        grade_id=grade_id,
+    )
+
+
 def pallet_defaults(task: Task) -> dict[int, dict]:
     from apps.inventory.models import Movement
 
-    query = Movement.objects.filter(kind="in", task__isnull=False).select_related("pallet", "lot").prefetch_related(
-        "pallet__units"
+    query = (
+        Movement.objects.filter(kind="in", task_id=task.id, pallet__kind="inbound")
+        .select_related("pallet", "lot")
+        .prefetch_related("pallet__units", "pallet__allowed_categories")
+        .order_by("-id")
     )
-    if task.purchase_order_id:
-        query = query.filter(task__purchase_order_id=task.purchase_order_id)
-    else:
-        query = query.filter(task_id=task.id)
     found: dict[int, dict] = {}
-    for movement in query.order_by("-id"):
+    for movement in query:
         product_id = movement.lot.product_id
         if product_id in found:
             continue
-        unit = movement.pallet.units.all().first()
+        pallet = movement.pallet
+        units = list(pallet.units.all())
+        unit = units[0] if units else None
         found[product_id] = {
-            "pallet_type": movement.pallet.pallet_type or "",
+            "pallet_type": pallet.pallet_type or "",
             "packaging_id": unit.packaging_id if unit else None,
+            "caliber_id": movement.lot.caliber_id,
+            "grade_id": movement.lot.grade_id,
+            "consignee_id": pallet.reserved_consignee_id or "",
+            "category_ids": [item.id for item in pallet.allowed_categories.all()],
         }
     return found
 

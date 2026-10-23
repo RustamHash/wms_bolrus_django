@@ -7,7 +7,7 @@ from django.contrib.auth import logout
 
 from apps.accounts.access import opens_tsd, opens_web, path_action, screen_allows, screens_for_path
 
-_OPERATION = re.compile(r"^/(?:tasks/\d+/(?:receive|pick|ship)|movements/\d+/delete)$")
+_OPERATION = re.compile(r"^/(?:tasks/\d+/(?:receive|pick|ship)|movements/\d+/delete|print/pallets/\d+)$")
 
 
 class StaffWebGate:

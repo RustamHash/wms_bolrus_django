@@ -1,5 +1,5 @@
 ﻿{% load wms %}
-<form method="post" action="/tasks/{{ task.id }}/receive" data-accept class="card">{% csrf_token %}
+<form method="post" action="/tasks/{{ task.id }}/receive" data-accept class="card"{% if request.path|startswith:'/tsd' %} data-compact{% endif %}>{% csrf_token %}
   <input type="hidden" name="next" value="{% if request.path|startswith:'/tsd' %}/tsd/tasks/{{ task.id }}{% else %}/tasks/{{ task.id }}?tab=manual{% endif %}">
   <label>Строка
     <select name="task_line_id" data-task-line required>
@@ -7,10 +7,12 @@
       {% with memory=defaults|lookup:line.product_id info=reserve|get_item:line.id %}
       <option value="{{ line.id }}"
         data-product="{{ line.product_id }}"
-        data-caliber="{{ line.caliber_id }}"
-        data-grade="{{ line.grade_id }}"
+        data-caliber="{% if memory and memory.caliber_id %}{{ memory.caliber_id }}{% else %}{{ line.caliber_id }}{% endif %}"
+        data-grade="{% if memory and memory.grade_id %}{{ memory.grade_id }}{% else %}{{ line.grade_id }}{% endif %}"
         data-pallet="{% if memory %}{{ memory.pallet_type }}{% endif %}"
-        data-packaging="{% if memory %}{{ memory.packaging_id }}{% endif %}"
+        data-packaging="{% if memory and memory.packaging_id %}{{ memory.packaging_id }}{% endif %}"
+        data-consignee="{% if memory %}{{ memory.consignee_id }}{% endif %}"
+        data-categories="{% if memory %}{{ memory.category_ids|join:',' }}{% endif %}"
         {% if info %}data-reserve-label="{{ info.label }}" data-reserve-plan="{{ info.plan }}" data-reserve-held="{{ info.held }}"{% endif %}>
         {{ line.product.name }} · план {{ line.qty_kg|kg }} · принято {{ received|get_item:line.id|kg }}
       </option>
@@ -18,6 +20,7 @@
       {% endfor %}
     </select>
   </label>
+  <div data-parameters-panel{% if request.path|startswith:'/tsd' %} hidden{% endif %}>
   <label>Калибр
     <select name="caliber_id" required>
       <option value=""></option>
@@ -46,11 +49,6 @@
       {% endfor %}
     </select>
   </label>
-  <label>Упаковок <input name="places" inputmode="numeric" required></label>
-  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
-  <label>Чистый вес, кг <input name="net" inputmode="decimal" required></label>
-  <input type="hidden" name="net_manual" value="0">
-  <p class="hint">Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок. Поле можно поправить.</p>
   {% if consignee_categories %}
   <fieldset>
     <legend>Категории отгрузки</legend>
@@ -73,12 +71,20 @@
   </label>
   <p class="hint" data-client-hint>Начните вводить имя. Пусто — паллета в общий остаток. Грузополучатель — паллета ждёт его заказ и другим не отдаётся.</p>
   {% endif %}
+  </div>
+  <label>Упаковок <input name="places" inputmode="numeric" required></label>
+  <label>Грязный вес, кг <input name="gross" inputmode="decimal" required></label>
+  <label class="check" data-net-toggle><input type="checkbox"> Ввести чистый вес</label>
+  <label data-net-box>Чистый вес, кг <input name="net" inputmode="decimal"></label>
+  <input type="hidden" name="net_manual" value="0">
+  <p class="hint" data-net-hint>Чистый вес считается сам: грязный минус вес деревяшки и минус тара одной упаковки, умноженная на число упаковок.</p>
   <label class="check" data-reserve-box hidden>
     <input type="checkbox" name="reserve" value="1">
     Резерв под <span data-reserve-caption></span>
   </label>
   <p class="hint" data-reserve-progress hidden></p>
   <button class="btn menu">Принять паллету</button>
+  <button type="button" class="btn menu back" data-parameters>Параметры</button>
 </form>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
@@ -120,6 +126,7 @@
       const clientList = pick ? pick.querySelector("[data-client-list]") : null;
       const clientButtons = clientList ? [...clientList.querySelectorAll("button")] : [];
       let clientChosen = "";
+      let chooseClient = () => {};
       const clientLabel = (id) => {
         const button = clientButtons.find((item) => item.dataset.id === id);
         return button && id ? button.textContent.trim() : "";
@@ -137,7 +144,7 @@
         if (!needle) marked = clientButtons[0];
         if (marked) marked.classList.add("mark");
       };
-      const chooseClient = (id) => {
+      chooseClient = (id) => {
         clientChosen = id || "";
         clientValue.value = clientChosen;
         clientQuery.value = clientLabel(clientChosen);
@@ -195,10 +202,14 @@
         form.querySelector("[name=grade_id]").value = option.getAttribute("data-grade") || "";
         form.querySelector("[name=pallet_type]").value = option.getAttribute("data-pallet") || "";
         form.querySelector("[name=packaging_id]").value = option.getAttribute("data-packaging") || "";
+        const savedCategories = (option.getAttribute("data-categories") || "").split(",").filter(Boolean);
+        form.querySelectorAll("[name=category_id]").forEach((box) => {
+          box.checked = savedCategories.includes(box.value);
+        });
         const caption = option.getAttribute("data-reserve-label") || "";
         if (clientBox) clientBox.hidden = !!caption;
         if (clientHint) clientHint.hidden = !!caption;
-        if (caption && clientValue) chooseClient("");
+        if (clientValue) chooseClient(caption ? "" : (option.getAttribute("data-consignee") || ""));
         if (reserveBox) {
           reserveBox.hidden = !caption;
           reserveBox.querySelector("[data-reserve-caption]").textContent = caption;
@@ -214,16 +225,70 @@
         }
         setManual(false);
         recalc();
+        const toggle = form.querySelector("[data-net-toggle] input");
+        if (form.hasAttribute("data-compact") && toggle && toggle.checked) setManual(true);
       };
       const packaging = form.querySelector("[name=packaging_id]");
       const palletType = form.querySelector("[name=pallet_type]");
       const places = form.querySelector("[name=places]");
       const gross = form.querySelector("[name=gross]");
+      const refreshNet = () => {
+        const toggle = form.querySelector("[data-net-toggle] input");
+        if (form.hasAttribute("data-compact") && toggle && toggle.checked) return;
+        setManual(false);
+        recalc();
+      };
       if (line) line.addEventListener("change", applyLine);
-      if (palletType) palletType.addEventListener("change", () => { setManual(false); recalc(); });
-      packaging.addEventListener("change", () => { setManual(false); recalc(); });
-      places.addEventListener("input", () => { setManual(false); recalc(); });
-      gross.addEventListener("input", () => { setManual(false); recalc(); });
+      if (palletType) palletType.addEventListener("change", refreshNet);
+      packaging.addEventListener("change", refreshNet);
+      places.addEventListener("input", refreshNet);
+      gross.addEventListener("input", refreshNet);
+      const compact = form.hasAttribute("data-compact");
+      const parameterNames = ["caliber_id", "grade_id", "pallet_type", "packaging_id"];
+      if (compact) {
+        parameterNames.forEach((name) => {
+          const field = form.querySelector(`[name=${name}]`);
+          if (field) field.required = false;
+        });
+      }
+      const netToggle = form.querySelector("[data-net-toggle] input");
+      const netBox = form.querySelector("[data-net-box]");
+      const netHint = form.querySelector("[data-net-hint]");
+      if (compact && netToggle && netBox) {
+        net.required = false;
+        const applyNetMode = () => {
+          const manualOn = netToggle.checked;
+          net.disabled = !manualOn;
+          net.required = manualOn;
+          if (netHint) netHint.hidden = manualOn;
+          setManual(false);
+          recalc();
+          if (manualOn) setManual(true);
+        };
+        netToggle.addEventListener("change", applyNetMode);
+        applyNetMode();
+      }
+      const panel = form.querySelector("[data-parameters-panel]");
+      const parameters = form.querySelector("[data-parameters]");
+      if (parameters && panel) {
+        parameters.addEventListener("click", () => {
+          panel.hidden = !panel.hidden;
+          if (!panel.hidden) {
+            const focus = panel.querySelector("select, input");
+            if (focus) focus.focus();
+          }
+        });
+      }
+      form.addEventListener("submit", (event) => {
+        if (!compact || !panel) return;
+        const missing = parameterNames
+          .map((name) => form.querySelector(`[name=${name}]`))
+          .find((field) => field && !field.value);
+        if (!missing) return;
+        event.preventDefault();
+        panel.hidden = false;
+        missing.focus();
+      });
       if (line) applyLine();
     });
   });

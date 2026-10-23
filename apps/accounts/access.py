@@ -322,11 +322,12 @@ def sync_user_screens(user, grants: set[tuple[str, str]]) -> None:
 def screens_for_path(path: str) -> list[str]:
     if path.startswith("/tsd/tasks"):
         return ["tsd_receive", "tsd_pick", "tsd_ship"]
+    if path.startswith("/print/pallets"):
+        return ["web_reports", "tsd_receive"]
     if path.startswith("/shift"):
         return ["web_shift", "tsd_shift"]
     prefixes = (
         ("/print/shipments", "web_shipments"),
-        ("/print/pallets", "web_reports"),
         ("/print/units", "web_reports"),
         ("/print/printers", "web_masters"),
         ("/orders", "web_orders"),

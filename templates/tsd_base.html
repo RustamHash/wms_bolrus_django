@@ -8,6 +8,9 @@
   <nav>
     <a href="/tsd/find" class="{% if request.path|startswith:'/tsd/find' %}active{% endif %}">Поиск</a>
   </nav>
-  <form method="post" action="/logout">{% csrf_token %}<input type="hidden" name="next" value="/tsd/login"><button class="link">Выход</button></form>
+  <div class="account">
+    {% if user.is_authenticated %}<span class="tsd-user">{{ user.short_name }}</span>{% endif %}
+    <form method="post" action="/logout">{% csrf_token %}<input type="hidden" name="next" value="/tsd/login"><button class="link">Выход</button></form>
+  </div>
 </header>
 {% endblock %}

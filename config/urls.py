@@ -35,6 +35,7 @@ urlpatterns = [
     path("staff/<int:user_id>", accept(accounts.staff_edit, accounts.staff_update)),
     path("users", accept(accounts.users_list, accounts.users_create)),
     path("users/new", accounts.users_new),
+    path("users/<int:user_id>/delete", accept(post=accounts.users_delete)),
     path("users/<int:user_id>/badge.png", accounts.users_badge_png),
     path("users/<int:user_id>/badge", accept(accounts.users_badge_page, accounts.users_new_badge)),
     path("users/<int:user_id>", accept(accounts.users_edit, accounts.users_update)),

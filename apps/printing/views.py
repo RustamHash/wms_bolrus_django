@@ -8,7 +8,7 @@ from apps.common.http import back_url, roles_required
 from apps.planning.models import Task
 from apps.printing import labels, pdfs
 from apps.printing.models import Printer
-from apps.printing.services import print_pallet, print_shipment, print_unit, send_pdf, send_tspl
+from apps.printing.services import print_accepted_passport, print_pallet, print_shipment, print_unit, send_pdf, send_tspl
 from apps.shipping.models import Shipment
 from apps.storage.models import HandlingUnit, Pallet
 
@@ -93,7 +93,7 @@ def pallet_pdf(request, pallet_id):
     return _pdf(content, f"pallet-{pallet.id}.pdf")
 
 
-@roles_required("receiver", "warehouse")
+@roles_required("receiver", "warehouse", tsd=("receive",))
 def pallet_print(request, pallet_id):
     pallet = Pallet.objects.filter(pk=pallet_id).select_related("order__consignee", "reserved_consignee").prefetch_related(
         "units__lot__product", "units__lot__caliber", "units__lot__supplier", "units__grade"
@@ -102,7 +102,8 @@ def pallet_print(request, pallet_id):
     if pallet is None:
         return _fail(request, target, "Паллета не найдена")
     try:
-        message = print_pallet(pallet, text(request.POST, "target"))
+        chosen = text(request.POST, "target")
+        message = print_accepted_passport(pallet) if not chosen else print_pallet(pallet, chosen)
     except WarehouseError as exc:
         return _fail(request, target, str(exc))
     return _ok(request, target, message)

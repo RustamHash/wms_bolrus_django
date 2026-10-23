@@ -68,6 +68,11 @@
     <button>Выпустить новый QR</button>
   </form>
 </div>
+{% if item.id != user.id %}
+<form method="post" action="/users/{{ item.id }}/delete" onsubmit="return confirm('Удалить пользователя {{ item.name }}?');">{% csrf_token %}
+  <button>Удалить</button>
+</form>
+{% endif %}
 {% endif %}
 {{ role_presets|json_script:"role-access" }}
 {% endblock %}

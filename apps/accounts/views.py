@@ -3,9 +3,9 @@ import io
 import qrcode
 from django.contrib import messages
 from django.contrib.auth import login, logout
+from django.db.models import F, ProtectedError, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db.models import F, Sum
 
 from apps.accounts.access import (
     ACTIONS,
@@ -304,6 +304,31 @@ def users_update(request, user_id):
     if response:
         return response
     return done(request, "/users", "Сохранено")
+
+
+@roles_required("office")
+def users_delete(request, user_id):
+    def action():
+        item = User.objects.filter(pk=user_id).first()
+        if item is None:
+            raise WarehouseError("Пользователь не найден")
+        if item.id == request.user.id:
+            raise WarehouseError("Свою карточку удалить нельзя")
+        if item.role == "admin" and not can_open_admin(request.user):
+            raise WarehouseError("Этого пользователя удаляет администратор")
+        name = item.name
+        try:
+            item.delete()
+        except ProtectedError as exc:
+            raise WarehouseError(
+                "Пользователь уже есть в документах склада, его нельзя удалить. Снимите галочку «Активен»."
+            ) from exc
+        return name
+
+    result, response = guarded(request, "/users", action)
+    if response:
+        return response
+    return done(request, "/users", f"Пользователь {result} удалён")
 
 
 @roles_required("office")

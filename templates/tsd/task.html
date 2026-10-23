@@ -14,13 +14,25 @@
 
 <h2>Принято</h2>
 {% for movement in movements %}
+<div class="accepted">
 <p>{{ movement.pallet.number }} · {{ movement.pallet.units.all|length }} мест{% if movement.pallet.units.all %} · {{ movement.pallet.units.all.0.packaging.name }} ({{ movement.pallet.units.all.0.packaging.tare_kg|kg }} кг){% endif %} · {% pallet_label movement.pallet.pallet_type %} · чистый {{ movement.qty_kg|kg }} кг{% if movement.pallet.order %} · резерв {{ movement.pallet.order.number }}{% elif movement.pallet.reserved_consignee %} · резерв {{ movement.pallet.reserved_consignee.name }}{% endif %}</p>
 {% if movement.id in editable %}
+<div class="accepted-actions">
+<form method="post" action="/print/pallets/{{ movement.pallet.id }}">{% csrf_token %}
+  <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
+  <button class="icon-btn" title="Печать" aria-label="Печать">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>
+  </button>
+</form>
 <form method="post" action="/movements/{{ movement.id }}/delete">{% csrf_token %}
   <input type="hidden" name="next" value="/tsd/tasks/{{ task.id }}">
-  <button>Удалить</button>
+  <button class="icon-btn danger" title="Удалить" aria-label="Удалить">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M8 7l1 13h6l1-13"/></svg>
+  </button>
 </form>
+</div>
 {% endif %}
+</div>
 {% endfor %}
 {% endif %}
 
