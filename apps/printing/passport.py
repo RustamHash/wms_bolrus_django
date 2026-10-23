@@ -39,13 +39,20 @@ def render_pallet_passport_pdf(pallet) -> bytes:
         shutil.rmtree(folder, ignore_errors=True)
 
 
+def _weights(units) -> tuple:
+    gross = sum((as_kg(unit.gross_kg) for unit in units), start=0)
+    net = sum((as_kg(unit.net_kg) for unit in units), start=0)
+    return gross, net
+
+
 def _context(pallet, units) -> dict:
+    gross, net = _weights(units)
     return {
         "date": _unique(unit.lot.received_on.strftime("%d.%m.%Y") for unit in units) or _fallback_date(pallet),
         "supplier": _unique(unit.lot.supplier.name for unit in units),
         "product": _unique(_product(unit) for unit in units),
         "grade": _unique(unit.grade.name for unit in units),
-        "weight": f"{format_kg(sum((as_kg(unit.net_kg) for unit in units), start=0))} кг",
+        "weight": f"{format_kg(gross)} / {format_kg(net)} кг",
         "client": _client_name(pallet),
     }
 
@@ -91,6 +98,9 @@ def _qr_text(pallet, units) -> str:
         buckets[key] = buckets.get(key, 0) + 1
     for (name, kg), count in buckets.items():
         lines.append(f"{name}: {count} x {format_kg(kg)} кг")
+    gross, net = _weights(units)
+    lines.append(f"Брутто {format_kg(gross)} кг")
+    lines.append(f"Нетто {format_kg(net)} кг")
     return "\n".join(lines) or (pallet.number or pallet.barcode or str(pallet.pk))
 
 

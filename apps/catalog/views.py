@@ -126,9 +126,15 @@ def _form_context(kind, item, *, external_product_id=None):
         from apps.printing.installed import list_installed
 
         try:
-            data["installed_printers"] = list_installed()
+            installed = list_installed()
         except Exception as exc:
             data["installed_error"] = str(exc)
+        else:
+            names = [row["name"] for row in installed]
+            current = (item.queue_name or "").strip() if item is not None else ""
+            if current and current not in names:
+                installed.append({"name": current})
+            data["installed_printers"] = installed
     return data
 
 

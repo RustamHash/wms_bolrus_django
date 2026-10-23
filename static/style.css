@@ -135,8 +135,6 @@ body.tsd .accepted-actions button.icon-btn.danger { color: var(--bad); border-co
 body.tsd .accepted-actions button.icon-btn svg { width: 28px; height: 28px; display: block; }
 body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
 .hint { font-size: 14px; color: #5d6b61; }
-.printer-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
-.printer-list label { display: flex; gap: 8px; align-items: center; }
 .import-log {
   display: block;
   width: 100%;

@@ -128,42 +128,31 @@
   <label>Реквизиты для стикера <textarea name="requisites">{% if item %}{{ item.requisites }}{% else %}{% endif %}</textarea></label>
   {% endif %}
   {% if kind == 'printers' %}
-  <label>Поиск <input type="search" id="printer-search" placeholder="Имя принтера на сервере"></label>
   {% if installed_error %}
   <p class="hint">{{ installed_error }}</p>
   {% elif not installed_printers %}
   <p class="hint">На сервере нет установленных принтеров.</p>
   {% else %}
-  <div class="printer-list">
-    {% for printer in installed_printers %}
-    <label data-name="{{ printer.name }}">
-      <input type="radio" name="queue_name" value="{{ printer.name }}" {% if item and item.queue_name == printer.name %}checked{% endif %} required>
-      {{ printer.name }}
-    </label>
-    {% endfor %}
-  </div>
+  <label>Принтер на сервере
+    <select name="queue_name" id="queue-name" required>
+      <option value=""></option>
+      {% for printer in installed_printers %}
+      <option value="{{ printer.name }}" {% if item and item.queue_name == printer.name %}selected{% endif %}>{{ printer.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
   {% endif %}
-  <label>Название <input name="name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
+  <label>Название <input name="name" id="printer-name" value="{% if item %}{{ item.name }}{% else %}{% endif %}" required></label>
   <label>По умолчанию <input type="checkbox" name="is_default" value="1" {% if item and item.is_default %}checked{% endif %}></label>
-  <p class="hint">Подключается только принтер, установленный на сервере. Размер этикетки от вида документа: товар 58×40 мм, паллета и отгрузка 100×70 мм.</p>
+  <p class="hint">Подключается только принтер, установленный на сервере. Название подставляется из выбранного принтера, его можно поправить. Размер этикетки от вида документа: товар 58×40 мм, паллета и отгрузка 100×70 мм.</p>
   <script>
-    var search = document.getElementById("printer-search");
-    var nameInput = document.querySelector("input[name=name]");
-    if (nameInput && nameInput.value) nameInput.dataset.touched = "1";
-    if (search) {
-      search.addEventListener("input", function () {
-        var query = search.value.trim().toLowerCase();
-        document.querySelectorAll(".printer-list label").forEach(function (row) {
-          row.hidden = query && row.dataset.name.toLowerCase().indexOf(query) < 0;
-        });
+    var queue = document.getElementById("queue-name");
+    var nameInput = document.getElementById("printer-name");
+    if (queue && nameInput) {
+      queue.addEventListener("change", function () {
+        if (queue.value) nameInput.value = queue.value;
       });
     }
-    document.querySelectorAll("input[name=queue_name]").forEach(function (radio) {
-      radio.addEventListener("change", function () {
-        if (nameInput && !nameInput.dataset.touched) nameInput.value = radio.value;
-      });
-    });
-    if (nameInput) nameInput.addEventListener("input", function () { nameInput.dataset.touched = "1"; });
   </script>
   {% endif %}
   <button>Сохранить</button>
