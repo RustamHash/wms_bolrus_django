@@ -132,13 +132,14 @@ body.tsd input[data-code] { font-size: 28px; letter-spacing: 2px; }
 }
 .import-log[hidden] { display: none; }
 .page-bar .doc-filter .import-log { max-width: 720px; }
-.client-pick { position: relative; display: block; }
+.client-pick { position: relative; display: block; z-index: 30; }
 .client-pick input { width: 100%; }
 .client-pick ul { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 280px; overflow: auto; background: white; border: 1px solid #b7c4b8; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.client-pick ul[hidden] { display: none !important; }
 .client-pick li { margin: 0; }
 .client-pick button, body.tsd .client-pick button { display: block; width: 100%; margin: 0; padding: 8px 10px; background: white; color: var(--ink); text-align: left; font-weight: 400; border-radius: 6px; min-height: 40px; }
 .client-pick button.mark, .client-pick button:hover { background: #e7f3ec; }
-body.tsd .client-pick ul { max-height: 320px; }
+body.tsd .client-pick ul { position: static; z-index: auto; max-height: 240px; margin-top: 6px; box-shadow: none; }
 body.tsd .client-pick button { min-height: 52px; font-size: 20px; }
 main:has(.page-bar) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 8px; row-gap: 4px; }
 main:has(.page-bar) > .back { grid-column: 1; grid-row: 1; align-self: start; height: 24px; margin: 2px 0 0; padding: 2px 8px; font-size: 13px; }

@@ -23,18 +23,21 @@
   var list = root.querySelector("[data-cell-list]");
   var buttons = list ? Array.prototype.slice.call(list.querySelectorAll("button")) : [];
   function norm(value) { return (value || "").replace(/[\u0000-\u001f]/g, "").trim().toLowerCase(); }
-  function compact(value) { return norm(value).replace(/[-\s]/g, ""); }
-  function exact(raw) {
+  function compact(value) { return norm(value).replace(/[-\s·.:]/g, ""); }
+  function same(button, raw) {
     var key = norm(raw);
-    if (!key) return null;
     var folded = compact(raw);
-    var byBarcode = buttons.filter(function (button) { return norm(button.dataset.barcode) === key; });
-    if (byBarcode.length === 1) return byBarcode[0];
-    var byLabel = buttons.filter(function (button) {
-      return norm(button.dataset.label) === key || compact(button.dataset.label) === folded;
-    });
-    if (byLabel.length === 1 && folded.length >= compact(byLabel[0].dataset.label).length) return byLabel[0];
-    return null;
+    if (!key) return false;
+    return norm(button.dataset.barcode) === key
+      || norm(button.dataset.code) === key
+      || norm(button.dataset.label) === key
+      || compact(button.dataset.label) === folded
+      || compact(button.dataset.code) === folded;
+  }
+  function exact(raw) {
+    if (!norm(raw)) return null;
+    var found = buttons.filter(function (button) { return same(button, raw); });
+    return found.length === 1 ? found[0] : null;
   }
   function choose(button) {
     if (!button) return;
@@ -42,49 +45,62 @@
     query.value = (button.dataset.label || button.textContent).trim();
     list.hidden = true;
   }
-  function paint() {
-    var needle = norm(query.value);
-    var folded = compact(query.value);
-    var marked = null;
-    buttons.forEach(function (button) {
+  function ranked(raw) {
+    var needle = norm(raw);
+    var folded = compact(raw);
+    if (!needle) return [];
+    return buttons.filter(function (button) {
       var search = norm((button.dataset.search || "") + " " + button.textContent);
-      var match = !needle || search.indexOf(needle) !== -1 || compact(search).indexOf(folded) !== -1;
-      button.parentElement.hidden = !match;
-      button.classList.remove("mark");
-      if (match && !marked) marked = button;
+      var foldedSearch = compact(search);
+      var code = compact(button.dataset.code || "");
+      var label = compact(button.dataset.label || "");
+      return search.indexOf(needle) !== -1
+        || foldedSearch.indexOf(folded) !== -1
+        || code.indexOf(folded) === 0
+        || label.indexOf(folded) === 0;
+    }).sort(function (left, right) {
+      function rank(button) {
+        var code = compact(button.dataset.code || "");
+        var label = compact(button.dataset.label || "");
+        if (code === folded || label === folded || norm(button.dataset.barcode) === needle) return 0;
+        if (code.indexOf(folded) === 0 || label.indexOf(folded) === 0) return 1;
+        return 2;
+      }
+      return rank(left) - rank(right);
     });
-    if (marked) marked.classList.add("mark");
-    return marked;
   }
-  function openList() {
-    var marked = paint();
-    list.hidden = !marked;
-  }
-  function syncText() {
-    var hit = exact(query.value);
-    if (hit) {
-      choose(hit);
-      return;
-    }
-    var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
-    if (current && norm(query.value) === norm(current.dataset.label)) {
-      list.hidden = true;
-      return;
-    }
-    hidden.value = "";
-    openList();
+  function paint() {
+    var found = ranked(query.value);
+    var ids = {};
+    found.forEach(function (button) { ids[button.dataset.id] = true; });
+    buttons.forEach(function (button) {
+      button.parentElement.hidden = !ids[button.dataset.id];
+      button.classList.remove("mark");
+    });
+    if (found[0]) found[0].classList.add("mark");
+    list.hidden = found.length === 0;
+    if (found.length) list.scrollIntoView({ block: "nearest" });
+    return found;
   }
   if (!query) return;
   var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
   if (current) query.value = current.dataset.label;
-  query.addEventListener("focus", openList);
-  query.addEventListener("input", syncText);
+  query.addEventListener("focus", paint);
+  query.addEventListener("input", function () {
+    var current = buttons.filter(function (button) { return button.dataset.id === hidden.value; })[0];
+    if (!current || norm(query.value) !== norm(current.dataset.label)) hidden.value = "";
+    paint();
+  });
+  query.addEventListener("keyup", function (event) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === "Escape") return;
+    paint();
+  });
   query.addEventListener("keydown", function (event) {
     var visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
     var index = visible.findIndex(function (button) { return button.classList.contains("mark"); });
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      if (list.hidden) openList();
+      if (list.hidden) paint();
       visible = buttons.filter(function (button) { return !button.parentElement.hidden; });
       var next = visible[index + (event.key === "ArrowDown" ? 1 : -1)] || visible[0];
       if (!next) return;
@@ -117,6 +133,10 @@
   });
   buttons.forEach(function (button) {
     button.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    button.addEventListener("touchend", function (event) {
+      event.preventDefault();
+      choose(button);
+    });
     button.addEventListener("click", function () { choose(button); });
   });
   var form = root.closest("form");
