@@ -1,42 +1,126 @@
 import os
-import shutil
-import subprocess
-import tempfile
-import threading
 from collections import OrderedDict
-from pathlib import Path
+from io import BytesIO
 
 import qrcode
 from django.utils import timezone
-from docxtpl import DocxTemplate, InlineImage
-from docx.shared import Mm
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 
-from apps.common.exceptions import PrintError
+from apps.common.fonts import find_font
 from apps.common.kg import as_kg, format_kg
 
-TEMPLATE = Path(__file__).resolve().with_name("docx") / "pallet_passport.docx"
-_word_lock = threading.Lock()
+# Лист A4, поля и таблица как в прежнем шаблоне: две одинаковые копии паспорта.
+_PAGE_W, _PAGE_H = A4
+_MARGIN_X = 10 * mm
+_MARGIN_Y = 12 * mm
+_GAP = 20 * mm
+_LABEL_W = 55 * mm
+_VALUE_W = 135 * mm
+_ROW_H = 14.1 * mm
+_QR_ROW_H = 36 * mm
+_QR_SIZE = 32 * mm
+_LABEL_SIZE = 18
+_VALUE_SIZE = 22
+_font_ready = False
 
 
 def render_pallet_passport_pdf(pallet) -> bytes:
-    if not TEMPLATE.exists():
-        raise PrintError("Нет шаблона паспорта паллеты")
     units = list(
         pallet.units.exclude(status="rejected").select_related(
             "lot__product", "lot__caliber", "lot__supplier", "grade", "packaging"
         )
     )
-    folder = Path(tempfile.mkdtemp(prefix="wms-passport-"))
-    png = folder / "qr.png"
-    docx_path = folder / "passport.docx"
-    pdf_path = folder / "passport.pdf"
-    try:
-        _write_qr(png, _qr_text(pallet, units))
-        _fill_docx(docx_path, png, _context(pallet, units))
-        _docx_to_pdf(docx_path, pdf_path)
-        return pdf_path.read_bytes()
-    finally:
-        shutil.rmtree(folder, ignore_errors=True)
+    data = _context(pallet, units)
+    rows = [
+        ("Номер", data["number"]),
+        ("Дата", data["date"]),
+        ("ПОСТАВЩИК", data["supplier"]),
+        ("Товар", data["product"]),
+        ("Сортность", data["grade"]),
+        ("Брутто / нетто", data["weight"]),
+    ]
+    if data["client"]:
+        rows.append(("Клиент", data["client"]))
+    qr = ImageReader(_write_qr(_qr_text(pallet, units)))
+    row_h = _row_height(len(rows))
+    block_h = len(rows) * row_h + _QR_ROW_H
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    _ensure_font()
+    top = _PAGE_H - _MARGIN_Y
+    _draw_block(pdf, _MARGIN_X, top, rows, qr, row_h)
+    _draw_block(pdf, _MARGIN_X, top - block_h - _GAP, rows, qr, row_h)
+    pdf.save()
+    return buffer.getvalue()
+
+
+def _row_height(row_count: int) -> float:
+    room = _PAGE_H - 2 * _MARGIN_Y - _GAP - 2 * _QR_ROW_H
+    fitted = room / (2 * row_count)
+    return min(_ROW_H, fitted)
+
+
+def _ensure_font() -> None:
+    global _font_ready
+    if _font_ready:
+        return
+    regular = find_font()
+    pdfmetrics.registerFont(TTFont("WmsPassport", regular))
+    pdfmetrics.registerFont(TTFont("WmsPassport-Bold", _bold_font(regular)))
+    _font_ready = True
+
+
+def _bold_font(regular: str) -> str:
+    folder = os.path.dirname(regular)
+    names = {
+        "arial.ttf": "arialbd.ttf",
+        "calibri.ttf": "calibrib.ttf",
+        "dejavusans.ttf": "DejaVuSans-Bold.ttf",
+        "liberationsans-regular.ttf": "LiberationSans-Bold.ttf",
+    }
+    wanted = names.get(os.path.basename(regular).lower())
+    if not wanted or not os.path.isdir(folder):
+        return regular
+    for entry in os.listdir(folder):
+        if entry.lower() == wanted:
+            return os.path.join(folder, entry)
+    return regular
+
+
+def _draw_block(pdf, x: float, top: float, rows: list[tuple[str, str]], qr, row_h: float) -> None:
+    width = _LABEL_W + _VALUE_W
+    height = len(rows) * row_h + _QR_ROW_H
+    bottom = top - height
+    pdf.setStrokeColorRGB(0, 0, 0)
+    pdf.setLineWidth(0.6)
+    pdf.rect(x, bottom, width, height)
+    y = top
+    for label, value in rows:
+        y -= row_h
+        pdf.line(x, y, x + width, y)
+        pdf.line(x + _LABEL_W, y, x + _LABEL_W, y + row_h)
+        _cell_text(pdf, x, y, _LABEL_W, row_h, label, _LABEL_SIZE)
+        _cell_text(pdf, x + _LABEL_W, y, _VALUE_W, row_h, value, _VALUE_SIZE)
+    pdf.line(x + _LABEL_W, bottom, x + _LABEL_W, y)
+    qr_x = x + _LABEL_W + (_VALUE_W - _QR_SIZE) / 2
+    qr_y = bottom + (_QR_ROW_H - _QR_SIZE) / 2
+    pdf.drawImage(qr, qr_x, qr_y, _QR_SIZE, _QR_SIZE, mask="auto")
+
+
+def _cell_text(pdf, x: float, y: float, width: float, height: float, text: str, size: int) -> None:
+    pad = 2 * mm
+    limit = max(1, width - 2 * pad)
+    chosen = size
+    while chosen > 9 and pdfmetrics.stringWidth(text, "WmsPassport-Bold", chosen) > limit:
+        chosen -= 1
+    pdf.setFont("WmsPassport-Bold", chosen)
+    baseline = y + (height - chosen) / 2 + chosen * 0.2
+    pdf.drawString(x + pad, baseline, text)
 
 
 def _weights(units) -> tuple:
@@ -54,21 +138,23 @@ def _context(pallet, units) -> dict:
         "grade": _unique(unit.grade.name for unit in units),
         "weight": f"{format_kg(gross)} / {format_kg(net)} кг",
         "client": _client_name(pallet),
+        "number": (pallet.number or "").strip() or "—",
     }
 
 
 def passport_lines(pallet, units) -> list[str]:
-    """Те же поля, что на листе паспорта. Носитель меняет только вёрстку."""
+    """Те же поля, что на листе паспорта, без подписей: на наклейке мало места."""
     data = _context(pallet, units)
     lines = [
-        f"Дата {data['date']}",
-        f"Поставщик {data['supplier']}",
-        f"Товар {data['product']}",
-        f"Сортность {data['grade']}",
-        f"Брутто / нетто {data['weight']}",
+        data["number"],
+        data["date"],
+        data["supplier"],
+        data["product"],
+        data["grade"],
+        data["weight"],
     ]
     if data["client"]:
-        lines.append(f"Клиент {data['client']}")
+        lines.append(data["client"])
     return lines
 
 
@@ -119,108 +205,11 @@ def _qr_text(pallet, units) -> str:
     return "\n".join(lines) or (pallet.number or pallet.barcode or str(pallet.pk))
 
 
-def _write_qr(path: Path, payload: str) -> None:
+def _write_qr(payload: str) -> BytesIO:
     image = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=1)
     image.add_data(payload)
     image.make(fit=True)
-    image.make_image(fill_color="black", back_color="white").save(path)
-
-
-def _fill_docx(docx_path: Path, png: Path, context: dict) -> None:
-    document = DocxTemplate(TEMPLATE)
-    context = {
-        **context,
-        "qr_top": InlineImage(document, str(png), width=Mm(32)),
-        "qr_bottom": InlineImage(document, str(png), width=Mm(32)),
-    }
-    document.render(context)
-    document.save(docx_path)
-
-
-def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
-    if os.name == "nt":
-        _docx_to_pdf_word(docx_path, pdf_path)
-        return
-    _docx_to_pdf_office(docx_path, pdf_path)
-
-
-def _docx_to_pdf_word(docx_path: Path, pdf_path: Path) -> None:
-    script = Path(__file__).with_name("word_pdf.ps1")
-    env = os.environ.copy()
-    env["WMS_DOCX"] = str(docx_path)
-    env["WMS_PDF_OUT"] = str(pdf_path)
-    with _word_lock:
-        try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                env=env,
-                capture_output=True,
-                timeout=90,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise PrintError("Word не собрал паспорт. Закройте зависший Word и повторите") from exc
-        except OSError as exc:
-            raise PrintError(f"Не удалось вызвать Word: {exc}") from exc
-    if result.returncode != 0 or not pdf_path.exists():
-        detail = _ps_text(result.stderr) or _ps_text(result.stdout) or "Word не собрал PDF"
-        raise PrintError(detail)
-
-
-def _office_bin() -> str:
-    for name in ("libreoffice", "soffice"):
-        found = shutil.which(name)
-        if found:
-            return found
-    raise PrintError(
-        "На сервере не установлен LibreOffice. "
-        "От root: bash /opt/wms/deploy/install-print.sh"
-    )
-
-
-def _docx_to_pdf_office(docx_path: Path, pdf_path: Path) -> None:
-    binary = _office_bin()
-    outdir = docx_path.parent
-    profile = (outdir / "lo-profile").resolve().as_uri()
-    env = os.environ.copy()
-    env["HOME"] = str(outdir)
-    try:
-        result = subprocess.run(
-            [
-                binary,
-                f"-env:UserInstallation={profile}",
-                "--headless",
-                "--norestore",
-                "--nologo",
-                "--nolockcheck",
-                "--convert-to",
-                "pdf:writer_pdf_Export",
-                "--outdir",
-                str(outdir),
-                str(docx_path),
-            ],
-            env=env,
-            capture_output=True,
-            timeout=45,
-            cwd=str(outdir),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise PrintError("LibreOffice не собрал паспорт за отведённое время") from exc
-    except OSError as exc:
-        raise PrintError(f"Не удалось вызвать LibreOffice: {exc}") from exc
-    produced = pdf_path if pdf_path.exists() else next(outdir.glob("*.pdf"), None)
-    if produced is not None and produced != pdf_path:
-        produced.replace(pdf_path)
-    if result.returncode != 0 or not pdf_path.exists():
-        detail = _ps_text(result.stderr) or _ps_text(result.stdout) or "LibreOffice не собрал PDF"
-        raise PrintError(detail)
-
-
-def _ps_text(data: bytes | None) -> str:
-    if not data:
-        return ""
-    for encoding in ("utf-8-sig", "cp866", "cp1251"):
-        try:
-            return data.decode(encoding).strip()
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace").strip()
+    buffer = BytesIO()
+    image.make_image(fill_color="black", back_color="white").save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
